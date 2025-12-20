@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+import sys
+import os
+import requests
+import json
+from typing import Generator, List, Dict
+import argparse
+
+# Ask Agent
+
+# 配置API参数
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+if not DEEPSEEK_API_KEY:
+    print("❌ 错误: 未设置 DEEPSEEK_API_KEY 环境变量", file=sys.stderr)
+    sys.exit(1)
+
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+
+# 系统提示词
+SYSTEM_PROMPT = """你是一个终端问答工具助手。你的特点是：
+1. 回答简洁、直接、高效
+2. 对命令行、脚本、系统等技术问题有专长
+3. 提供的代码和命令可以直接在终端中使用
+4. 避免冗长的解释，用户更在乎可用的答案
+5. 如果是多行的输出或代码，用清晰的格式展示"""
+
+# 对话历史缓冲
+conversation_history: List[Dict[str, str]] = []
+
+def get_streaming_response(prompt: str) -> Generator[str, None, None]:
+    """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream"
+    }
+
+    # 如果这是第一条消息，添加系统提示词
+    messages = []
+    if not conversation_history:
+        messages.append({"role": "system", "content": SYSTEM_PROMPT})
+    
+    # 将之前的对话历史加入
+    messages.extend(conversation_history)
+    # 将用户新消息添加到历史
+    messages.append({"role": "user", "content": prompt})
+    conversation_history.append({"role": "user", "content": prompt})
+
+    data = {
+        "model": "deepseek-chat",
+        "messages": messages,
+        "stream": True
+    }
+
+    assistant_message = ""
+
+    with requests.post(DEEPSEEK_API_URL, headers=headers, json=data, stream=True) as response:
+        for chunk in response.iter_lines():
+            if chunk:
+                decoded = chunk.decode('utf-8')
+                if decoded.startswith("data:"):
+                    try:
+                        data = json.loads(decoded[5:])
+                        if "choices" in data and data["choices"][0]["delta"].get("content"):
+                            content = data["choices"][0]["delta"]["content"]
+                            assistant_message += content
+                            yield content
+                    except json.JSONDecodeError:                                
+                       continue        
+
+    # 将助手回复添加到历史
+    conversation_history.append({"role": "assistant", "content": assistant_message})
+
+def chat_loop(quit_after_answer: bool = False):
+    """主聊天循环，支持完整的对话上下文和对话命令"""
+    print("🤖 DeepSeek 聊天客户端 (输入 'exit' 退出，输入 '/help' 查看命令)\n")
+
+    # 检查 stdin 是否可用（是否是终端）
+    if not sys.stdin.isatty():
+        print("❌ 错误: 无法在非交互式环境中使用交互模式", file=sys.stderr)
+        sys.exit(1)
+
+    while True:
+        try:
+            user_input = input(" You: ").strip()
+            if not user_input:
+                continue
+            
+            # 处理特殊命令
+            if user_input.lower() == 'exit':
+                break
+            elif user_input.lower() == '/help':
+                print("\n📋 可用命令:")
+                print("  /help        - 显示帮助信息")
+                print("  /history     - 显示对话历史")
+                print("  /clear       - 清除对话历史")
+                print("  exit         - 退出程序\n")
+                continue
+            elif user_input.lower() == '/history':
+                show_history()
+                print()
+                continue
+            elif user_input.lower() == '/clear':
+                clear_history()
+                print()
+                continue
+            
+            # 普通对话
+            print("\n🤖 Assistant: ", flush=True)
+            try:
+                # 调用真实API获取流式响应（包含完整对话历史）
+                for chunk in get_streaming_response(user_input):
+                    print(chunk, end='', flush=True)
+                print()  # 换行
+            except Exception as e:
+                print(f"\n❌ 发生错误: {e}")
+            
+            print()  # 换行
+
+            # 如果设置了一问一答模式，回答后退出
+            if quit_after_answer:
+                break
+
+        except (KeyboardInterrupt, EOFError):
+            print("\n👋 再见!")
+            break
+        except Exception as e:
+            print(f"\n发生错误: {e}")
+
+def clear_history():
+    """清除对话历史"""
+    global conversation_history
+    conversation_history = []
+    print("✨ 对话历史已清除")
+
+def show_history():
+    """显示对话历史"""
+    if not conversation_history:
+        print("📭 对话历史为空")
+        return
+    
+    print("\n📜 === 对话历史 ===")
+    for i, msg in enumerate(conversation_history, 1):
+        role = "👤 用户" if msg["role"] == "user" else "🤖 助手"
+        print(f"\n[{i}] {role}:")
+        print(msg["content"])
+
+def pipe_mode(prompt: str = None, quit_after_answer: bool = False, continue_conversation: bool = False):
+    """管道模式：支持管道输入 + 额外问题组合"""
+    stdin_input = None
+    
+    # 检查是否有来自管道的输入
+    if not sys.stdin.isatty():
+        stdin_input = sys.stdin.read().strip()
+    
+    # 组合管道输入和命令行参数
+    if stdin_input and prompt:
+        # 如果既有管道输入又有参数，组合它们
+        combined_prompt = f"{stdin_input}\n\n---\n\n{prompt}"
+    elif stdin_input:
+        # 只有管道输入
+        combined_prompt = stdin_input
+    elif prompt:
+        # 只有命令行参数
+        combined_prompt = prompt
+    else:
+        # 都没有
+        print("❌ 错误: 需要提供输入内容", file=sys.stderr)
+        sys.exit(1)
+    
+    try:
+        # 获取流式响应并直接输出
+        for chunk in get_streaming_response(combined_prompt):
+            print(chunk, end='', flush=True)
+        print()  # 最后添加换行
+    except Exception as e:
+        print(f"❌ 错误: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    # 如果启用连续对话，则进入交互模式
+    if continue_conversation:
+        print("\n💬 进入连续对话模式 (输入 'exit' 退出):\n")
+        # 重新打开 stdin 用于交互
+        import tty
+        import termios
+        sys.stdin = open('/dev/tty')
+        chat_loop(quit_after_answer=False)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Ask Agent - DeepSeek 聊天客户端",
+        prog="ag"
+    )
+    parser.add_argument(
+        "query",
+        nargs="?",
+        help="要提问的内容（如果未提供，将从标准输入读取）"
+    )
+    parser.add_argument(
+        "-q", "--quit",
+        action="store_true",
+        help="一问一答模式，回答后直接退出（默认为连续对话）"
+    )
+    parser.add_argument(
+        "-a", "--after",
+        action="store_true",
+        help="管道模式中，回答后进入连续对话模式"
+    )
+    
+    args = parser.parse_args()
+    
+    # 如果提供了查询或输入来自管道，使用管道模式
+    if args.query or (not sys.stdin.isatty()):
+        pipe_mode(args.query, args.quit, args.after)
+    else:
+        # 否则进入交互模式
+        chat_loop(args.quit)
