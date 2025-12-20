@@ -94,15 +94,15 @@ def chat_loop(quit_after_answer: bool = False):
             elif user_input.lower() == '/help':
                 print("\n📋 可用命令:")
                 print("  /help        - 显示帮助信息")
-                print("  /history     - 显示对话历史")
-                print("  /clear       - 清除对话历史")
+                print("  /history, /h - 显示对话历史")
+                print("  /clear, /c   - 清除对话历史")
                 print("  exit         - 退出程序\n")
                 continue
-            elif user_input.lower() == '/history':
+            elif user_input.lower() in ['/history', '/h']:
                 show_history()
                 print()
                 continue
-            elif user_input.lower() == '/clear':
+            elif user_input.lower() in ['/clear', '/c']:
                 clear_history()
                 print()
                 continue
@@ -124,7 +124,6 @@ def chat_loop(quit_after_answer: bool = False):
                 break
 
         except (KeyboardInterrupt, EOFError):
-            print("\n👋 再见!")
             break
         except Exception as e:
             print(f"\n发生错误: {e}")
