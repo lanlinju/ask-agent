@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import sys
 import os
 import requests
@@ -15,6 +16,7 @@ if not DEEPSEEK_API_KEY:
     sys.exit(1)
 
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_MODEL = "deepseek-chat"
 
 # 系统提示词
 SYSTEM_PROMPT = """你是一个终端问答工具助手。你的特点是：
@@ -47,7 +49,7 @@ def get_streaming_response(prompt: str) -> Generator[str, None, None]:
     conversation_history.append({"role": "user", "content": prompt})
 
     data = {
-        "model": "deepseek-chat",
+        "model": DEEPSEEK_MODEL,
         "messages": messages,
         "stream": True
     }
@@ -73,7 +75,7 @@ def get_streaming_response(prompt: str) -> Generator[str, None, None]:
 
 def chat_loop(quit_after_answer: bool = False):
     """主聊天循环，支持完整的对话上下文和对话命令"""
-    print("🤖 DeepSeek 聊天客户端 (输入 'exit' 退出，输入 '/help' 查看命令)\n")
+    print("🤖 DeepSeek Ask Agent 客户端 (输入 'exit' 退出，输入 '/help' 查看命令)\n")
 
     # 检查 stdin 是否可用（是否是终端）
     if not sys.stdin.isatty():
@@ -82,7 +84,7 @@ def chat_loop(quit_after_answer: bool = False):
 
     while True:
         try:
-            user_input = input(" You: ").strip()
+            user_input = input("💬^ : ").strip()
             if not user_input:
                 continue
             
