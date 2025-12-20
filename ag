@@ -194,7 +194,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "query",
-        nargs="?",
+        nargs="*",       # 接收多个参数
         help="要提问的内容（如果未提供，将从标准输入读取）"
     )
     parser.add_argument(
@@ -209,10 +209,13 @@ if __name__ == "__main__":
     )
     
     args = parser.parse_args()
+
+    # 将多个参数连接成一个字符串
+    query = " ".join(args.query) if args.query else None
     
     # 如果提供了查询或输入来自管道，使用管道模式
-    if args.query or (not sys.stdin.isatty()):
-        pipe_mode(args.query, args.after)
+    if query or (not sys.stdin.isatty()):
+        pipe_mode(query, args.after)
     else:
         # 否则进入交互模式
         chat_loop(args.quit)
