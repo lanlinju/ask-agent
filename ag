@@ -69,11 +69,6 @@ def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
     # print("🤖 DeepSeek Ask Agent 客户端 (输入 'exit' 退出，输入 '/help' 查看命令)\n")
 
-    # 检查 stdin 是否可用（是否是终端）
-    if not sys.stdin.isatty():
-        print("❌ 错误: 无法在非交互式环境中使用交互模式", file=sys.stderr)
-        sys.exit(1)
-
     while True:
         try:
             user_input = input("💬^ :\n").strip()
