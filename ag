@@ -65,7 +65,7 @@ def get_streaming_response(prompt: str) -> Generator[str, None, None]:
     # 将助手回复添加到历史
     messages.append({"role": "assistant", "content": assistant_message})
 
-def chat_loop(quit_after_answer: bool = False):
+def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
     # print("🤖 DeepSeek Ask Agent 客户端 (输入 'exit' 退出，输入 '/help' 查看命令)\n")
 
@@ -84,27 +84,21 @@ def chat_loop(quit_after_answer: bool = False):
             if user_input.lower() == 'exit':
                 break
             
-            # 普通对话
             print("\n🤖 Assistant: ", flush=True)
-            try:
-                # 调用真实API获取流式响应（包含完整对话历史）
-                for chunk in get_streaming_response(user_input):
-                    print(chunk, end='', flush=True)
-                print('\n')  # 换行
-            except Exception as e:
-                print(f"\n❌ 发生错误: {e}")
 
-            # 如果设置了一问一答模式，回答后退出
-            if quit_after_answer:
-                break
+            # 调用API获取流式响应
+            for chunk in get_streaming_response(user_input):
+                print(chunk, end='', flush=True)
 
+            print('\n')  # 换行
+            
         except (KeyboardInterrupt, EOFError):
             break
         except Exception as e:
-            print(f"\n发生错误: {e}")
+            print(f"\n❌ 发生错误: {e}")
 
 
-def pipe_mode(prompt: str = None, continue_conversation: bool = False):
+def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: bool = False):
     """管道模式：支持管道输入 + 额外问题组合"""
     stdin_input = None
     
@@ -131,14 +125,17 @@ def pipe_mode(prompt: str = None, continue_conversation: bool = False):
         # 获取流式响应并直接输出
         for chunk in get_streaming_response(combined_prompt):
             print(chunk, end='', flush=True)
-        print()  # 最后添加换行
+        print('\n')  # 最后添加换行
     except Exception as e:
         print(f"❌ 错误: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if prompt and not quit:
+        continue_conversation = True    
     
     # 如果启用连续对话，则进入交互模式
     if continue_conversation:
-        print("\n💬 进入连续对话模式 (输入 'exit' 退出):\n")
+        # print("\n💬 进入连续对话模式 (输入 'exit' 退出):\n")
         # 重新打开 stdin 用于交互
         import tty
         import termios
@@ -173,7 +170,7 @@ if __name__ == "__main__":
     
     # 如果提供了查询或输入来自管道，使用管道模式
     if query or (not sys.stdin.isatty()):
-        pipe_mode(query, args.after)
+        pipe_mode(query, args.quit, args.after)
     else:
         # 否则进入交互模式
-        chat_loop(args.quit)
+        chat_loop()
