@@ -77,9 +77,6 @@ python ag
 
 **支持的命令：**
 - `exit` - 退出程序
-- `/help` - 显示帮助信息
-- `/history` - 显示对话历史
-- `/clear` - 清除对话历史
 
 ### 2. 一问一答模式
 
@@ -132,7 +129,7 @@ ag "如何查看系统内存使用情况?"
 
 ### 分析代码
 ```bash
-cat app.js | ag "这段代码有什么性能问题？" -q
+cat app.js | ag "这段代码有什么性能问题？" -a
 ```
 
 ### 调试脚本
@@ -181,8 +178,3 @@ export DEEPSEEK_API_KEY="your-api-key"
 ```bash
 echo $DEEPSEEK_API_KEY
 ```
-
-### JSON 解析错误
-
-可能是 API 返回了异常响应，检查网络连接和 API 状态。
-
