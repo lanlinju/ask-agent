@@ -143,6 +143,19 @@ ag
 # 进入交互模式后可以持续追问
 ```
 
+## 运行示例
+```bash
+➜  ask-agent git:(main) ✗ ./ag                                
+💬^ :
+UEFI是什么缩写？
+
+🤖 Assistant: 
+UEFI = Unified Extensible Firmware Interface（统一可扩展固件接口）
+
+💬^ :
+
+```
+
 ## 环境变量
 
 - `DEEPSEEK_API_KEY` - **必需** DeepSeek API 密钥
