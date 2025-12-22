@@ -135,7 +135,7 @@ def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: boo
         import tty
         import termios
         sys.stdin = open('/dev/tty')
-        chat_loop(quit_after_answer=False)
+        chat_loop()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
