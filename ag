@@ -49,6 +49,9 @@ def get_streaming_response(prompt: str) -> Generator[str, None, None]:
     assistant_message = ""
 
     with requests.post(DEEPSEEK_API_URL, headers=headers, json=data, stream=True) as response:
+        if response.status_code != 200:
+            print(f"❌ API错误: {response.status_code} {response.text}")
+            return
         for chunk in response.iter_lines():
             if chunk:
                 decoded = chunk.decode('utf-8')
