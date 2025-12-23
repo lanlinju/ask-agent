@@ -105,6 +105,22 @@ def chat_loop(translation_mode: bool = False):
             if user_input.lower() == 'exit':
                 break
             
+            # 进入翻译模式
+            if user_input.lower() == '/e':
+                messages.clear()
+                translation_mode = True
+                init_system_prompt(translation_mode)
+                print("✅ 已进入翻译模式\n")
+                continue
+            
+            # 进入问答模式
+            if user_input.lower() == '/ask':
+                messages.clear()
+                translation_mode = False
+                init_system_prompt(translation_mode)
+                print("✅ 已进入问答模式\n")
+                continue
+            
             print("\n🤖 Assistant: ", flush=True)
 
             # 调用API获取流式响应
