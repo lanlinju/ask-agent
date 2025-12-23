@@ -89,6 +89,21 @@ def get_streaming_response(prompt: str) -> Generator[str, None, None]:
     # 将助手回复添加到历史
     messages.append({"role": "assistant", "content": assistant_message})
 
+def handle_command(command: str) -> bool:
+    """处理命令"""
+    if command == 'exit':
+        sys.exit(0)
+    
+    # 进入翻译模式
+    if command == '/e':
+        init_system_prompt(translation_mode=True)
+        print("✅ 已进入翻译模式\n")
+    
+    # 进入问答模式
+    if command == '/ask':
+        init_system_prompt(translation_mode=False)
+        print("✅ 已进入问答模式\n")
+    
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
     # print("🤖 DeepSeek Ask Agent 客户端 (输入 'exit' 退出，输入 '/help' 查看命令)\n")
@@ -98,21 +113,10 @@ def chat_loop():
             user_input = input("💬^ :\n").strip()
             if not user_input:
                 continue
-            
+
             # 处理特殊命令
-            if user_input.lower() == 'exit':
-                break
-            
-            # 进入翻译模式
-            if user_input.lower() == '/e':
-                init_system_prompt(translation_mode = True)
-                print("✅ 已进入翻译模式\n")
-                continue
-            
-            # 进入问答模式
-            if user_input.lower() == '/ask':
-                init_system_prompt(translation_mode = False)
-                print("✅ 已进入问答模式\n")
+            if user_input.lower() in ['exit', '/e', '/ask']:    
+                handle_command(user_input.lower()) 
                 continue
             
             print("\n🤖 Assistant: ", flush=True)
