@@ -116,15 +116,13 @@ def exec(cmd: str) -> str:
         result = subprocess.run(
             cmd,
             shell=True,
-            capture_output=True,
+            stdout= subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # 将stderr重定向到stdout
             text=True,
             timeout=10
         )
         
-        # 组合stdout和stderr
         output = result.stdout
-        if result.stderr:
-            output += result.stderr
         
         return output.strip() if output else "(无输出)"
     except subprocess.TimeoutExpired:
