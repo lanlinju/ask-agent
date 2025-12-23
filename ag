@@ -18,16 +18,37 @@ if not DEEPSEEK_API_KEY:
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_MODEL = "deepseek-chat"
 
-# 系统提示词
-SYSTEM_PROMPT = """你是一个终端问答工具助手。你的特点是：
+# 系统终端问答工具助手提示词
+SYSTEM_PROMPT_ASK = """你是一个终端问答工具助手。你的特点是：
 1. 回答简洁、直接、高效
 2. 对命令行、脚本、系统等技术问题有专长
 3. 提供的代码和命令可以直接在终端中使用
 4. 避免冗长的解释，用户更在乎可用的答案
 5. 如果是多行的输出或代码，用清晰的格式展示"""
+# 系统终端翻译提示词
+SYSTEM_PROMPT_TRANSLATION = """你是一个专业的终端英语翻译工具。严格遵守以下规则：
+1. 将英语句子翻译成中文
+2. 将中文句子翻译成英语
+3. 英语单词，翻译时给出音标，给出常见释义
+4. 缩写词翻译时给出全称
+5. 你只执行翻译相关任务，不回答非翻译问题，不提供额外解释、建议或对话。
 
+[英语单词翻译输出格式]
+单词 [英] [美]
+词性. 释义
+
+[单词示例]
+computer [kəmˈpjuːtə(r)] [kəmˈpjuːtər]
+n. 计算机，电脑
+"""
 # 对话历史缓冲
-messages: List[Dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+messages: List[Dict[str, str]] = []
+
+def init_system_prompt(translation_mode: bool = False):
+    """初始化系统提示词"""
+    if not messages:
+        system_prompt = SYSTEM_PROMPT_TRANSLATION if translation_mode else SYSTEM_PROMPT_ASK
+        messages.append({"role": "system", "content": system_prompt})
 
 def get_streaming_response(prompt: str) -> Generator[str, None, None]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
@@ -68,8 +89,10 @@ def get_streaming_response(prompt: str) -> Generator[str, None, None]:
     # 将助手回复添加到历史
     messages.append({"role": "assistant", "content": assistant_message})
 
-def chat_loop():
+def chat_loop(translation_mode: bool = False):
     """主聊天循环，支持完整的对话上下文和对话命令"""
+    # 初始化系统提示词
+    init_system_prompt(translation_mode)
     # print("🤖 DeepSeek Ask Agent 客户端 (输入 'exit' 退出，输入 '/help' 查看命令)\n")
 
     while True:
@@ -104,8 +127,11 @@ def restore_tty():
     else:
         sys.stdin = open('CON', 'r')
 
-def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: bool = False):
+def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: bool = False, translation_mode: bool = False):
     """管道模式：支持管道输入 + 额外问题组合"""
+    # 初始化系统提示词
+    init_system_prompt(translation_mode)
+    
     stdin_input = None
     
     # 检查是否有来自管道的输入
@@ -163,6 +189,11 @@ if __name__ == "__main__":
         action="store_true",
         help="管道模式中，回答后进入连续对话模式"
     )
+    parser.add_argument(
+        "-e", "--translation",
+        action="store_true",
+        help="进入翻译模式"
+    )
     
     args = parser.parse_args()
 
@@ -171,7 +202,7 @@ if __name__ == "__main__":
     
     # 如果提供了查询或输入来自管道，使用管道模式
     if query or (not sys.stdin.isatty()):
-        pipe_mode(query, args.quit, args.after)
+        pipe_mode(query, args.quit, args.after, args.translation)
     else:
         # 否则进入交互模式
-        chat_loop()
+        chat_loop(args.translation)
