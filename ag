@@ -95,6 +95,14 @@ def chat_loop():
         except Exception as e:
             print(f"\n❌ 发生错误: {e}")
 
+def restore_tty():
+    """重新打开 stdin 用于交互"""
+    if sys.stdin.isatty():
+        return
+    if sys.platform != 'win32':
+        sys.stdin = open('/dev/tty')
+    else:
+        sys.stdin = open('CON', 'r')
 
 def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: bool = False):
     """管道模式：支持管道输入 + 额外问题组合"""
@@ -128,17 +136,12 @@ def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: boo
         print(f"❌ 错误: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if prompt and not quit:
-        continue_conversation = True    
-    
     # 如果启用连续对话，则进入交互模式
-    if continue_conversation:
-        # print("\n💬 进入连续对话模式 (输入 'exit' 退出):\n")
-        # 重新打开 stdin 用于交互
-        import tty
-        import termios
-        sys.stdin = open('/dev/tty')
-        chat_loop()
+    if not continue_conversation and not (prompt and not quit):
+        return
+    
+    restore_tty()
+    chat_loop()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
