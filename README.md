@@ -55,7 +55,11 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **方式一：环境变量（推荐用于长期使用）**
 ```bash
+# Linux
 export DEEPSEEK_API_KEY="sk-your-api-key-here"
+
+# Windows
+$env:DEEPSEEK_API_KEY="sk-your-api-key-here"
 
 # 为了永久设置，添加到 ~/.bashrc 或 ~/.zshrc
 echo 'export DEEPSEEK_API_KEY="sk-your-api-key-here"' >> ~/.bashrc
