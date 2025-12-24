@@ -189,6 +189,9 @@ def sanitize_memory():
     if current_mode == TRANSLATE or not memory:
         init_system_prompt(current_mode)  # 重新初始化系统提示词
 
+def is_command(command: str) -> bool:
+    """检查输入是否为命令"""
+    return command.startswith('/') or command.lower() == 'exit'
 
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
@@ -199,7 +202,7 @@ def chat_loop():
             continue
 
         # 处理特殊命令
-        if user_input.startswith('/'):    
+        if is_command(user_input):    
             command(user_input.lower()) 
             continue
         
