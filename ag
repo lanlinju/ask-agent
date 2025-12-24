@@ -49,6 +49,8 @@ class agent_mode(Enum):
 current_mode = agent_mode.ASK    
 # 对话历史缓冲
 messages: List[Dict[str, str]] = []
+# 是否不记忆上下文
+no_memory = False
 
 def init_system_prompt(translate_mode: bool = False):
     """初始化系统提示词"""
@@ -183,7 +185,12 @@ def ask(question: str) -> str:
     # 调用API获取流式响应
     answer =  get_streaming_response(question)
     # 将助手回复添加到消息列表
-    messages.append({"role": "assistant", "content": answer}) 
+    messages.append({"role": "assistant", "content": answer})
+    
+    # 如果启用不记忆模式，清空历史（保留系统提示词）
+    if no_memory:
+        init_system_prompt(translate_mode=current_mode.is_translate())
+    
     return answer   
    
 def chat_loop():
@@ -279,6 +286,11 @@ def main():
         action="store_true",
         help="进入翻译模式"
     )
+    parser.add_argument(
+        "-n", "--no-memory",
+        action="store_true",
+        help="不记忆上下文，每次问答后只保留系统提示词"
+    )
     
     args = parser.parse_args()
 
@@ -289,6 +301,10 @@ def main():
     if args.translate:
         global current_mode
         current_mode = agent_mode.TRANSLATE
+    
+    # 设置不记忆模式
+    global no_memory
+    no_memory = args.no_memory
 
     # 将多个参数连接成一个字符串
     query = " ".join(args.query) if args.query else None
