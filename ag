@@ -4,10 +4,9 @@ import sys
 import os
 import requests
 import json
-from typing import Generator, List, Dict
+from typing import List, Dict
 import argparse
 import subprocess
-from enum import Enum, auto
 
 # Ask Agent
 
@@ -45,8 +44,8 @@ TRANSLATE = 1   # 翻译模式
 current_mode: int = ASK    
 # 对话历史缓冲
 messages: List[Dict[str, str]] = []
-# 是否不记忆上下文
-no_memory = False
+# 问答模式是否记忆上下文
+memory = True
 
 def init_system_prompt(mode: int = ASK):
     """初始化系统提示词"""
@@ -73,7 +72,7 @@ def get_streaming_response(prompt: str) -> str:
     with requests.post(DEEPSEEK_API_URL, headers=headers, json=data, stream=True) as response:
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
-            return
+            return ""
         for chunk in response.iter_lines():
             if chunk:
                 decoded = chunk.decode('utf-8')
@@ -90,7 +89,7 @@ def get_streaming_response(prompt: str) -> str:
 
     return assistant_message
 
-def command(command: str) -> bool:
+def command(command: str):
     """处理命令"""
     global current_mode
     
@@ -160,7 +159,7 @@ def exec(cmd: str) -> str:
     except Exception as e:
         return f"❌ 命令执行错误: {str(e)}"
     
-def shell(cmd: str) -> bool:
+def shell(cmd: str):
     """处理shell命令，添加到历史并执行"""
     # 将命令添加到消息历史
     messages.append({"role": "user", "content": f"执行shell命令: {cmd}"})
@@ -185,9 +184,9 @@ def ask(question: str) -> str:
     return answer   
 
 def sanitize_memory():
-    """根据当前模式和设置清理对话历史"""
+    """翻译模式或不记忆模式时清理对话历史"""
     # 检查是否需要清理
-    if current_mode == TRANSLATE or no_memory:
+    if current_mode == TRANSLATE or not memory:
         init_system_prompt(current_mode)  # 重新初始化系统提示词
 
 
@@ -290,16 +289,16 @@ def main():
     
     args = parser.parse_args()
 
+    # 设置记忆模式
+    global memory
+    memory = not args.no_memory
+
     # 更新当前模式
     global current_mode
     current_mode = args.translate
 
     # 初始化系统提示词
     init_system_prompt(current_mode)
-    
-    # 设置不记忆模式
-    global no_memory
-    no_memory = args.no_memory
 
     # 将多个参数连接成一个字符串
     query = " ".join(args.query) if args.query else None
