@@ -256,10 +256,6 @@ def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: boo
     chat_loop()
 
 def main():
-    if not DEEPSEEK_API_KEY:
-        print("❌ 错误: 未设置 DEEPSEEK_API_KEY 环境变量", file=sys.stderr)
-        sys.exit(1)
-
     parser = argparse.ArgumentParser(
         description="Ask Agent - DeepSeek 问答客户端",
         prog="ag"
@@ -289,8 +285,22 @@ def main():
         action="store_true",
         help="不记忆上下文，每次问答后只保留系统提示词"
     )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        help="DeepSeek API 密钥（如果不提供，将使用 DEEPSEEK_API_KEY 环境变量）"
+    )
     
     args = parser.parse_args()
+
+    # 设置 API 密钥
+    global DEEPSEEK_API_KEY
+    if args.api_key:
+        DEEPSEEK_API_KEY = args.api_key
+    
+    if not DEEPSEEK_API_KEY:
+        print("❌ 错误: 未设置 API 密钥。请使用 --api-key 参数或设置 DEEPSEEK_API_KEY 环境变量", file=sys.stderr)
+        sys.exit(1)
 
     # 设置记忆模式
     global memory

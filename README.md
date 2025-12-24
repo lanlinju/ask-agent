@@ -51,14 +51,20 @@ export PATH="$HOME/.local/bin:$PATH"
 2. 注册或登录账户
 3. 进入 API Keys 页面
 4. 创建新的 API 密钥
-5. 设置环境变量
+5. 设置环境变量或通过命令行参数使用
 
+**方式一：环境变量（推荐用于长期使用）**
 ```bash
 export DEEPSEEK_API_KEY="sk-your-api-key-here"
 
 # 为了永久设置，添加到 ~/.bashrc 或 ~/.zshrc
 echo 'export DEEPSEEK_API_KEY="sk-your-api-key-here"' >> ~/.bashrc
 source ~/.bashrc
+```
+
+**方式二：命令行参数（推荐用于单次使用）**
+```bash
+ag --api-key "sk-your-api-key-here" "你的问题"
 ```
 
 ## 使用
@@ -140,7 +146,7 @@ ag -n
 ## 命令行选项
 
 ```
-usage: ag [-q] [-a] [-e] [-n] [query]
+usage: ag [-q] [-a] [-e] [-n] [--api-key API_KEY] [query]
 
 Ask Agent - DeepSeek 聊天客户端
 
@@ -151,7 +157,8 @@ optional arguments:
   -q, --quit           一问一答模式，回答后直接退出
   -a, --after          管道模式中，回答后进入连续对话模式
   -e, --translate      进入翻译模式
-  -n, --no-memory      不记忆上下文
+  -n, --no-memory      不记忆上下文，每次问答后只保留系统提示词
+  --api-key API_KEY    DeepSeek API 密钥（如果不提供，将使用 DEEPSEEK_API_KEY 环境变量）
 ```
 
 ## 使用示例
@@ -179,6 +186,11 @@ ag -e "computer"
 ### 无上下文问答
 ```bash
 ag -n "这是独立的问题，不需要记忆历史"
+```
+
+### 使用命令行指定 API 密钥
+```bash
+ag --api-key "sk-your-api-key" "你的问题"
 ```
 
 ### 学习和讨论
