@@ -99,9 +99,34 @@ def command(command: str) -> bool:
         init_system_prompt(translate_mode=False)
         print("✅ 已进入问答模式\n")
         return
+    
+    # 清空对话历史
+    if command == '/reset':
+        raise Exception("NotImplementedError")
+        print("✅ 已清空对话历史\n")
+        return
+    
+    # 显示帮助
+    if command == '/help':
+        show_help()
+        return
 
     # 处理shell命令
     shell(command[1:])  # 提取命令，去掉前面的 /
+
+def show_help():
+    """显示帮助信息"""
+    help_text = """
+📖 Ask Agent 命令帮助
+🔹 交互模式命令：
+  /ask          - 进入问答模式
+  /e            - 进入翻译模式
+  /reset        - 清空当前对话历史
+  /help         - 显示此帮助信息
+  /shell args   - 执行shell命令（如 /ls, /pwd, /cat file.txt）
+  exit          - 退出程序
+"""
+    print(help_text)
 
 def exec(cmd: str) -> str:
     """执行shell命令并返回输出"""
