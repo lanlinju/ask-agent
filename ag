@@ -7,6 +7,7 @@ import json
 from typing import Generator, List, Dict
 import argparse
 import subprocess
+from enum import Enum, auto
 
 # Ask Agent
 
@@ -38,6 +39,14 @@ SYSTEM_PROMPT_TRANSLATE = """你是一个专业的终端英语翻译工具。严
 computer [kəmˈpjuːtə(r)] [kəmˈpjuːtər]
 n. 计算机，电脑
 """
+class agent_mode(Enum):
+    ASK = auto()
+    TRANSLATE = auto()
+
+    def is_translate(self) -> bool:
+        return self == agent_mode.TRANSLATE
+
+current_mode = agent_mode.ASK    
 # 对话历史缓冲
 messages: List[Dict[str, str]] = []
 
@@ -85,17 +94,21 @@ def get_streaming_response(prompt: str) -> str:
 
 def command(command: str) -> bool:
     """处理命令"""
+    global current_mode
+    
     if command == 'exit':
         sys.exit(0)
     
     # 进入翻译模式
     if command == '/e':
+        current_mode = agent_mode.TRANSLATE
         init_system_prompt(translate_mode=True)
         print("✅ 已进入翻译模式\n")
         return
     
     # 进入问答模式
     if command == '/ask':
+        current_mode = agent_mode.ASK
         init_system_prompt(translate_mode=False)
         print("✅ 已进入问答模式\n")
         return
@@ -189,7 +202,11 @@ def chat_loop():
         print("\n🤖 Assistant: ", flush=True)
 
         # 获取回答并打印
-        ask(user_input) 
+        ask(user_input)
+        
+        # 翻译模式下，每次回答后清除消息历史（保留系统提示词）
+        if current_mode.is_translate():
+            init_system_prompt(translate_mode=True) 
         
 
 def restore_tty():
@@ -267,6 +284,11 @@ def main():
 
     # 初始化系统提示词
     init_system_prompt(args.translate)
+    
+    # 更新当前模式
+    if args.translate:
+        global current_mode
+        current_mode = agent_mode.TRANSLATE
 
     # 将多个参数连接成一个字符串
     query = " ".join(args.query) if args.query else None
