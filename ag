@@ -208,7 +208,7 @@ def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: boo
     restore_tty()
     chat_loop()
 
-if __name__ == "__main__":
+def main():
     if not DEEPSEEK_API_KEY:
         print("❌ 错误: 未设置 DEEPSEEK_API_KEY 环境变量", file=sys.stderr)
         sys.exit(1)
@@ -257,3 +257,6 @@ if __name__ == "__main__":
        sys.exit(1)
     except Exception as e:
         print(f"\n❌ 发生错误: {e}")
+
+if __name__ == "__main__":
+    main()        
