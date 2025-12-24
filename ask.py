@@ -13,7 +13,7 @@ import subprocess
 # 配置API参数
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_MODEL = "deepseek-chat"
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_API_URL = "https://api.deepseek.com"
 
 # 系统问答工具助手提示词
 SYSTEM_PROMPT_ASK = """你是一个终端问答工具助手。你的特点是：
@@ -69,7 +69,7 @@ def get_streaming_response(prompt: str) -> str:
 
     assistant_message = ""
 
-    with requests.post(DEEPSEEK_API_URL, headers=headers, json=data, stream=True) as response:
+    with requests.post(f"{DEEPSEEK_API_URL}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ""
@@ -213,7 +213,6 @@ def chat_loop():
         
         sanitize_memory()    
         
-
 def restore_tty():
     """重新打开 stdin 用于交互"""
     if sys.stdin.isatty():
