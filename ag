@@ -39,23 +39,19 @@ SYSTEM_PROMPT_TRANSLATE = """你是一个专业的终端英语翻译工具。严
 computer [kəmˈpjuːtə(r)] [kəmˈpjuːtər]
 n. 计算机，电脑
 """
-class agent_mode(Enum):
-    ASK = auto()
-    TRANSLATE = auto()
 
-    def is_translate(self) -> bool:
-        return self == agent_mode.TRANSLATE
-
-current_mode = agent_mode.ASK    
+ASK = 0         # 问答模式
+TRANSLATE = 1   # 翻译模式
+current_mode: int = ASK    
 # 对话历史缓冲
 messages: List[Dict[str, str]] = []
 # 是否不记忆上下文
 no_memory = False
 
-def init_system_prompt(translate_mode: bool = False):
+def init_system_prompt(mode: int = ASK):
     """初始化系统提示词"""
     messages.clear()
-    system_prompt = SYSTEM_PROMPT_TRANSLATE if translate_mode else SYSTEM_PROMPT_ASK
+    system_prompt = SYSTEM_PROMPT_TRANSLATE if mode == TRANSLATE else SYSTEM_PROMPT_ASK
     messages.append({"role": "system", "content": system_prompt})
 
 def get_streaming_response(prompt: str) -> str:
@@ -103,21 +99,21 @@ def command(command: str) -> bool:
     
     # 进入翻译模式
     if command == '/e':
-        current_mode = agent_mode.TRANSLATE
-        init_system_prompt(translate_mode=True)
+        current_mode = TRANSLATE
+        init_system_prompt(current_mode)
         print("✅ 已进入翻译模式\n")
         return
     
     # 进入问答模式
     if command == '/ask':
-        current_mode = agent_mode.ASK
-        init_system_prompt(translate_mode=False)
+        current_mode = ASK
+        init_system_prompt(current_mode)
         print("✅ 已进入问答模式\n")
         return
     
     # 清空对话历史
     if command == '/reset':
-        init_system_prompt(translate_mode=current_mode.is_translate())
+        init_system_prompt(current_mode)
         print("✅ 已清空对话历史\n")
         return
     
@@ -187,7 +183,14 @@ def ask(question: str) -> str:
     # 将助手回复添加到消息列表
     messages.append({"role": "assistant", "content": answer})
     return answer   
-   
+
+def sanitize_memory():
+    """根据当前模式和设置清理对话历史"""
+    # 检查是否需要清理
+    if current_mode == TRANSLATE or no_memory:
+        init_system_prompt(current_mode)  # 重新初始化系统提示词
+
+
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
@@ -206,13 +209,7 @@ def chat_loop():
         # 获取回答并打印
         ask(user_input)
         
-        # 翻译模式下，每次回答后清除消息历史（保留系统提示词）
-        if current_mode.is_translate():
-            init_system_prompt(translate_mode=True) 
-
-        # 如果启用不记忆模式，清空历史（保留系统提示词）
-        if no_memory:
-            init_system_prompt(translate_mode=current_mode.is_translate())    
+        sanitize_memory()    
         
 
 def restore_tty():
@@ -293,13 +290,12 @@ def main():
     
     args = parser.parse_args()
 
-    # 初始化系统提示词
-    init_system_prompt(args.translate)
-    
     # 更新当前模式
-    if args.translate:
-        global current_mode
-        current_mode = agent_mode.TRANSLATE
+    global current_mode
+    current_mode = args.translate
+
+    # 初始化系统提示词
+    init_system_prompt(current_mode)
     
     # 设置不记忆模式
     global no_memory
