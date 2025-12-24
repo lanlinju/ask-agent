@@ -117,7 +117,7 @@ def command(command: str) -> bool:
     
     # 清空对话历史
     if command == '/reset':
-        raise Exception("NotImplementedError")
+        init_system_prompt(translate_mode=current_mode.is_translate())
         print("✅ 已清空对话历史\n")
         return
     
@@ -186,11 +186,6 @@ def ask(question: str) -> str:
     answer =  get_streaming_response(question)
     # 将助手回复添加到消息列表
     messages.append({"role": "assistant", "content": answer})
-    
-    # 如果启用不记忆模式，清空历史（保留系统提示词）
-    if no_memory:
-        init_system_prompt(translate_mode=current_mode.is_translate())
-    
     return answer   
    
 def chat_loop():
@@ -214,6 +209,10 @@ def chat_loop():
         # 翻译模式下，每次回答后清除消息历史（保留系统提示词）
         if current_mode.is_translate():
             init_system_prompt(translate_mode=True) 
+
+        # 如果启用不记忆模式，清空历史（保留系统提示词）
+        if no_memory:
+            init_system_prompt(translate_mode=current_mode.is_translate())    
         
 
 def restore_tty():
