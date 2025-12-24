@@ -143,7 +143,7 @@ positional arguments:
 optional arguments:
   -q, --quit           一问一答模式，回答后直接退出
   -a, --after          管道模式中，回答后进入连续对话模式
-  -e, --translation    进入翻译模式
+  -e, --translate      进入翻译模式
 ```
 
 ## 使用示例

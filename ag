@@ -23,7 +23,7 @@ SYSTEM_PROMPT_ASK = """你是一个终端问答工具助手。你的特点是：
 4. 避免冗长的解释，用户更在乎可用的答案
 5. 如果是多行的输出或代码，用清晰的格式展示"""
 # 系统翻译提示词
-SYSTEM_PROMPT_TRANSLATION = """你是一个专业的终端英语翻译工具。严格遵守以下规则：
+SYSTEM_PROMPT_TRANSLATE = """你是一个专业的终端英语翻译工具。严格遵守以下规则：
 1. 将英语句子翻译成中文
 2. 将中文句子翻译成英语
 3. 英语单词，翻译时给出音标，给出常见释义
@@ -41,10 +41,10 @@ n. 计算机，电脑
 # 对话历史缓冲
 messages: List[Dict[str, str]] = []
 
-def init_system_prompt(translation_mode: bool = False):
+def init_system_prompt(translate_mode: bool = False):
     """初始化系统提示词"""
     messages.clear()
-    system_prompt = SYSTEM_PROMPT_TRANSLATION if translation_mode else SYSTEM_PROMPT_ASK
+    system_prompt = SYSTEM_PROMPT_TRANSLATE if translate_mode else SYSTEM_PROMPT_ASK
     messages.append({"role": "system", "content": system_prompt})
 
 def get_streaming_response(prompt: str) -> str:
@@ -90,13 +90,13 @@ def command(command: str) -> bool:
     
     # 进入翻译模式
     if command == '/e':
-        init_system_prompt(translation_mode=True)
+        init_system_prompt(translate_mode=True)
         print("✅ 已进入翻译模式\n")
         return
     
     # 进入问答模式
     if command == '/ask':
-        init_system_prompt(translation_mode=False)
+        init_system_prompt(translate_mode=False)
         print("✅ 已进入问答模式\n")
         return
 
@@ -233,7 +233,7 @@ def main():
         help="管道模式中，回答后进入连续对话模式"
     )
     parser.add_argument(
-        "-e", "--translation",
+        "-e", "--translate",
         action="store_true",
         help="进入翻译模式"
     )
@@ -241,7 +241,7 @@ def main():
     args = parser.parse_args()
 
     # 初始化系统提示词
-    init_system_prompt(args.translation)
+    init_system_prompt(args.translate)
 
     # 将多个参数连接成一个字符串
     query = " ".join(args.query) if args.query else None
