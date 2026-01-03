@@ -97,6 +97,39 @@ TOOLS = [
 ]
 
 
+def merge_arguments(tool_calls_collected: List) -> List:
+    if not tool_calls_collected:
+        return []
+    
+    tool_calls_by_index = {}
+    
+    for tool_call in tool_calls_collected:
+        index = tool_call.get("index", 0)
+        
+        if index not in tool_calls_by_index:
+            tool_calls_by_index[index] = {
+                "id": "",
+                "type": "function",
+                "function": {"name": "", "arguments": ""}
+            }
+        
+        current = tool_calls_by_index[index]
+        
+        if "id" in tool_call:
+            current["id"] = tool_call["id"]
+        if "function" in tool_call:
+            func = tool_call["function"]
+            if func.get("name"):
+                current["function"]["name"] = func["name"]
+            if func.get("arguments"):
+                current["function"]["arguments"] += func["arguments"]
+    
+    result = [tool_calls_by_index[i] for i in sorted(tool_calls_by_index.keys())]
+    logger.info("最终工具调用:\n%s", json.dumps(result, indent=2))
+    
+    return result
+
+
 def get_streaming_response(prompt: str) -> str:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
     headers = {
@@ -146,19 +179,8 @@ def get_streaming_response(prompt: str) -> str:
 
     # logger.info("完整回答: %s", tool_calls_collected)
     # 处理工具调用（如果有的话）
-    if tool_calls_collected:
-        current_tool_call = {"id": "", "type": "function",
-            "function": {"name": "", "arguments": ""}}
-        for tool_call in tool_calls_collected:
-            if tool_call.get("index") == 0:  # 假设只有一个工具调用
-                if "id" in tool_call:
-                        current_tool_call["id"] = tool_call["id"]
-                        current_tool_call["function"]["name"] = tool_call["function"]["name"]
-                if "function" in tool_call:
-                    if tool_call["function"]["arguments"]:
-                        current_tool_call["function"]["arguments"] += tool_call["function"]["arguments"]
+    merge_arguments(tool_calls_collected)
 
-    logger.info("最终工具调用:\n%s", json.dumps(current_tool_call, indent=2))           
     return collected_content
 
 
