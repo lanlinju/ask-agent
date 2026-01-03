@@ -396,6 +396,11 @@ def main():
         help="进入翻译模式"
     )
     parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="进入智能体模式"
+    )
+    parser.add_argument(
         "-n", "--no-memory",
         action="store_true",
         help="不记忆上下文，每次问答后只保留系统提示词"
@@ -434,7 +439,12 @@ def main():
 
     # 更新当前模式
     global current_mode
-    current_mode = args.translate
+    if args.agent:
+        current_mode = AGENT
+    elif args.translate:
+        current_mode = TRANSLATE
+    else:
+        current_mode = ASK
 
     # 初始化系统提示词
     init_system_prompt(current_mode)
