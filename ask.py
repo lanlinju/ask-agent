@@ -8,8 +8,9 @@ from typing import List, Dict
 import argparse
 import subprocess
 import logging
+from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # Ask Agent
@@ -368,6 +369,8 @@ def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: boo
 
 
 def main():
+    load_dotenv()
+
     parser = argparse.ArgumentParser(
         description="Ask Agent - DeepSeek 问答客户端",
         prog="ag"
@@ -402,8 +405,18 @@ def main():
         type=str,
         help="DeepSeek API 密钥（如果不提供，将使用 DEEPSEEK_API_KEY 环境变量）"
     )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default=os.getenv("LOG_LEVEL", "ERROR"),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="设置日志级别（默认: ERROR，可通过 .env 文件的 LOG_LEVEL 配置）"
+    )
 
     args = parser.parse_args()
+
+    # 设置日志级别
+    logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
 
     # 设置 API 密钥
     global DEEPSEEK_API_KEY
