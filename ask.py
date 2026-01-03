@@ -38,9 +38,18 @@ SYSTEM_PROMPT_TRANSLATE = """你是一个专业的终端英语翻译工具。严
 computer [kəmˈpjuːtə(r)] [kəmˈpjuːtər]
 n. 计算机，电脑
 """
+# 系统智能体提示词
+SYSTEM_PROMPT_AGENT = """你是一个智能体助手。你的特点是：
+1. 具有自主思考和多步推理能力
+2. 能够分解复杂任务，制定执行计划
+3. 可以使用工具和命令来完成任务
+4. 提供详细的分析和解决方案
+5. 在执行任务时会主动思考每一步
+"""
 
 ASK = 0         # 问答模式
 TRANSLATE = 1   # 翻译模式
+AGENT = 2       # 智能体模式
 current_mode: int = ASK    
 # 对话历史缓冲
 messages: List[Dict[str, str]] = []
@@ -50,7 +59,12 @@ memory = True
 def init_system_prompt(mode: int = ASK):
     """初始化系统提示词"""
     messages.clear()
-    system_prompt = SYSTEM_PROMPT_TRANSLATE if mode == TRANSLATE else SYSTEM_PROMPT_ASK
+    if mode == TRANSLATE:
+        system_prompt = SYSTEM_PROMPT_TRANSLATE
+    elif mode == AGENT:
+        system_prompt = SYSTEM_PROMPT_AGENT
+    else:
+        system_prompt = SYSTEM_PROMPT_ASK
     messages.append({"role": "system", "content": system_prompt})
 
 def get_streaming_response(prompt: str) -> str:
@@ -110,6 +124,13 @@ def command(command: str):
         print("✅ 已进入问答模式\n")
         return
     
+    # 进入智能体模式
+    if command == '/agent':
+        current_mode = AGENT
+        init_system_prompt(current_mode)
+        print("✅ 已进入智能体模式\n")
+        return
+    
     # 清空对话历史
     if command == '/reset':
         init_system_prompt(current_mode)
@@ -127,14 +148,15 @@ def command(command: str):
 def show_help():
     """显示帮助信息"""
     help_text = """
-📖 Ask Agent 命令帮助
-🔹 交互模式命令：
-  /ask          - 进入问答模式
-  /e            - 进入翻译模式
-  /reset        - 清空当前对话历史
-  /help         - 显示此帮助信息
-  /shell args   - 执行shell命令（如 /ls, /pwd, /cat file.txt）
-  exit          - 退出程序
+ 📖 Ask Agent 命令帮助
+ 🔹 交互模式命令：
+   /ask          - 进入问答模式
+   /agent        - 进入智能体模式
+   /e            - 进入翻译模式
+   /reset        - 清空当前对话历史
+   /help         - 显示此帮助信息
+   /shell args   - 执行shell命令（如 /ls, /pwd, /cat file.txt）
+   exit          - 退出程序
 """
     print(help_text)
 
@@ -185,7 +207,7 @@ def ask(question: str) -> str:
 
 def sanitize_memory():
     """翻译模式或不记忆模式时清理对话历史"""
-    # 检查是否需要清理
+    # 检查是否需要清理（智能体模式保留记忆）
     if current_mode == TRANSLATE or not memory:
         init_system_prompt(current_mode)  # 重新初始化系统提示词
 
