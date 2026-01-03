@@ -7,6 +7,10 @@ import json
 from typing import List, Dict
 import argparse
 import subprocess
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 # Ask Agent
 
@@ -39,22 +43,22 @@ computer [kəmˈpjuːtə(r)] [kəmˈpjuːtər]
 n. 计算机，电脑
 """
 # 系统智能体提示词
-SYSTEM_PROMPT_AGENT = """你是一个智能体助手。你的特点是：
-1. 具有自主思考和多步推理能力
-2. 能够分解复杂任务，制定执行计划
-3. 可以使用工具和命令来完成任务
-4. 提供详细的分析和解决方案
-5. 在执行任务时会主动思考每一步
-"""
+SYSTEM_PROMPT_AGENT = f"""You are a CLI agent at {os.getcwd()}. Solve problems using bash commands.
+
+Rules:
+- Prefer tools over prose. Act first, explain briefly after.
+- Read files: cat, grep, find, rg, ls, head, tail
+- Write files: echo '...' > file, sed -i, or cat << 'EOF' > fil"""
 
 ASK = 0         # 问答模式
 TRANSLATE = 1   # 翻译模式
 AGENT = 2       # 智能体模式
-current_mode: int = ASK    
+current_mode: int = ASK
 # 对话历史缓冲
 messages: List[Dict[str, str]] = []
 # 问答模式是否记忆上下文
 memory = True
+
 
 def init_system_prompt(mode: int = ASK):
     """初始化系统提示词"""
@@ -67,6 +71,32 @@ def init_system_prompt(mode: int = ASK):
         system_prompt = SYSTEM_PROMPT_ASK
     messages.append({"role": "system", "content": system_prompt})
 
+# ========== 工具 ==========
+
+
+def bash_tool(command: str) -> str:
+    """执行 bash 命令并返回 stdout/stderr"""
+    pass
+
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Execute bash shell command on the local machine.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The bash command to execute."}
+                },
+                "required": ["command"]
+            }
+        }
+    }
+]
+
+
 def get_streaming_response(prompt: str) -> str:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
     headers = {
@@ -78,10 +108,13 @@ def get_streaming_response(prompt: str) -> str:
     data = {
         "model": DEEPSEEK_MODEL,
         "messages": messages,
+        "tools": TOOLS,
+        "tool_choice": "auto",
         "stream": True
     }
 
-    assistant_message = ""
+    collected_content = ""
+    tool_calls_collected = []
 
     with requests.post(f"{DEEPSEEK_API_URL}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
         if response.status_code != 200:
@@ -90,53 +123,79 @@ def get_streaming_response(prompt: str) -> str:
         for chunk in response.iter_lines():
             if chunk:
                 decoded = chunk.decode('utf-8')
-                if decoded.startswith("data:"):
-                    try:
-                        data = json.loads(decoded[5:])
-                        if "choices" in data and data["choices"][0]["delta"].get("content"):
-                            content = data["choices"][0]["delta"]["content"]
-                            assistant_message += content
+                if not decoded.startswith("data:"):
+                    continue
+                try:
+                    data = json.loads(decoded[6:])  # 去掉 "data: " 前缀
+                    if "choices" in data and data["choices"][0]["delta"]:
+                        delta = data["choices"][0]["delta"]
+                        # 文本内容
+                        if delta.get("content"):
+                            content = delta["content"]
+                            collected_content += content
                             print(content, end='', flush=True)
-                    except json.JSONDecodeError:                                
-                       continue        
+                        # 工具调用
+                        if delta.get("tool_calls"):
+                            tool_call = delta["tool_calls"]
+                            logger.info("工具调用: %s", tool_call)
+                            tool_calls_collected.append(tool_call[0])
+
+                except json.JSONDecodeError:
+                    continue
         print('\n')  # 换行
 
-    return assistant_message
+    # logger.info("完整回答: %s", tool_calls_collected)
+    # 处理工具调用（如果有的话）
+    if tool_calls_collected:
+        current_tool_call = {"id": "", "type": "function",
+            "function": {"name": "", "arguments": ""}}
+        for tool_call in tool_calls_collected:
+            if tool_call.get("index") == 0:  # 假设只有一个工具调用
+                if "id" in tool_call:
+                        current_tool_call["id"] = tool_call["id"]
+                        current_tool_call["function"]["name"] = tool_call["function"]["name"]
+                if "function" in tool_call:
+                    if tool_call["function"]["arguments"]:
+                        current_tool_call["function"]["arguments"] += tool_call["function"]["arguments"]
+
+    logger.info("最终工具调用:\n%s", json.dumps(current_tool_call, indent=2))           
+    return collected_content
+
 
 def command(command: str):
     """处理命令"""
     global current_mode
-    
+
     if command == 'exit':
         sys.exit(0)
-    
+
     # 进入翻译模式
     if command == '/e':
         current_mode = TRANSLATE
         init_system_prompt(current_mode)
         print("✅ 已进入翻译模式\n")
         return
-    
+
     # 进入问答模式
     if command == '/ask':
         current_mode = ASK
         init_system_prompt(current_mode)
         print("✅ 已进入问答模式\n")
         return
-    
+
     # 进入智能体模式
     if command == '/agent':
         current_mode = AGENT
         init_system_prompt(current_mode)
         print("✅ 已进入智能体模式\n")
         return
-    
+
     # 清空对话历史
     if command == '/reset':
         init_system_prompt(current_mode)
         print("✅ 已清空对话历史\n")
         return
-    
+
     # 显示帮助
     if command == '/help':
         show_help()
@@ -144,6 +203,7 @@ def command(command: str):
 
     # 处理shell命令
     shell(command[1:])  # 提取命令，去掉前面的 /
+
 
 def show_help():
     """显示帮助信息"""
@@ -160,6 +220,7 @@ def show_help():
 """
     print(help_text)
 
+
 def exec(cmd: str) -> str:
     """执行shell命令并返回输出"""
     try:
@@ -167,43 +228,46 @@ def exec(cmd: str) -> str:
         result = subprocess.run(
             cmd,
             shell=True,
-            stdout= subprocess.PIPE,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # 将stderr重定向到stdout
             text=True,
             timeout=10
         )
-        
+
         output = result.stdout
-        
+
         return output.strip() if output else "(无输出)"
     except subprocess.TimeoutExpired:
         return "❌ 命令执行超时"
     except Exception as e:
         return f"❌ 命令执行错误: {str(e)}"
-    
+
+
 def shell(cmd: str):
     """处理shell命令，添加到历史并执行"""
     # 将命令添加到消息历史
     messages.append({"role": "user", "content": f"执行shell命令: {cmd}"})
-    
+
     # 执行命令
     output = exec(cmd)
-    
+
     # 输出到终端
     print(output)
-    
+
     # 将输出添加到消息历史
     messages.append({"role": "user", "content": f"Shell命令执行结果:\n{output}"})
+
 
 def ask(question: str) -> str:
     """处理普通问题，添加到历史并获取回答"""
     # 将用户新消息添加到消息列表
     messages.append({"role": "user", "content": question})
     # 调用API获取流式响应
-    answer =  get_streaming_response(question)
+    answer = get_streaming_response(question)
     # 将助手回复添加到消息列表
     messages.append({"role": "assistant", "content": answer})
-    return answer   
+    return answer
+
 
 def sanitize_memory():
     """翻译模式或不记忆模式时清理对话历史"""
@@ -211,9 +275,11 @@ def sanitize_memory():
     if current_mode == TRANSLATE or not memory:
         init_system_prompt(current_mode)  # 重新初始化系统提示词
 
+
 def is_command(command: str) -> bool:
     """检查输入是否为命令"""
     return command.startswith('/') or command.lower() == 'exit'
+
 
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
@@ -224,17 +290,18 @@ def chat_loop():
             continue
 
         # 处理特殊命令
-        if is_command(user_input):    
-            command(user_input.lower()) 
+        if is_command(user_input):
+            command(user_input.lower())
             continue
-        
+
         print("\n🤖 Assistant: ", flush=True)
 
         # 获取回答并打印
         ask(user_input)
-        
-        sanitize_memory()    
-        
+
+        sanitize_memory()
+
+
 def restore_tty():
     """重新打开 stdin 用于交互"""
     if sys.stdin.isatty():
@@ -244,14 +311,15 @@ def restore_tty():
     else:
         sys.stdin = open('CON', 'r')
 
+
 def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: bool = False):
     """管道模式：支持管道输入 + 额外问题组合"""
     stdin_input = None
-    
+
     # 检查是否有来自管道的输入
     if not sys.stdin.isatty():
         stdin_input = sys.stdin.read().strip()
-    
+
     # 组合管道输入和命令行参数
     if stdin_input and prompt:
         # 如果既有管道输入又有参数，组合它们
@@ -266,15 +334,16 @@ def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: boo
         # 都没有
         print("❌ 错误: 需要提供输入内容", file=sys.stderr)
         sys.exit(1)
-    
+
     ask(combined_prompt)
-        
+
     # 如果启用连续对话，则进入交互模式
     if not continue_conversation and not (prompt and not quit):
         return
-    
+
     restore_tty()
     chat_loop()
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -311,16 +380,17 @@ def main():
         type=str,
         help="DeepSeek API 密钥（如果不提供，将使用 DEEPSEEK_API_KEY 环境变量）"
     )
-    
+
     args = parser.parse_args()
 
     # 设置 API 密钥
     global DEEPSEEK_API_KEY
     if args.api_key:
         DEEPSEEK_API_KEY = args.api_key
-    
+
     if not DEEPSEEK_API_KEY:
-        print("❌ 错误: 未设置 API 密钥。请使用 --api-key 参数或设置 DEEPSEEK_API_KEY 环境变量", file=sys.stderr)
+        print("❌ 错误: 未设置 API 密钥。请使用 --api-key 参数或设置 DEEPSEEK_API_KEY 环境变量",
+              file=sys.stderr)
         sys.exit(1)
 
     # 设置记忆模式
@@ -336,7 +406,7 @@ def main():
 
     # 将多个参数连接成一个字符串
     query = " ".join(args.query) if args.query else None
-    
+
     try:
         # 如果提供了查询或输入来自管道，使用管道模式
         if query or (not sys.stdin.isatty()):
@@ -345,9 +415,11 @@ def main():
             # 否则进入交互模式
             chat_loop()
     except (KeyboardInterrupt, EOFError):
-       sys.exit(1)
+        sys.exit(1)
     except Exception as e:
         print(f"\n❌ 发生错误: {e}")
 
+
 if __name__ == "__main__":
-    main()        
+    logger.info("Starting Ask Agent...")
+    main()
