@@ -56,7 +56,7 @@ TRANSLATE = 1   # 翻译模式
 AGENT = 2       # 智能体模式
 current_mode: int = ASK
 # 对话历史缓冲
-messages: List[Dict[str, str]] = []
+messages: List[Dict[str, str | List]] = []
 # 问答模式是否记忆上下文
 memory = True
 
@@ -77,7 +77,8 @@ def init_system_prompt(mode: int = ASK):
 
 def bash_tool(command: str) -> str:
     """执行 bash 命令并返回 stdout/stderr"""
-    pass
+    print(f"\033[33m$ {command}\033[0m")
+    return exec(command)
 
 
 TOOLS = [
@@ -101,21 +102,21 @@ TOOLS = [
 def merge_arguments(tool_calls_collected: List) -> List:
     if not tool_calls_collected:
         return []
-    
+
     tool_calls_by_index = {}
-    
+
     for tool_call in tool_calls_collected:
         index = tool_call.get("index", 0)
-        
+
         if index not in tool_calls_by_index:
             tool_calls_by_index[index] = {
                 "id": "",
                 "type": "function",
                 "function": {"name": "", "arguments": ""}
             }
-        
+
         current = tool_calls_by_index[index]
-        
+
         if "id" in tool_call:
             current["id"] = tool_call["id"]
         if "function" in tool_call:
@@ -124,14 +125,15 @@ def merge_arguments(tool_calls_collected: List) -> List:
                 current["function"]["name"] = func["name"]
             if func.get("arguments"):
                 current["function"]["arguments"] += func["arguments"]
-    
-    result = [tool_calls_by_index[i] for i in sorted(tool_calls_by_index.keys())]
-    logger.info("最终工具调用:\n%s", json.dumps(result, indent=2))
-    
+
+    result = [tool_calls_by_index[i]
+              for i in sorted(tool_calls_by_index.keys())]
+    logger.info("merge arguments result:\n%s", json.dumps(result, indent=2))
+
     return result
 
 
-def get_streaming_response(prompt: str) -> str:
+def get_streaming_response(prompt: str) -> tuple[str, List]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -153,7 +155,7 @@ def get_streaming_response(prompt: str) -> str:
     with requests.post(f"{DEEPSEEK_API_URL}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
-            return ""
+            return ("", [])
         for chunk in response.iter_lines():
             if chunk:
                 decoded = chunk.decode('utf-8')
@@ -170,19 +172,18 @@ def get_streaming_response(prompt: str) -> str:
                             print(content, end='', flush=True)
                         # 工具调用
                         if delta.get("tool_calls"):
-                            tool_call = delta["tool_calls"]
-                            logger.info("工具调用: %s", tool_call)
-                            tool_calls_collected.append(tool_call[0])
+                            tool_calls = delta["tool_calls"]
+                            logger.info("tool delta: %s", tool_calls)
+                            for tool_call in tool_calls:
+                                tool_calls_collected.append(tool_call)
 
                 except json.JSONDecodeError:
                     continue
         print('\n')  # 换行
 
     # logger.info("完整回答: %s", tool_calls_collected)
-    # 处理工具调用（如果有的话）
-    merge_arguments(tool_calls_collected)
 
-    return collected_content
+    return (collected_content, merge_arguments(tool_calls_collected))
 
 
 def command(command: str):
@@ -281,15 +282,32 @@ def shell(cmd: str):
     messages.append({"role": "user", "content": f"Shell命令执行结果:\n{output}"})
 
 
-def ask(question: str) -> str:
+def agent(prompt: str):
     """处理普通问题，添加到历史并获取回答"""
     # 将用户新消息添加到消息列表
-    messages.append({"role": "user", "content": question})
+    messages.append({"role": "user", "content": prompt})
     # 调用API获取流式响应
-    answer = get_streaming_response(question)
+    content, tool_calls = get_streaming_response(prompt)
+
+    # 处理工具调用（如果有的话）
+    if tool_calls:
+        # 如果没有工具调用，直接返回回答
+        meassage = {"role": "assistant",
+                    "content": content, "tool_calls": tool_calls}
+        messages.append(meassage)
+        logger.info("Add tool_calls: %s", meassage)
+        for tool_call in tool_calls:
+            args = json.loads(tool_call['function']['arguments'])
+            output = bash_tool(**args)
+            # 将工具执行结果添加到消息列表
+            # Truncate very long outputs
+            meassage = {
+                "role": "tool", "tool_call_id": tool_call["id"], "content": output[:50000]}
+            logger.info("Add tool output: %s", meassage)
+            messages.append(messages)
+        return
     # 将助手回复添加到消息列表
-    messages.append({"role": "assistant", "content": answer})
-    return answer
+    messages.append({"role": "assistant", "content": content})
 
 
 def sanitize_memory():
@@ -320,7 +338,7 @@ def chat_loop():
         print("\n🤖 Assistant: ", flush=True)
 
         # 获取回答并打印
-        ask(user_input)
+        agent(user_input)
 
         sanitize_memory()
 
@@ -335,7 +353,7 @@ def restore_tty():
         sys.stdin = open('CON', 'r')
 
 
-def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: bool = False):
+def pipe_mode(prompt: str | None = None, quit: bool = False, continue_conversation: bool = False):
     """管道模式：支持管道输入 + 额外问题组合"""
     stdin_input = None
 
@@ -358,7 +376,7 @@ def pipe_mode(prompt: str = None, quit: bool = False, continue_conversation: boo
         print("❌ 错误: 需要提供输入内容", file=sys.stderr)
         sys.exit(1)
 
-    ask(combined_prompt)
+    agent(combined_prompt)
 
     # 如果启用连续对话，则进入交互模式
     if not continue_conversation and not (prompt and not quit):
