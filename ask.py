@@ -769,9 +769,7 @@ def command(command: str):
     if command == '/agent':
         current_mode = AGENT
         init_system_prompt(current_mode)
-        print("✅ 已进入智能体模式")
-        print(f"📚 可用 Skills: {', '.join(SKILLS.list_skills())}")
-        print(f"🤖 可用 Agents: {', '.join(AGENT_TYPES.keys())}\n")
+        print("✅ 已进入智能体模式\n")
         return
 
     # 清空对话历史
@@ -906,12 +904,20 @@ def is_command(command: str) -> bool:
     """检查输入是否为命令"""
     return command.startswith('/') or command.lower() == 'exit'
 
-
+def get_mode_prompt() -> str:
+    """获取当前模式的提示符"""
+    if current_mode == TRANSLATE:
+        return "💬^ (Translate)"
+    elif current_mode == AGENT:
+        return "💬^ (Agent)"
+    else:
+        return "💬^ (Ask)"
+    
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
     while True:
-        user_input = input("💬^ :\n").strip()
+        user_input = input(f"{get_mode_prompt()}:\n").strip()
         if not user_input:
             continue
 
