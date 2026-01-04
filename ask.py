@@ -9,8 +9,9 @@ import argparse
 import subprocess
 import logging
 from dotenv import load_dotenv
+from pathlib import Path
 
-logging.basicConfig(format="%(levelname)s: %(message)s")
+logging.basicConfig(format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 # Ask Agent
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_MODEL = "deepseek-chat"
 DEEPSEEK_API_URL = "https://api.deepseek.com"
+WORKDIR = Path.cwd()
 
 # 系统问答工具助手提示词
 SYSTEM_PROMPT_ASK = """你是一个终端问答工具助手。你的特点是：
@@ -44,12 +46,15 @@ computer [kəmˈpjuːtə(r)] [kəmˈpjuːtər]
 n. 计算机，电脑
 """
 # 系统智能体提示词
-SYSTEM_PROMPT_AGENT = f"""You are a CLI agent at {os.getcwd()}. Solve problems using bash commands.
+SYSTEM_PROMPT_AGENT = f"""You are a coding agent at {WORKDIR}.
+
+Loop: think briefly -> use tools -> report results.
 
 Rules:
-- Prefer tools over prose. Act first, explain briefly after.
-- Read files: cat, grep, find, rg, ls, head, tail
-- Write files: echo '...' > file, sed -i, or cat << 'EOF' > fil"""
+- Prefer tools over prose. Act, don't just explain.
+- Never invent file paths. Use bash ls/find first if unsure.
+- Make minimal changes. Don't over-engineer.
+- After finishing, summarize what changed."""
 
 ASK = 0         # 问答模式
 TRANSLATE = 1   # 翻译模式
@@ -75,28 +80,186 @@ def init_system_prompt(mode: int = ASK):
 # ========== 工具 ==========
 
 
-def bash_tool(command: str) -> str:
-    """执行 bash 命令并返回 stdout/stderr"""
-    print(f"\033[33m$ {command}\033[0m")
-    return exec(command)
-
-
 TOOLS = [
+    # Tool 1: Bash - The gateway to everything
+    # Can run any command: git, npm, python, curl, etc.
     {
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Execute bash shell command on the local machine.",
+            "description": "Run a shell command. Use for: ls, find, grep, git, npm, python, etc.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "The bash command to execute."}
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to execute"
+                    }
                 },
-                "required": ["command"]
-            }
-        }
-    }
+                "required": ["command"],
+            },
+        },
+    },
+
+    # Tool 2: Read File - For understanding existing code
+    # Returns file content with optional line limit for large files
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read file contents. Returns UTF-8 text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to the file"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max lines to read (default: all)"
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+
+    # Tool 3: Write File - For creating new files or complete rewrites
+    # Creates parent directories automatically
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write content to a file. Creates parent directories if needed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path for the file"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content to write"
+                    },
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+
+    # Tool 4: Edit File - For surgical changes to existing code
+    # Uses exact string matching for precise edits
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "Replace exact text in a file. Use for surgical edits.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to the file"
+                    },
+                    "old_text": {
+                        "type": "string",
+                        "description": "Exact text to find (must match precisely)"
+                    },
+                    "new_text": {
+                        "type": "string",
+                        "description": "Replacement text"
+                    },
+                },
+                "required": ["path", "old_text", "new_text"],
+            },
+        },
+    },
 ]
+
+
+def run_bash(command: str) -> str:
+    """执行 bash 命令并返回 stdout/stderr"""
+    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
+    if any(d in command for d in dangerous):
+        return "Error: Dangerous command blocked"
+    
+    print(f"\033[33m$ {command}\033[0m")
+    return exec(command)
+
+
+def safe_path(p: str) -> Path:
+    # 1. 拼接：WORKDIR / "relative/path"
+    # 2. 解析：处理所有 ../ 和符号链接，得到绝对路径
+    path = (WORKDIR / p).resolve()
+
+    # 3. 验证：绝对路径是否还在工作空间内
+    if not path.is_relative_to(WORKDIR):
+        raise ValueError(f"Path escapes workspace: {p}")
+
+    return path
+
+
+def run_read(path: str, limit: int = 0) -> str:
+    """
+    Read file contents with optional line limit.
+
+    For large files, use limit to read just the first N lines.
+    Output truncated to 50KB to prevent context overflow.
+    """
+    try:
+        text = safe_path(path).read_text()
+        lines = text.splitlines()
+
+        if limit and limit < len(lines):
+            lines = lines[:limit]
+            lines.append(f"... ({len(text.splitlines()) - limit} more lines)")
+
+        return "\n".join(lines)[:50000]
+
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def run_write(path: str, content: str) -> str:
+    """
+    Write content to file, creating parent directories if needed.
+
+    This is for complete file creation/overwrite.
+    For partial edits, use edit_file instead.
+    """
+    try:
+        fp = safe_path(path)
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text(content)
+        return f"Wrote {len(content)} bytes to {path}"
+
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def run_edit(path: str, old_text: str, new_text: str) -> str:
+    """
+    Replace exact text in a file (surgical edit).
+
+    Uses exact string matching - the old_text must appear verbatim.
+    Only replaces the first occurrence to prevent accidental mass changes.
+    """
+    try:
+        fp = safe_path(path)
+        content = fp.read_text()
+
+        if old_text not in content:
+            return f"Error: Text not found in {path}"
+
+        # Replace only first occurrence for safety
+        new_content = content.replace(old_text, new_text, 1)
+        fp.write_text(new_content)
+        return f"Edited {path}"
+
+    except Exception as e:
+        return f"Error: {e}"
 
 
 def merge_arguments(tool_calls_collected: List) -> List:
@@ -131,6 +294,18 @@ def merge_arguments(tool_calls_collected: List) -> List:
     logger.info("merge arguments result:\n%s", json.dumps(result, indent=2))
 
     return result
+
+
+def execute_tool(name: str, args: dict) -> str:
+    if name == "bash":
+        return run_bash(args["command"])
+    if name == "read_file":
+        return run_read(args["path"], args.get("limit") or 0)
+    if name == "write_file":
+        return run_write(args["path"], args["content"])
+    if name == "edit_file":
+        return run_edit(args["path"], args["old_text"], args["new_text"])
+    return f"Unknown tool: {name}"
 
 
 def get_streaming_response(prompt: str) -> tuple[str, List]:
@@ -252,6 +427,7 @@ def exec(cmd: str) -> str:
         result = subprocess.run(
             cmd,
             shell=True,
+            cwd=WORKDIR,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # 将stderr重定向到stdout
             text=True,
@@ -260,7 +436,7 @@ def exec(cmd: str) -> str:
 
         output = result.stdout
 
-        return output.strip() if output else "(无输出)"
+        return output[:50000].strip() if output else "(无输出)"
     except subprocess.TimeoutExpired:
         return "❌ 命令执行超时"
     except Exception as e:
@@ -283,32 +459,38 @@ def shell(cmd: str):
 
 
 def agent(prompt: str):
-    """处理普通问题，添加到历史并获取回答"""
+    """处理问题，添加到历史并获取回答"""
     # 将用户新消息添加到消息列表
     messages.append({"role": "user", "content": prompt})
-    # 调用API获取流式响应
-    content, tool_calls = get_streaming_response(prompt)
+    while True:
+        # 调用API获取流式响应
+        content, tool_calls = get_streaming_response(prompt)
 
-    # 处理工具调用（如果有的话）
-    if tool_calls:
-        # 如果没有工具调用，直接返回回答
-        meassage = {"role": "assistant",
-                    "content": content, "tool_calls": tool_calls}
-        messages.append(meassage)
-        logger.info("Add tool_calls: %s", meassage)
-        for tool_call in tool_calls:
-            args = json.loads(tool_call['function']['arguments'])
-            output = bash_tool(**args)
-            # 将工具执行结果添加到消息列表
-            # Truncate very long outputs
-            meassage = {
-                "role": "tool", "tool_call_id": tool_call["id"], "content": output[:50000]}
-            logger.info("Add tool output: %s", meassage)
-            messages.append(messages)
-        return
-    # 将助手回复添加到消息列表
-    messages.append({"role": "assistant", "content": content})
+        # 处理工具调用
+        if tool_calls:
+            meassage = {"role": "assistant",
+                        "content": content, "tool_calls": tool_calls}
+            messages.append(meassage)
+            logger.debug("Add tool_calls: %s", meassage)
+            for tool_call in tool_calls:
+                name = tool_call['function']['name']
+                args = json.loads(tool_call['function']['arguments'])
+                logger.info("Execute tool: %s with args: %s", name, args)
+                output = execute_tool(name, args)
+                preview = output[:200] + "..." if len(output) > 200 else output
+                print(f"  {preview}")
+                
+                meassage = {
+                    "role": "tool", "tool_call_id": tool_call["id"], "content": output}
+                logger.debug("Add tool output: %s", meassage)
+                # 将工具执行结果添加到消息列表
+                messages.append(meassage)
+            logger.info("工具执行完毕，继续获取新的回答...")    
+            continue  # 继续获取新的回答
 
+        # 将助手回复添加到消息列表
+        messages.append({"role": "assistant", "content": content})
+        break
 
 def sanitize_memory():
     """翻译模式或不记忆模式时清理对话历史"""
@@ -484,5 +666,4 @@ def main():
 
 
 if __name__ == "__main__":
-    logger.info("Starting Ask Agent...")
     main()
