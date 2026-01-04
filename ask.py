@@ -468,7 +468,7 @@ def run_bash(command: str) -> str:
     if any(d in command for d in ["rm -rf /", "sudo", "shutdown"]):
         return "Error: Dangerous command blocked"
     print(f"  \033[34m$ {command}\033[0m")
-    return exec(command)
+    return execute_cmd(command)
 
 
 def safe_path(p: str) -> Path:
@@ -810,7 +810,7 @@ def show_help():
     print(help_text)
 
 
-def exec(cmd: str) -> str:
+def execute_cmd(cmd: str) -> str:
     """执行shell命令并返回输出"""
     try:
         result = subprocess.run(
@@ -833,7 +833,7 @@ def shell(cmd: str):
     messages.append({"role": "user", "content": f"执行shell命令: {cmd}"})
 
     # 执行命令
-    output = exec(cmd)
+    output = execute_cmd(cmd)
 
     # 输出到终端
     print(output)
