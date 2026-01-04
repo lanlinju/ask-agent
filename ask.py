@@ -780,8 +780,10 @@ def command(command: str):
         show_help()
         return
 
-    # 处理shell命令
-    shell(command[1:])  # 提取命令，去掉前面的 /
+    # 处理shell命令 (!开头)
+    if command.startswith('!'):
+        shell(command[1:])  # 提取命令，去掉前面的 !
+        return
 
 
 def show_help():
@@ -794,7 +796,7 @@ def show_help():
    /e            - 进入翻译模式
    /reset        - 清空当前对话历史
    /help         - 显示此帮助信息
-   /shell args   - 执行shell命令（如 /ls, /pwd, /cat file.txt）
+   !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
    exit          - 退出程序
 
  🔹 智能体模式功能：
@@ -899,7 +901,7 @@ def sanitize_memory():
 
 def is_command(command: str) -> bool:
     """检查输入是否为命令"""
-    return command.startswith('/') or command.lower() == 'exit'
+    return command.startswith('/') or command.startswith('!') or command.lower() == 'exit'
 
 def get_mode_prompt() -> str:
     """获取当前模式的提示符"""
