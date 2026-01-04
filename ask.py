@@ -2,6 +2,7 @@
 
 import sys
 import os
+import re
 import requests
 import json
 from typing import List, Dict
@@ -50,30 +51,136 @@ n. 计算机，电脑
 """
 # Agent Type Registry - The core of subagent mechanism
 AGENT_TYPES = {
-    # Explore: Read-only agent for searching and analyzing
-    # Cannot modify files - safe for broad exploration
     "explore": {
         "description": "Read-only agent for exploring code, finding files, searching",
         "tools": ["bash", "read_file"],  # No write access
         "prompt": "You are an exploration agent. Search and analyze, but never modify files. Return a concise summary.",
     },
-
-    # Code: Full-powered agent for implementation
-    # Has all tools - use for actual coding work
     "code": {
         "description": "Full agent for implementing features and fixing bugs",
         "tools": "*",  # All tools
         "prompt": "You are a coding agent. Implement the requested changes efficiently.",
     },
-
-    # Plan: Analysis agent for design work
-    # Read-only, focused on producing plans and strategies
     "plan": {
         "description": "Planning agent for designing implementation strategies",
         "tools": ["bash", "read_file"],  # Read-only
         "prompt": "You are a planning agent. Analyze the codebase and output a numbered implementation plan. Do NOT make changes.",
     },
 }
+
+class SkillLoader:
+    """
+    Loads and manages skills from SKILL.md files.
+
+    A skill is a FOLDER containing:
+    - SKILL.md (required): YAML frontmatter + markdown instructions
+    - scripts/ (optional): Helper scripts the model can run
+    - references/ (optional): Additional documentation
+    - assets/ (optional): Templates, files for output
+    """
+
+    def __init__(self, skills_dir: Path):
+        self.skills_dir = skills_dir
+        self.skills = {}
+        self.load_skills()
+
+    def parse_skill_md(self, path: Path) -> dict:
+        """
+        Parse a SKILL.md file into metadata and body.
+
+        Returns dict with: name, description, body, path, dir
+        Returns None if file doesn't match format.
+        """
+        content = path.read_text()
+
+        # Match YAML frontmatter between --- markers
+        match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
+        if not match:
+            return None
+
+        frontmatter, body = match.groups()
+
+        # Parse YAML-like frontmatter (simple key: value)
+        metadata = {}
+        for line in frontmatter.strip().split("\n"):
+            if ":" in line:
+                key, value = line.split(":", 1)
+                metadata[key.strip()] = value.strip().strip("\"'")
+
+        # Require name and description
+        if "name" not in metadata or "description" not in metadata:
+            return None
+
+        return {
+            "name": metadata["name"],
+            "description": metadata["description"],
+            "body": body.strip(),
+            "path": path,
+            "dir": path.parent,
+        }
+
+    def load_skills(self):
+        """Scan skills directory and load all valid SKILL.md files."""
+        if not self.skills_dir.exists():
+            return
+
+        for skill_dir in self.skills_dir.iterdir():
+            if not skill_dir.is_dir():
+                continue
+
+            skill_md = skill_dir / "SKILL.md"
+            if not skill_md.exists():
+                continue
+
+            skill = self.parse_skill_md(skill_md)
+            if skill:
+                self.skills[skill["name"]] = skill
+
+    def get_descriptions(self) -> str:
+        """Generate skill descriptions for system prompt."""
+        if not self.skills:
+            return "(no skills available)"
+
+        return "\n".join(
+            f"- {name}: {skill['description']}"
+            for name, skill in self.skills.items()
+        )
+
+    def get_skill_content(self, name: str) -> str:
+        """Get full skill content for injection."""
+        if name not in self.skills:
+            return None
+
+        skill = self.skills[name]
+        content = f"# Skill: {skill['name']}\n\n{skill['body']}"
+
+        # List available resources (Layer 3 hints)
+        resources = []
+        for folder, label in [
+            ("scripts", "Scripts"),
+            ("references", "References"),
+            ("assets", "Assets")
+        ]:
+            folder_path = skill["dir"] / folder
+            if folder_path.exists():
+                files = list(folder_path.glob("*"))
+                if files:
+                    resources.append(f"{label}: {', '.join(f.name for f in files)}")
+
+        if resources:
+            content += f"\n\n**Available resources in {skill['dir']}:**\n"
+            content += "\n".join(f"- {r}" for r in resources)
+
+        return content
+
+    def list_skills(self) -> list:
+        """Return list of available skill names."""
+        return list(self.skills.keys())
+
+
+# Global skill loader instance
+SKILLS_DIR = WORKDIR / "skills"
+SKILLS = SkillLoader(SKILLS_DIR)
 
 
 def get_agent_descriptions() -> str:
@@ -89,11 +196,15 @@ SYSTEM_PROMPT_AGENT = f"""You are a coding agent at {WORKDIR}.
 
 Loop: plan -> act with tools -> report.
 
-You can spawn subagents for complex subtasks:
+**Skills available** (invoke with Skill tool when task matches):
+{SKILLS.get_descriptions()}
+
+**Subagents available** (invoke with Task tool for focused subtasks):
 {get_agent_descriptions()}
 
 Rules:
-- Use Task tool for subtasks that need focused exploration or implementation
+- Use Skill tool IMMEDIATELY when a task matches a skill description
+- Use Task tool for subtasks needing focused exploration or implementation
 - Use TodoWrite to track multi-step work
 - Prefer tools over prose. Act, don't just explain.
 - After finishing, summarize what changed."""
@@ -109,42 +220,12 @@ memory = True
 
 
 class TodoManager:
-    """
-    Manages a structured task list with enforced constraints.
-
-    Key Design Decisions:
-    --------------------
-    1. Max 20 items: Prevents the model from creating endless lists
-    2. One in_progress: Forces focus - can only work on ONE thing at a time
-    3. Required fields: Each item needs content, status, and activeForm
-
-    The activeForm field deserves explanation:
-    - It's the PRESENT TENSE form of what's happening
-    - Shown when status is "in_progress"
-    - Example: content="Add tests", activeForm="Adding unit tests..."
-
-    This gives real-time visibility into what the agent is doing.
-    """
+    """Manages a structured task list with enforced constraints."""
 
     def __init__(self):
         self.items = []
 
     def update(self, items: list) -> str:
-        """
-        Validate and update the todo list.
-
-        The model sends a complete new list each time. We validate it,
-        store it, and return a rendered view that the model will see.
-
-        Validation Rules:
-        - Each item must have: content, status, activeForm
-        - Status must be: pending | in_progress | completed
-        - Only ONE item can be in_progress at a time
-        - Maximum 20 items allowed
-
-        Returns:
-            Rendered text view of the todo list
-        """
         validated = []
         in_progress_count = 0
 
@@ -181,19 +262,6 @@ class TodoManager:
         return self.render()
 
     def render(self) -> str:
-        """
-        Render the todo list as human-readable text.
-
-        Format:
-            [x] Completed task
-            [>] In progress task <- Doing something...
-            [ ] Pending task
-
-            (2/3 completed)
-
-        This rendered text is what the model sees as the tool result.
-        It can then update the list based on its current state.
-        """
         if not self.items:
             return "No todos."
 
@@ -202,7 +270,7 @@ class TodoManager:
             if item["status"] == "completed":
                 lines.append(f"[x] {item['content']}")
             elif item["status"] == "in_progress":
-                lines.append(f"[>] {item['content']} <- {item['activeForm']}")
+                lines.append(f"[>] {item['content']}")
             else:
                 lines.append(f"[ ] {item['content']}")
 
@@ -233,7 +301,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Run a shell command. Use for: ls, find, grep, git, npm, python, etc.",
+            "description": "Run a shell command.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -250,7 +318,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read file contents. Returns UTF-8 text.",
+            "description": "Read file contents.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -271,7 +339,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Write content to a file. Creates parent directories if needed.",
+            "description": "Write content to a file.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -292,7 +360,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Replace exact text in a file. Use for surgical edits.",
+            "description": "Replace exact text in a file.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -317,7 +385,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "TodoWrite",
-            "description": "Update the task list. Use to plan and track progress.",
+            "description": "Update the task list.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -353,19 +421,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "Task",
-            "description": f"""Spawn a subagent for a focused subtask.
-
-Subagents run in ISOLATED context - they don't see parent's history.
-Use this to keep the main conversation clean.
-
-Agent types:
-{get_agent_descriptions()}
-
-Example uses:
-- Task(explore): "Find all files using the auth module"
-- Task(plan): "Design a migration strategy for the database"
-- Task(code): "Implement the user registration form"
-""",
+            "description": f"Spawn a subagent for a focused subtask.\n\nAgent types:\n{get_agent_descriptions()}",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -387,6 +443,23 @@ Example uses:
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "Skill",
+            "description": f"""Load a skill to gain specialized knowledge for a task.\n\nAvailable skills:\n{SKILLS.get_descriptions()}""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill": {
+                        "type": "string",
+                        "description": "Name of the skill to load"
+                    }
+                },
+                "required": ["skill"],
+            },
+        },
+    },
 ]
 
 
@@ -394,7 +467,7 @@ def run_bash(command: str) -> str:
     """执行 bash 命令并返回 stdout/stderr"""
     if any(d in command for d in ["rm -rf /", "sudo", "shutdown"]):
         return "Error: Dangerous command blocked"
-    print(f"\n  \033[34m$ {command}\033[0m")
+    print(f"  \033[34m$ {command}\033[0m")
     return exec(command)
 
 
@@ -447,6 +520,22 @@ def run_todo(items: list) -> str:
         return TODO.update(items)
     except Exception as e:
         return f"Error: {e}"
+
+
+def run_skill(skill_name: str) -> str:
+    """Load a skill and inject it into the conversation."""
+    content = SKILLS.get_skill_content(skill_name)
+
+    if content is None:
+        available = ", ".join(SKILLS.list_skills()) or "none"
+        return f"Error: Unknown skill '{skill_name}'. Available: {available}"
+
+    # Wrap in tags so model knows it's skill content
+    return f"""<skill-loaded name="{skill_name}">
+{content}
+</skill-loaded>
+
+Follow the instructions in the skill above to complete the user's task."""
 
 
 def merge_arguments(tool_calls_collected: List) -> List:
@@ -597,6 +686,8 @@ def execute_tool(name: str, args: dict) -> str:
         return run_todo(args["todos"])
     if name == "Task":
         return run_task(args["description"], args["prompt"], args["agent_type"])
+    if name == "Skill":
+        return run_skill(args["skill"])
     return f"Unknown tool: {name}"
 
 
@@ -678,7 +769,9 @@ def command(command: str):
     if command == '/agent':
         current_mode = AGENT
         init_system_prompt(current_mode)
-        print("✅ 已进入智能体模式\n")
+        print("✅ 已进入智能体模式")
+        print(f"📚 可用 Skills: {', '.join(SKILLS.list_skills())}")
+        print(f"🤖 可用 Agents: {', '.join(AGENT_TYPES.keys())}\n")
         return
 
     # 清空对话历史
@@ -708,6 +801,11 @@ def show_help():
    /help         - 显示此帮助信息
    /shell args   - 执行shell命令（如 /ls, /pwd, /cat file.txt）
    exit          - 退出程序
+
+ 🔹 智能体模式功能：
+   - 自动使用 Skills 工具加载领域知识（PDF处理、MCP开发等）
+   - 支持通过 Task 工具启动子智能体
+   - 支持通过 TodoWrite 工具管理任务列表
 """
     print(help_text)
 
@@ -770,18 +868,21 @@ def agent(prompt: str):
             args = json.loads(tool_call['function']['arguments'])
             logger.info("执行工具: %s, 参数: %s", name, args)
 
-            # Task tool has special display handling
+            # Task and Skill tools have special display handling
             if name == "Task":
                 print(f"\n> Task: {args.get('description', 'subtask')}")
+            elif name == "Skill":
+                print(f"\n> Loading skill: {args.get('skill', '?')}")
             else:
                 print(f"\n> {name}")
 
             output = execute_tool(name, args)
 
-            # Don't print full Task output (it manages its own display)
-            if name != "Task":
-                preview = output[:300] + "..." if len(output) > 300 else output
-                print(f"  {preview}")
+            if name == "Skill":
+                print(f"  Skill loaded ({len(output)} chars)")
+            elif name != "Task":
+                preview = output[:400] + "..." if len(output) > 400 else output
+                print(f"{preview}")
 
             tool_result = {
                 "role": "tool",
