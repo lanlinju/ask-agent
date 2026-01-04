@@ -238,23 +238,19 @@ class TodoManager:
             # Extract and validate fields
             content = str(item.get("content", "")).strip()
             status = str(item.get("status", "pending")).lower()
-            active_form = str(item.get("activeForm", "")).strip()
 
             # Validation checks
             if not content:
                 raise ValueError(f"Item {i}: content required")
             if status not in ("pending", "in_progress", "completed"):
                 raise ValueError(f"Item {i}: invalid status '{status}'")
-            if not active_form:
-                raise ValueError(f"Item {i}: activeForm required")
 
             if status == "in_progress":
                 in_progress_count += 1
 
             validated.append({
                 "content": content,
-                "status": status,
-                "activeForm": active_form
+                "status": status
             })
 
         # Enforce constraints
@@ -408,13 +404,9 @@ TOOLS = [
                                     "type": "string",
                                     "enum": ["pending", "in_progress", "completed"],
                                     "description": "Task status"
-                                },
-                                "activeForm": {
-                                    "type": "string",
-                                    "description": "Present tense action, e.g. 'Reading files'"
                                 }
                             },
-                            "required": ["content", "status", "activeForm"],
+                            "required": ["content", "status"],
                         }
                     }
                 },
