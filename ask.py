@@ -8,6 +8,7 @@ from typing import List, Dict
 import argparse
 import subprocess
 import logging
+import time
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -47,23 +48,55 @@ SYSTEM_PROMPT_TRANSLATE = """你是一个专业的终端英语翻译工具。严
 computer [kəmˈpjuːtə(r)] [kəmˈpjuːtər]
 n. 计算机，电脑
 """
+# Agent Type Registry - The core of subagent mechanism
+AGENT_TYPES = {
+    # Explore: Read-only agent for searching and analyzing
+    # Cannot modify files - safe for broad exploration
+    "explore": {
+        "description": "Read-only agent for exploring code, finding files, searching",
+        "tools": ["bash", "read_file"],  # No write access
+        "prompt": "You are an exploration agent. Search and analyze, but never modify files. Return a concise summary.",
+    },
+
+    # Code: Full-powered agent for implementation
+    # Has all tools - use for actual coding work
+    "code": {
+        "description": "Full agent for implementing features and fixing bugs",
+        "tools": "*",  # All tools
+        "prompt": "You are a coding agent. Implement the requested changes efficiently.",
+    },
+
+    # Plan: Analysis agent for design work
+    # Read-only, focused on producing plans and strategies
+    "plan": {
+        "description": "Planning agent for designing implementation strategies",
+        "tools": ["bash", "read_file"],  # Read-only
+        "prompt": "You are a planning agent. Analyze the codebase and output a numbered implementation plan. Do NOT make changes.",
+    },
+}
+
+
+def get_agent_descriptions() -> str:
+    """Generate agent type descriptions for the Task tool."""
+    return "\n".join(
+        f"- {name}: {cfg['description']}"
+        for name, cfg in AGENT_TYPES.items()
+    )
+
+
 # 系统智能体提示词
 SYSTEM_PROMPT_AGENT = f"""You are a coding agent at {WORKDIR}.
 
-Loop: plan -> act with tools -> update todos -> report.
+Loop: plan -> act with tools -> report.
+
+You can spawn subagents for complex subtasks:
+{get_agent_descriptions()}
 
 Rules:
-- Use TodoWrite to track multi-step tasks
-- Mark tasks in_progress before starting, completed when done
+- Use Task tool for subtasks that need focused exploration or implementation
+- Use TodoWrite to track multi-step work
 - Prefer tools over prose. Act, don't just explain.
 - After finishing, summarize what changed."""
-
-# Shown at the start of conversation
-INITIAL_REMINDER = "<reminder>Use TodoWrite for multi-step tasks.</reminder>"
-
-# Shown if model hasn't updated todos in a while
-NAG_REMINDER = "<reminder>10+ turns without todo update. Please update todos.</reminder>"
-
 
 ASK = 0         # 问答模式
 TRANSLATE = 1   # 翻译模式
@@ -196,8 +229,6 @@ def init_system_prompt(mode: int = ASK):
 
 
 TOOLS = [
-    # Tool 1: Bash - The gateway to everything
-    # Can run any command: git, npm, python, curl, etc.
     {
         "type": "function",
         "function": {
@@ -215,9 +246,6 @@ TOOLS = [
             },
         },
     },
-
-    # Tool 2: Read File - For understanding existing code
-    # Returns file content with optional line limit for large files
     {
         "type": "function",
         "function": {
@@ -239,9 +267,6 @@ TOOLS = [
             },
         },
     },
-
-    # Tool 3: Write File - For creating new files or complete rewrites
-    # Creates parent directories automatically
     {
         "type": "function",
         "function": {
@@ -263,9 +288,6 @@ TOOLS = [
             },
         },
     },
-
-    # Tool 4: Edit File - For surgical changes to existing code
-    # Uses exact string matching for precise edits
     {
         "type": "function",
         "function": {
@@ -291,9 +313,6 @@ TOOLS = [
             },
         },
     },
-
-    # Tool 5: TodoWrite - For task tracking and planning
-    # This is the key addition that enables structured planning
     {
         "type": "function",
         "function": {
@@ -330,101 +349,102 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "Task",
+            "description": f"""Spawn a subagent for a focused subtask.
+
+Subagents run in ISOLATED context - they don't see parent's history.
+Use this to keep the main conversation clean.
+
+Agent types:
+{get_agent_descriptions()}
+
+Example uses:
+- Task(explore): "Find all files using the auth module"
+- Task(plan): "Design a migration strategy for the database"
+- Task(code): "Implement the user registration form"
+""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "Short task name (3-5 words) for progress display"
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Detailed instructions for the subagent"
+                    },
+                    "agent_type": {
+                        "type": "string",
+                        "enum": list(AGENT_TYPES.keys()),
+                        "description": "Type of agent to spawn"
+                    },
+                },
+                "required": ["description", "prompt", "agent_type"],
+            },
+        },
+    },
 ]
 
 
 def run_bash(command: str) -> str:
     """执行 bash 命令并返回 stdout/stderr"""
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-    if any(d in command for d in dangerous):
+    if any(d in command for d in ["rm -rf /", "sudo", "shutdown"]):
         return "Error: Dangerous command blocked"
-
-    print(f"\033[33m$ {command}\033[0m")
+    print(f"\n  \033[34m$ {command}\033[0m")
     return exec(command)
 
 
 def safe_path(p: str) -> Path:
-    # 1. 拼接：WORKDIR / "relative/path"
-    # 2. 解析：处理所有 ../ 和符号链接，得到绝对路径
+    """Ensure path stays within workspace."""
     path = (WORKDIR / p).resolve()
-
-    # 3. 验证：绝对路径是否还在工作空间内
     if not path.is_relative_to(WORKDIR):
         raise ValueError(f"Path escapes workspace: {p}")
-
     return path
 
 
-def run_read(path: str, limit: int = 0) -> str:
-    """
-    Read file contents with optional line limit.
-
-    For large files, use limit to read just the first N lines.
-    Output truncated to 50KB to prevent context overflow.
-    """
+def run_read(path: str, limit: int = None) -> str:
+    """Read file contents."""
     try:
-        text = safe_path(path).read_text()
-        lines = text.splitlines()
-
-        if limit and limit < len(lines):
+        lines = safe_path(path).read_text().splitlines()
+        if limit:
             lines = lines[:limit]
-            lines.append(f"... ({len(text.splitlines()) - limit} more lines)")
-
         return "\n".join(lines)[:50000]
-
     except Exception as e:
         return f"Error: {e}"
 
 
 def run_write(path: str, content: str) -> str:
-    """
-    Write content to file, creating parent directories if needed.
-
-    This is for complete file creation/overwrite.
-    For partial edits, use edit_file instead.
-    """
+    """Write content to file."""
     try:
         fp = safe_path(path)
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(content)
         return f"Wrote {len(content)} bytes to {path}"
-
     except Exception as e:
         return f"Error: {e}"
 
 
 def run_edit(path: str, old_text: str, new_text: str) -> str:
-    """
-    Replace exact text in a file (surgical edit).
-
-    Uses exact string matching - the old_text must appear verbatim.
-    Only replaces the first occurrence to prevent accidental mass changes.
-    """
+    """Replace exact text in file."""
     try:
         fp = safe_path(path)
-        content = fp.read_text()
-
-        if old_text not in content:
+        text = fp.read_text()
+        if old_text not in text:
             return f"Error: Text not found in {path}"
-
-        # Replace only first occurrence for safety
-        new_content = content.replace(old_text, new_text, 1)
-        fp.write_text(new_content)
+        fp.write_text(text.replace(old_text, new_text, 1))
         return f"Edited {path}"
-
     except Exception as e:
         return f"Error: {e}"
 
 
-def run_todo(todos: List[Dict]) -> str:
-    """
-    Update the todo list.
-
-    The model sends a complete new list (not a diff).
-    We validate it and return the rendered view.
-    """
+def run_todo(items: list) -> str:
+    """Update the todo list."""
     try:
-        return TODO.update(todos)
+        return TODO.update(items)
     except Exception as e:
         return f"Error: {e}"
 
@@ -463,6 +483,107 @@ def merge_arguments(tool_calls_collected: List) -> List:
     return result
 
 
+def get_tools_for_agent(type: str) -> list:
+    """
+    Filter tools based on agent type.
+
+    Each agent type has a whitelist of allowed tools.
+    '*' means all tools (but subagents don't get Task to prevent infinite recursion).
+    """
+    allowed = AGENT_TYPES.get(type, {}).get("tools", "*")
+
+    if allowed == "*":
+        # All tools except Task (no recursion)
+        return [t for t in TOOLS if t["function"]["name"] != "Task"]
+
+    return [t for t in TOOLS if t["function"]["name"] in allowed]
+
+
+def run_task(description: str, prompt: str, agent_type: str) -> str:
+    """
+    Execute a subagent task with isolated context.
+
+    This is the core of the subagent mechanism:
+
+    1. Create isolated message history (KEY: no parent context!)
+    2. Use agent-specific system prompt
+    3. Filter available tools based on agent type
+    4. Run the same query loop as main agent
+    5. Return ONLY the final text (not intermediate details)
+
+    The parent agent sees just the summary, keeping its context clean.
+    """
+    if agent_type not in AGENT_TYPES:
+        return f"Error: Unknown agent type '{agent_type}'"
+
+    config = AGENT_TYPES[agent_type]
+
+    # Agent-specific system prompt
+    sub_system = f"""You are a {agent_type} subagent at {WORKDIR}.
+
+{config["prompt"]}
+
+Complete the task and return a clear, concise summary."""
+
+    # Filtered tools for this agent type
+    sub_tools = get_tools_for_agent(agent_type)
+
+    # ISOLATED message history - this is the key!
+    # The subagent starts fresh, doesn't see parent's conversation
+    sub_messages = [
+        {"role": "system", "content": sub_system},
+        {"role": "user", "content": prompt}
+    ]
+
+    # Progress tracking
+    print(f"  [{agent_type}] {description}", end='', flush=True)
+    start = time.time()
+    tool_count = 0
+
+    # Run the same agent loop (silently - don't print to main chat)
+    while True:
+        content, tool_calls = get_streaming_response(sub_messages, sub_tools, True)
+
+        # Add assistant response to subagent history
+        sub_assistant_msg = {"role": "assistant", "content": content}
+        if tool_calls:
+            sub_assistant_msg["tool_calls"] = tool_calls
+        sub_messages.append(sub_assistant_msg)
+
+        # If no tools to execute, break
+        if not tool_calls:
+            break
+
+        # Execute tools
+        for tool_call in tool_calls:
+            tool_count += 1
+            name = tool_call['function']['name']
+            args = json.loads(tool_call['function']['arguments'])
+            output = execute_tool(name, args)
+
+            tool_result = {
+                "role": "tool",
+                "tool_call_id": tool_call["id"],
+                "content": output
+            }
+
+            # Update progress line (in-place)
+            elapsed = time.time() - start
+            sys.stdout.write(
+                f"\r  [{agent_type}] {description} ... {tool_count} tools, {elapsed:.1f}s")
+            sys.stdout.flush()
+
+            sub_messages.append(tool_result)
+
+    # Final progress update
+    elapsed = time.time() - start
+    sys.stdout.write(
+        f"\r  [{agent_type}] {description} - done ({tool_count} tools, {elapsed:.1f}s)\n")
+
+    # Return the final text content
+    return content
+
+
 def execute_tool(name: str, args: dict) -> str:
     if name == "bash":
         return run_bash(args["command"])
@@ -474,10 +595,12 @@ def execute_tool(name: str, args: dict) -> str:
         return run_edit(args["path"], args["old_text"], args["new_text"])
     if name == "TodoWrite":
         return run_todo(args["todos"])
+    if name == "Task":
+        return run_task(args["description"], args["prompt"], args["agent_type"])
     return f"Unknown tool: {name}"
 
 
-def get_streaming_response(messages: List) -> tuple[str, List]:
+def get_streaming_response(messages: List, tools: List, silent: bool = False) -> tuple[str, List]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -488,7 +611,7 @@ def get_streaming_response(messages: List) -> tuple[str, List]:
     data = {
         "model": DEEPSEEK_MODEL,
         "messages": messages,
-        "tools": TOOLS,
+        "tools": tools,
         "tool_choice": "auto",
         "stream": True
     }
@@ -513,7 +636,8 @@ def get_streaming_response(messages: List) -> tuple[str, List]:
                         if delta.get("content"):
                             content = delta["content"]
                             collected_content += content
-                            print(content, end='', flush=True)
+                            if not silent:
+                                print(content, end='', flush=True)
                         # 工具调用
                         if delta.get("tool_calls"):
                             tool_calls = delta["tool_calls"]
@@ -523,7 +647,6 @@ def get_streaming_response(messages: List) -> tuple[str, List]:
 
                 except json.JSONDecodeError:
                     continue
-        print('\n')  # 换行
 
     # logger.info("完整回答: %s", tool_calls_collected)
 
@@ -592,24 +715,18 @@ def show_help():
 def exec(cmd: str) -> str:
     """执行shell命令并返回输出"""
     try:
-        # 执行shell命令并捕获输出
         result = subprocess.run(
             cmd,
             shell=True,
             cwd=WORKDIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # 将stderr重定向到stdout
+            capture_output=True,
             text=True,
             timeout=10
         )
-
-        output = result.stdout
-
-        return output[:50000].strip() if output else "(无输出)"
-    except subprocess.TimeoutExpired:
-        return "❌ 命令执行超时"
+        output = result.stdout + result.stderr
+        return (output.strip() if output else "(no output)")[:50000]
     except Exception as e:
-        return f"❌ 命令执行错误: {str(e)}"
+        return f"Error: {e}"
 
 
 def shell(cmd: str):
@@ -627,20 +744,15 @@ def shell(cmd: str):
     messages.append({"role": "user", "content": f"Shell命令执行结果:\n{output}"})
 
 
-# Track how many rounds since last todo update
-rounds_without_todo = 0
-
-
 def agent(prompt: str):
     """处理问题，添加到历史并获取回答"""
-    global rounds_without_todo
 
     # 将用户新消息添加到消息列表
     messages.append({"role": "user", "content": prompt})
 
     while True:
         # 调用API获取流式响应
-        content, tool_calls = get_streaming_response(messages)
+        content, tool_calls = get_streaming_response(messages, TOOLS)
 
         # 构建助手消息并添加到历史
         assistant_msg = {"role": "assistant", "content": content}
@@ -653,19 +765,23 @@ def agent(prompt: str):
         if not tool_calls:
             break
 
-        used_todo = False
         for tool_call in tool_calls:
             name = tool_call['function']['name']
             args = json.loads(tool_call['function']['arguments'])
             logger.info("执行工具: %s, 参数: %s", name, args)
 
-            output = execute_tool(name, args)
-            preview = output[:200] + "..." if len(output) > 200 else output
-            print(f"  {preview}")
+            # Task tool has special display handling
+            if name == "Task":
+                print(f"\n> Task: {args.get('description', 'subtask')}")
+            else:
+                print(f"\n> {name}")
 
-            # 如果是 TodoWrite 调用，重置计数器
-            if name == "TodoWrite":
-                used_todo = True
+            output = execute_tool(name, args)
+
+            # Don't print full Task output (it manages its own display)
+            if name != "Task":
+                preview = output[:300] + "..." if len(output) > 300 else output
+                print(f"  {preview}")
 
             tool_result = {
                 "role": "tool",
@@ -676,19 +792,6 @@ def agent(prompt: str):
             logger.debug("Add tool output: %s", tool_result)
             # 将工具执行结果添加到消息列表
             messages.append(tool_result)
-
-        # Update counter: reset if used todo, increment otherwise
-        if used_todo:
-            rounds_without_todo = 0
-        else:
-            rounds_without_todo += 1
-
-        # 检查是否需要注入提醒
-        if rounds_without_todo > 10:
-            messages.append({"role": "user", "content": NAG_REMINDER})
-            rounds_without_todo = 0
-
-        logger.info("[%s] 工具执行完毕，继续获取新的回答...", name)
 
 
 def sanitize_memory():
@@ -706,8 +809,6 @@ def is_command(command: str) -> bool:
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
-    first_message = True
-
     while True:
         user_input = input("💬^ :\n").strip()
         if not user_input:
@@ -718,15 +819,12 @@ def chat_loop():
             command(user_input.lower())
             continue
 
-        if first_message and current_mode == AGENT:
-            # Gentle reminder at start
-            messages.append({"role": "user", "content": INITIAL_REMINDER})
-            first_message = False
-
         print("\n🤖 Assistant: ", flush=True)
         agent(user_input)
 
         sanitize_memory()
+
+        print('\n')  # 换行
 
 
 def restore_tty():
