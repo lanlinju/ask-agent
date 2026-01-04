@@ -702,8 +702,8 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
     data = {
         "model": DEEPSEEK_MODEL,
         "messages": messages,
-        "tools": tools,
-        "tool_choice": "auto",
+        "tools": tools if current_mode == AGENT else [],
+        "tool_choice": "auto" if current_mode == AGENT else "none",
         "stream": True
     }
 
