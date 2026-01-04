@@ -50,13 +50,20 @@ n. 计算机，电脑
 # 系统智能体提示词
 SYSTEM_PROMPT_AGENT = f"""You are a coding agent at {WORKDIR}.
 
-Loop: think briefly -> use tools -> report results.
+Loop: plan -> act with tools -> update todos -> report.
 
 Rules:
+- Use TodoWrite to track multi-step tasks
+- Mark tasks in_progress before starting, completed when done
 - Prefer tools over prose. Act, don't just explain.
-- Never invent file paths. Use bash ls/find first if unsure.
-- Make minimal changes. Don't over-engineer.
 - After finishing, summarize what changed."""
+
+# Shown at the start of conversation
+INITIAL_REMINDER = "<reminder>Use TodoWrite for multi-step tasks.</reminder>"
+
+# Shown if model hasn't updated todos in a while
+NAG_REMINDER = "<reminder>10+ turns without todo update. Please update todos.</reminder>"
+
 
 ASK = 0         # 问答模式
 TRANSLATE = 1   # 翻译模式
@@ -66,6 +73,114 @@ current_mode: int = ASK
 messages: List[Dict[str, str | List]] = []
 # 问答模式是否记忆上下文
 memory = True
+
+
+class TodoManager:
+    """
+    Manages a structured task list with enforced constraints.
+
+    Key Design Decisions:
+    --------------------
+    1. Max 20 items: Prevents the model from creating endless lists
+    2. One in_progress: Forces focus - can only work on ONE thing at a time
+    3. Required fields: Each item needs content, status, and activeForm
+
+    The activeForm field deserves explanation:
+    - It's the PRESENT TENSE form of what's happening
+    - Shown when status is "in_progress"
+    - Example: content="Add tests", activeForm="Adding unit tests..."
+
+    This gives real-time visibility into what the agent is doing.
+    """
+
+    def __init__(self):
+        self.items = []
+
+    def update(self, items: list) -> str:
+        """
+        Validate and update the todo list.
+
+        The model sends a complete new list each time. We validate it,
+        store it, and return a rendered view that the model will see.
+
+        Validation Rules:
+        - Each item must have: content, status, activeForm
+        - Status must be: pending | in_progress | completed
+        - Only ONE item can be in_progress at a time
+        - Maximum 20 items allowed
+
+        Returns:
+            Rendered text view of the todo list
+        """
+        validated = []
+        in_progress_count = 0
+
+        for i, item in enumerate(items):
+            # Extract and validate fields
+            content = str(item.get("content", "")).strip()
+            status = str(item.get("status", "pending")).lower()
+            active_form = str(item.get("activeForm", "")).strip()
+
+            # Validation checks
+            if not content:
+                raise ValueError(f"Item {i}: content required")
+            if status not in ("pending", "in_progress", "completed"):
+                raise ValueError(f"Item {i}: invalid status '{status}'")
+            if not active_form:
+                raise ValueError(f"Item {i}: activeForm required")
+
+            if status == "in_progress":
+                in_progress_count += 1
+
+            validated.append({
+                "content": content,
+                "status": status,
+                "activeForm": active_form
+            })
+
+        # Enforce constraints
+        if len(validated) > 20:
+            raise ValueError("Max 20 todos allowed")
+        if in_progress_count > 1:
+            raise ValueError("Only one task can be in_progress at a time")
+
+        self.items = validated
+        return self.render()
+
+    def render(self) -> str:
+        """
+        Render the todo list as human-readable text.
+
+        Format:
+            [x] Completed task
+            [>] In progress task <- Doing something...
+            [ ] Pending task
+
+            (2/3 completed)
+
+        This rendered text is what the model sees as the tool result.
+        It can then update the list based on its current state.
+        """
+        if not self.items:
+            return "No todos."
+
+        lines = []
+        for item in self.items:
+            if item["status"] == "completed":
+                lines.append(f"[x] {item['content']}")
+            elif item["status"] == "in_progress":
+                lines.append(f"[>] {item['content']} <- {item['activeForm']}")
+            else:
+                lines.append(f"[ ] {item['content']}")
+
+        completed = sum(1 for t in self.items if t["status"] == "completed")
+        lines.append(f"\n({completed}/{len(self.items)} completed)")
+
+        return "\n".join(lines)
+
+
+# Global todo manager instance
+TODO = TodoManager()
 
 
 def init_system_prompt(mode: int = ASK):
@@ -78,8 +193,6 @@ def init_system_prompt(mode: int = ASK):
     else:
         system_prompt = SYSTEM_PROMPT_ASK
     messages.append({"role": "system", "content": system_prompt})
-
-# ========== 工具 ==========
 
 
 TOOLS = [
@@ -178,6 +291,45 @@ TOOLS = [
             },
         },
     },
+
+    # Tool 5: TodoWrite - For task tracking and planning
+    # This is the key addition that enables structured planning
+    {
+        "type": "function",
+        "function": {
+            "name": "TodoWrite",
+            "description": "Update the task list. Use to plan and track progress.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "description": "List of todo items",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "content": {
+                                    "type": "string",
+                                    "description": "Task description"
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["pending", "in_progress", "completed"],
+                                    "description": "Task status"
+                                },
+                                "activeForm": {
+                                    "type": "string",
+                                    "description": "Present tense action, e.g. 'Reading files'"
+                                }
+                            },
+                            "required": ["content", "status", "activeForm"],
+                        }
+                    }
+                },
+                "required": ["todos"],
+            },
+        },
+    },
 ]
 
 
@@ -186,7 +338,7 @@ def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
-    
+
     print(f"\033[33m$ {command}\033[0m")
     return exec(command)
 
@@ -264,6 +416,19 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
         return f"Error: {e}"
 
 
+def run_todo(todos: List[Dict]) -> str:
+    """
+    Update the todo list.
+
+    The model sends a complete new list (not a diff).
+    We validate it and return the rendered view.
+    """
+    try:
+        return TODO.update(todos)
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def merge_arguments(tool_calls_collected: List) -> List:
     if not tool_calls_collected:
         return []
@@ -293,7 +458,7 @@ def merge_arguments(tool_calls_collected: List) -> List:
 
     result = [tool_calls_by_index[i]
               for i in sorted(tool_calls_by_index.keys())]
-    logger.info("merge arguments result:\n%s", json.dumps(result, indent=2))
+    logger.debug("merge arguments result:\n%s", json.dumps(result, indent=2))
 
     return result
 
@@ -307,10 +472,12 @@ def execute_tool(name: str, args: dict) -> str:
         return run_write(args["path"], args["content"])
     if name == "edit_file":
         return run_edit(args["path"], args["old_text"], args["new_text"])
+    if name == "TodoWrite":
+        return run_todo(args["todos"])
     return f"Unknown tool: {name}"
 
 
-def get_streaming_response(prompt: str) -> tuple[str, List]:
+def get_streaming_response(messages: List) -> tuple[str, List]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -350,7 +517,7 @@ def get_streaming_response(prompt: str) -> tuple[str, List]:
                         # 工具调用
                         if delta.get("tool_calls"):
                             tool_calls = delta["tool_calls"]
-                            logger.info("tool delta: %s", tool_calls)
+                            logger.debug("tool delta: %s", tool_calls)
                             for tool_call in tool_calls:
                                 tool_calls_collected.append(tool_call)
 
@@ -460,39 +627,69 @@ def shell(cmd: str):
     messages.append({"role": "user", "content": f"Shell命令执行结果:\n{output}"})
 
 
+# Track how many rounds since last todo update
+rounds_without_todo = 0
+
+
 def agent(prompt: str):
     """处理问题，添加到历史并获取回答"""
+    global rounds_without_todo
+
     # 将用户新消息添加到消息列表
     messages.append({"role": "user", "content": prompt})
+
     while True:
         # 调用API获取流式响应
-        content, tool_calls = get_streaming_response(prompt)
+        content, tool_calls = get_streaming_response(messages)
 
-        # 处理工具调用
+        # 构建助手消息并添加到历史
+        assistant_msg = {"role": "assistant", "content": content}
         if tool_calls:
-            meassage = {"role": "assistant",
-                        "content": content, "tool_calls": tool_calls}
-            messages.append(meassage)
-            logger.debug("Add tool_calls: %s", meassage)
-            for tool_call in tool_calls:
-                name = tool_call['function']['name']
-                args = json.loads(tool_call['function']['arguments'])
-                logger.info("Execute tool: %s with args: %s", name, args)
-                output = execute_tool(name, args)
-                preview = output[:200] + "..." if len(output) > 200 else output
-                print(f"  {preview}")
-                
-                meassage = {
-                    "role": "tool", "tool_call_id": tool_call["id"], "content": output}
-                logger.debug("Add tool output: %s", meassage)
-                # 将工具执行结果添加到消息列表
-                messages.append(meassage)
-            logger.info("工具执行完毕，继续获取新的回答...")    
-            continue  # 继续获取新的回答
+            assistant_msg["tool_calls"] = tool_calls
+        messages.append(assistant_msg)
+        logger.debug("添加助手回复: %s", assistant_msg)
 
-        # 将助手回复添加到消息列表
-        messages.append({"role": "assistant", "content": content})
-        break
+        # 如果没有工具调用，结束循环
+        if not tool_calls:
+            break
+
+        used_todo = False
+        for tool_call in tool_calls:
+            name = tool_call['function']['name']
+            args = json.loads(tool_call['function']['arguments'])
+            logger.info("执行工具: %s, 参数: %s", name, args)
+
+            output = execute_tool(name, args)
+            preview = output[:200] + "..." if len(output) > 200 else output
+            print(f"  {preview}")
+
+            # 如果是 TodoWrite 调用，重置计数器
+            if name == "TodoWrite":
+                used_todo = True
+
+            tool_result = {
+                "role": "tool",
+                "tool_call_id": tool_call["id"],
+                "content": output
+            }
+
+            logger.debug("Add tool output: %s", tool_result)
+            # 将工具执行结果添加到消息列表
+            messages.append(tool_result)
+
+        # Update counter: reset if used todo, increment otherwise
+        if used_todo:
+            rounds_without_todo = 0
+        else:
+            rounds_without_todo += 1
+
+        # 检查是否需要注入提醒
+        if rounds_without_todo > 10:
+            messages.append({"role": "user", "content": NAG_REMINDER})
+            rounds_without_todo = 0
+
+        logger.info("[%s] 工具执行完毕，继续获取新的回答...", name)
+
 
 def sanitize_memory():
     """翻译模式或不记忆模式时清理对话历史"""
@@ -509,6 +706,8 @@ def is_command(command: str) -> bool:
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
+    first_message = True
+
     while True:
         user_input = input("💬^ :\n").strip()
         if not user_input:
@@ -519,9 +718,12 @@ def chat_loop():
             command(user_input.lower())
             continue
 
-        print("\n🤖 Assistant: ", flush=True)
+        if first_message and current_mode == AGENT:
+            # Gentle reminder at start
+            messages.append({"role": "user", "content": INITIAL_REMINDER})
+            first_message = False
 
-        # 获取回答并打印
+        print("\n🤖 Assistant: ", flush=True)
         agent(user_input)
 
         sanitize_memory()
