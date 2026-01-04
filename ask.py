@@ -11,6 +11,8 @@ import logging
 from dotenv import load_dotenv
 from pathlib import Path
 
+load_dotenv()
+
 logging.basicConfig(format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -18,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 # 配置API参数
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-DEEPSEEK_MODEL = "deepseek-chat"
-DEEPSEEK_API_URL = "https://api.deepseek.com"
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
 WORKDIR = Path.cwd()
 
 # 系统问答工具助手提示词
@@ -569,8 +571,6 @@ def pipe_mode(prompt: str | None = None, quit: bool = False, continue_conversati
 
 
 def main():
-    load_dotenv()
-
     parser = argparse.ArgumentParser(
         description="Ask Agent - DeepSeek 问答客户端",
         prog="ag"
@@ -613,7 +613,7 @@ def main():
     parser.add_argument(
         "--log-level",
         type=str,
-        default=os.getenv("LOG_LEVEL", "ERROR"),
+        default=os.getenv("LOG_LEVEL", "ERROR"),    # 默认日志级别
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="设置日志级别（默认: ERROR，可通过 .env 文件的 LOG_LEVEL 配置）"
     )
