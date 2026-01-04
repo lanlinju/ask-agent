@@ -12,6 +12,7 @@ import logging
 import time
 from dotenv import load_dotenv
 from pathlib import Path
+import platform
 
 load_dotenv()
 
@@ -207,7 +208,11 @@ Rules:
 - Use Task tool for subtasks needing focused exploration or implementation
 - Use TodoWrite to track multi-step work
 - Prefer tools over prose. Act, don't just explain.
-- After finishing, summarize what changed."""
+- After finishing, summarize what changed.
+
+Environment:
+- OS platform: {platform.system()}
+"""
 
 ASK = 0         # 问答模式
 TRANSLATE = 1   # 翻译模式
@@ -301,13 +306,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Run a shell command.",
+            "description": "Run a shell command.\nLinux/macOS: use bash/zsh, forward slashes.\nWindows: use PowerShell, backslashes.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The shell command to execute"
+                        "description": "The shell command to execute (bash/zsh/PowerShell)"
                     }
                 },
                 "required": ["command"],
