@@ -379,3 +379,7 @@ export DEEPSEEK_API_KEY="your-api-key"
 ```bash
 echo $DEEPSEEK_API_KEY
 ```
+
+## 参考
+
+[learn-claude-code](https://github.com/shareAI-lab/learn-claude-code)
