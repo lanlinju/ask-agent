@@ -1,6 +1,6 @@
 # Ask Agent (ag)
 
- 一个基于 DeepSeek API 的高效终端问答工具
+ 一个基于 DeepSeek API 的高效终端问答工具，支持智能体模式
 
 ## 特性
 
@@ -9,6 +9,8 @@
 - ⚡ **管道友好** - 支持管道输入，可与其他命令组合
 - 📝 **交互式模式** - 直观的聊天界面
 - 🔧 **多种使用方式** - 交互、一问一答、管道模式
+- 🤖 **智能体模式** - 支持代码编辑、文件操作等高级功能
+- 🧩 **可扩展技能** - 通过 Skills 加载领域知识
 
 ## 安装
 
@@ -71,6 +73,20 @@ source ~/.bashrc
 ag --api-key "sk-your-api-key-here" "你的问题"
 ```
 
+**方式三：.env 文件**
+
+在项目根目录创建 `.env` 文件：
+
+```bash
+# .env 文件示例
+DEEPSEEK_API_KEY=sk-your-api-key-here
+DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_API_URL=https://api.deepseek.com
+LOG_LEVEL=ERROR
+```
+
+.env 文件会自动被加载，无需手动设置环境变量。
+
 ## 使用
 
 ### 1. 交互模式 - 持续对话
@@ -87,11 +103,12 @@ python ag
 
 **支持的命令：**
 - `exit` - 退出程序
-- `/e` - 进入翻译模式（清空对话历史）
 - `/ask` - 进入问答模式（清空对话历史）
-- `/reset` - 清空对话历史
+- `/agent` - 进入智能体模式（清空对话历史）
+- `/e` - 进入翻译模式（清空对话历史）
+- `/new` - 创建新会话（清空对话历史）
 - `/help` - 显示帮助信息
-- `/shell command` - 执行shell命令（如 `/ls`, `/pwd`, `/cat file.txt`），命令和输出会自动添加到消息历史
+- `!command` - 执行shell命令（如 `!ls`, `!pwd`, `!cat file.txt`），命令和输出会自动添加到消息历史
 
 ### 2. 一问一答模式
 
@@ -150,7 +167,7 @@ ag -n
 ## 命令行选项
 
 ```
-usage: ag [-q] [-a] [-e] [-n] [--api-key API_KEY] [query]
+usage: ag [-q] [-a] [-e] [-n] [--agent] [--api-key API_KEY] [--log-level LOG_LEVEL] [query]
 
 Ask Agent - DeepSeek 聊天客户端
 
@@ -161,8 +178,10 @@ optional arguments:
   -q, --quit           一问一答模式，回答后直接退出
   -a, --after          管道模式中，回答后进入连续对话模式
   -e, --translate      进入翻译模式
+  --agent              进入智能体模式
   -n, --no-memory      不记忆上下文，每次问答后只保留系统提示词
   --api-key API_KEY    DeepSeek API 密钥（如果不提供，将使用 DEEPSEEK_API_KEY 环境变量）
+  --log-level LOG_LEVEL  设置日志级别（DEBUG, INFO, WARNING, ERROR, CRITICAL）
 ```
 
 ## 使用示例
@@ -206,6 +225,23 @@ ag
 # 输入 /ls 执行 ls 命令，结果会添加到对话历史
 ```
 
+### 智能体模式
+```bash
+# 使用 --agent 选项进入智能体模式
+ag --agent "帮我写一个 Python 脚本来读取文件"
+
+# 或在交互模式中输入 /agent 进入智能体模式
+ag
+/agent
+```
+
+智能体模式支持以下功能：
+- 文件读写操作
+- Shell 命令执行
+- 任务管理
+- 子智能体调用
+- 技能加载
+
 ## 运行示例
 ```bash
 ➜  ask-agent git:(main) ✗ ./ag                                
@@ -225,7 +261,43 @@ README.md
 
 ## 环境变量
 
+以下环境变量可以通过系统环境变量设置，也可以在 `.env` 文件中配置：
+
 - `DEEPSEEK_API_KEY` - **必需** DeepSeek API 密钥
+- `DEEPSEEK_MODEL` - 可选，模型名称（默认：deepseek-chat）
+- `DEEPSEEK_API_URL` - 可选，API 端点（默认：https://api.deepseek.com）
+- `LOG_LEVEL` - 可选，日志级别（默认：ERROR，可选：DEBUG, INFO, WARNING, ERROR, CRITICAL）
+
+**配置优先级**：命令行参数 > 系统环境变量 > .env 文件
+
+## .env 文件配置
+
+在项目根目录创建 `.env` 文件可以方便地管理配置：
+
+### .env 文件示例
+
+```bash
+# DeepSeek API 配置
+DEEPSEEK_API_KEY=sk-your-api-key-here
+DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_API_URL=https://api.deepseek.com
+
+# 日志配置
+LOG_LEVEL=ERROR
+```
+
+### 使用说明
+
+1. 在项目根目录创建 `.env` 文件
+2. 添加所需的配置项
+3. `.env` 文件会在程序启动时自动加载
+
+### .gitignore 配置
+
+```bash
+# .gitignore
+.env
+```
 
 ## 特性详解
 
@@ -238,7 +310,8 @@ README.md
 
 1. **问答模式** - 通用问题回答
 2. **翻译模式** - 英汉互译，包含音标和释义
-3. **Shell命令集成** - 执行命令结果自动添加到对话历史
+3. **智能体模式** - 支持文件操作、Shell命令执行等高级功能
+4. **Shell命令集成** - 执行命令结果自动添加到对话历史
 
 ## 架构
 
@@ -246,15 +319,50 @@ README.md
 - **对话状态管理** - 在内存中维护对话历史，支持完整的上下文
 - **错误处理** - 详细的错误提示，方便故障排查
 - **模式切换** - 灵活支持多种交互模式
+- **智能体工具系统** - 支持文件读写、命令执行、任务管理等工具
+- **技能系统** - 可扩展的技能加载机制，支持领域知识注入
+- **子智能体** - 支持派生子智能体处理特定任务
 
 ## 系统提示词
 
-ag 使用的系统提示词优化了 AI 的回答方式：
+ag 根据不同模式使用不同的系统提示词：
 
+### 问答模式
 - 简洁、直接、高效
 - 专注于命令行和技术问题
 - 提供可直接使用的代码和命令
 - 避免冗长解释
+
+### 翻译模式
+- 英汉互译
+- 英语单词提供音标和释义
+- 缩写词提供全称
+
+### 智能体模式
+- 计划-行动-报告循环
+- 自动使用 Skills 工具加载领域知识
+- 支持子智能体调用
+- 任务列表管理
+- 工具优先于解释
+
+## 技能系统（Skills）
+
+ag 支持通过 `skills/` 目录加载可扩展的技能模块。每个技能是一个文件夹，包含：
+
+- **SKILL.md**（必需）- 技能描述和指令
+- **scripts/**（可选）- 可执行脚本
+- **references/**（可选）- 参考文档
+- **assets/**（可选）- 模板和输出文件
+
+智能体会自动识别并加载这些技能，在任务匹配时使用相应的领域知识。
+
+## 子智能体（Subagents）
+
+智能体模式支持派生子智能体处理特定任务：
+
+- **explore** - 只读探索智能体，用于探索代码、查找文件、搜索
+- **code** - 完整功能智能体，用于实现功能和修复错误
+- **plan** - 规划智能体，用于设计实现策略
 
 ## 故障排查
 
