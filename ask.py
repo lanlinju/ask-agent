@@ -906,17 +906,17 @@ def is_command(command: str) -> bool:
 def get_mode_prompt() -> str:
     """获取当前模式的提示符"""
     if current_mode == TRANSLATE:
-        return "💬^ (Translate)"
+        return "Translate"
     elif current_mode == AGENT:
-        return "💬^ (Agent)"
+        return "Agent"
     else:
-        return "💬^ (Ask)"
+        return "Ask"
     
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
     while True:
-        user_input = input(f"{get_mode_prompt()}:\n").strip()
+        user_input = input(f"💬^ ({get_mode_prompt()}):\n").strip()
         if not user_input:
             continue
 
