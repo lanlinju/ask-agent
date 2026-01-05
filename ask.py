@@ -586,19 +586,7 @@ def get_tools_for_agent(type: str) -> list:
 
 
 def run_task(description: str, prompt: str, agent_type: str) -> str:
-    """
-    Execute a subagent task with isolated context.
-
-    This is the core of the subagent mechanism:
-
-    1. Create isolated message history (KEY: no parent context!)
-    2. Use agent-specific system prompt
-    3. Filter available tools based on agent type
-    4. Run the same query loop as main agent
-    5. Return ONLY the final text (not intermediate details)
-
-    The parent agent sees just the summary, keeping its context clean.
-    """
+    """Execute a subagent task with isolated context."""
     if agent_type not in AGENT_TYPES:
         return f"Error: Unknown agent type '{agent_type}'"
 
@@ -769,10 +757,10 @@ def command(command: str):
         print("✅ 已进入智能体模式\n")
         return
 
-    # 清空对话历史
-    if command == '/reset':
+    # 创建新会话
+    if command == '/new':
         init_system_prompt(current_mode)
-        print("✅ 已清空对话历史\n")
+        print("✅ 已创建新会话\n")
         return
 
     # 显示帮助
@@ -790,20 +778,20 @@ def show_help():
     """显示帮助信息"""
     help_text = """
  📖 Ask Agent 命令帮助
- 🔹 交互模式命令：
-   /ask          - 进入问答模式
-   /agent        - 进入智能体模式
-   /e            - 进入翻译模式
-   /reset        - 清空当前对话历史
-   /help         - 显示此帮助信息
-   !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
-   exit          - 退出程序
+  🔹 交互模式命令：
+    /ask          - 进入问答模式
+    /agent        - 进入智能体模式
+    /e            - 进入翻译模式
+    /new          - 创建新会话
+    /help         - 显示此帮助信息
+    !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
+    exit          - 退出程序
 
- 🔹 智能体模式功能：
-   - 自动使用 Skills 工具加载领域知识（PDF处理、MCP开发等）
-   - 支持通过 Task 工具启动子智能体
-   - 支持通过 TodoWrite 工具管理任务列表
-"""
+  🔹 智能体模式功能：
+    - 自动使用 Skills 工具加载领域知识（PDF处理、MCP开发等）
+    - 支持通过 Task 工具启动子智能体
+    - 支持通过 TodoWrite 工具管理任务列表
+ """
     print(help_text)
 
 
