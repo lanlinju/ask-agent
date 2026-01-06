@@ -1,10 +1,12 @@
 import json
 import logging
 import requests
-from typing import Dict, List, Any, Generator, Optional, Union
+from typing import Dict, List, Any, Generator, Optional, Union, Tuple
 from urllib.parse import urljoin
 import uuid
 import subprocess
+from pathlib import Path
+from MCPConfig import MCPConfig, ServerConfig
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -432,26 +434,172 @@ class StreambleHttpClient:
         logger.info("Connection closed")
 
 
-def convert_to_openai_format(tool_schema: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    将 MCP 工具描述转换为 OpenAI function-calling 格式
+# ========== MCP 管理器 ==========
+class MCPManager:
+    """MCP 服务器管理器"""
 
-    Args:
-        tool_schema: MCP 工具描述
+    def __init__(self):
+        self.config = MCPConfig(Path.cwd() / "mcp.json")
+        # name -> (client, tools)
+        self.active_clients: Dict[str, Tuple[Any, List[Dict]]] = {}
+        self.loaded = False
 
-    Returns:
-        OpenAI 格式的工具描述
-    """
-    input_schema = tool_schema.get("inputSchema", {})
-    return {
-        "type": "function",
-        "function": {
-            "name": tool_schema["name"],
-            "description": tool_schema.get("description", ""),
-            "parameters": {
-                "type": "object",
-                "properties": input_schema.get("properties", {}),
-                "required": input_schema.get("required", []),
+    def load_config(self) -> bool:
+        """加载 MCP 配置"""
+        if self.config.load():
+            self.loaded = True
+            logger.info(f"成功加载 {len(self.config)} 个 MCP 服务器配置")
+            return True
+        return False
+
+    def list_servers(self) -> List[str]:
+        """列出所有可用的 MCP 服务器"""
+        if not self.loaded:
+            self.load_config()
+        return self.config.list_servers()
+
+    def get_server_info(self, name: str) -> Optional[ServerConfig]:
+        """获取服务器配置信息"""
+        return self.config.get_server(name)
+
+    def connect_server(self, name: str) -> bool:
+        """连接到指定的 MCP 服务器"""
+        # 如果已经连接，直接返回
+        if name in self.active_clients:
+            logger.info(f"服务器 '{name}' 已连接")
+            return True
+
+        server = self.config.get_server(name)
+        if not server:
+            logger.error(f"未找到服务器 '{name}'")
+            return False
+
+        if not server.enabled:
+            logger.warning(f"服务器 '{name}' 已禁用")
+            return False
+
+        try:
+            # 根据类型创建客户端
+            if server.is_stdio():
+                cmd = server.get_full_command()
+                if not cmd:
+                    logger.error(f"服务器 '{name}' 命令无效")
+                    return False
+
+                client = StdioClient(cmd)
+                client.connect()
+                logger.info(f"✓ 已连接 stdio 服务器: {name}")
+
+            else:  # HTTP
+                if not server.url:
+                    logger.error(f"服务器 '{name}' 缺少 URL")
+                    return False
+                client = StreambleHttpClient(
+                    server.url, timeout=server.timeout or 30)
+                client.connect()
+                logger.info(f"✓ 已连接 HTTP 服务器: {name}")
+
+            # 获取工具列表
+            tools = client.list_tools()
+
+            # 转换为 OpenAI 格式
+            openai_tools = []
+            for tool in tools:
+                openai_tool = self._convert_mcp_tool(tool, name)
+                openai_tools.append(openai_tool)
+
+            # 保存客户端和工具
+            self.active_clients[name] = (client, openai_tools)
+            logger.info(
+                f"加载了 {len(openai_tools)} 个工具: {[t['function']['name'] for t in openai_tools]}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"连接服务器 '{name}' 失败: {e}")
+            return False
+
+    def disconnect_server(self, name: str) -> bool:
+        """断开指定的 MCP 服务器"""
+        if name not in self.active_clients:
+            logger.warning(f"服务器 '{name}' 未连接")
+            return False
+
+        try:
+            client, _ = self.active_clients[name]
+            client.close()
+            del self.active_clients[name]
+            logger.info(f"✓ 已断开服务器: {name}")
+            return True
+        except Exception as e:
+            logger.error(f"断开服务器 '{name}' 失败: {e}")
+            return False
+
+    def get_active_tools(self) -> List[Dict]:
+        """获取所有已连接服务器的工具列表"""
+        all_tools = []
+        for name, (client, tools) in self.active_clients.items():
+            all_tools.extend(tools)
+        return all_tools
+
+    def call_mcp_tool(self, server_name: str, tool_name: str, arguments: Dict) -> str:
+        """调用 MCP 工具"""
+        if server_name not in self.active_clients:
+            return f"Error: 服务器 '{server_name}' 未连接"
+
+        try:
+            client, _ = self.active_clients[server_name]
+
+            # 根据客户端类型调用工具
+            if isinstance(client, StdioClient):
+                result = client.call_tool(tool_name, arguments)
+            else:  # HTTPClient
+                results = list(client.call_tool(tool_name, arguments))
+                result = results[0] if results else {}
+
+            # 提取结果内容
+            if isinstance(result, dict):
+                content = result.get("content", [])
+                if content and isinstance(content, list):
+                    # 合并所有内容块
+                    text_parts = []
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            text_parts.append(item.get("text", ""))
+                    return "\n".join(text_parts) if text_parts else str(result)
+                return str(result)
+
+            return str(result)
+
+        except Exception as e:
+            logger.error(f"调用工具失败: {e}")
+            return f"Error: {e}"
+
+    def _convert_mcp_tool(self, mcp_tool: Dict, server_name: str) -> Dict:
+        """将 MCP 工具格式转换为 OpenAI function calling 格式"""
+        # 工具名称加上服务器前缀，避免冲突
+        prefixed_name = f"mcp_{server_name}_{mcp_tool['name']}"
+
+        input_schema = mcp_tool.get("inputSchema", {})
+
+        return {
+            "type": "function",
+            "function": {
+                "name": prefixed_name,
+                "description": f"[MCP:{server_name}] {mcp_tool.get('description', '')}",
+                "parameters": {
+                    "type": "object",
+                    "properties": input_schema.get("properties", {}),
+                    "required": input_schema.get("required", []),
+                },
             },
-        },
-    }
+            "_mcp_meta": {
+                "server": server_name,
+                "original_name": mcp_tool["name"]
+            }
+        }
+
+    def cleanup(self):
+        """清理所有连接"""
+        for name in list(self.active_clients.keys()):
+            self.disconnect_server(name)
