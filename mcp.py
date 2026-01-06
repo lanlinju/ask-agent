@@ -122,7 +122,8 @@ class StdioClient:
             response_line = self.process.stdout.readline()
             if not response_line.strip():
                 stderr_output = self.process.stderr.read() if self.process.stderr else ""
-                raise MCPError(f"Received empty response. Error output: {stderr_output}")
+                raise MCPError(
+                    f"Received empty response. Error output: {stderr_output}")
 
             logger.debug(f"Received response: {response_line.strip()}")
             response = json.loads(response_line.strip())
@@ -148,7 +149,8 @@ class StdioClient:
             List of tools
         """
         if not self._initialized:
-            raise MCPError("Client not initialized, please call connect() first")
+            raise MCPError(
+                "Client not initialized, please call connect() first")
 
         result = self._send_request("tools/list")
         tools = result.get("tools", [])
@@ -170,7 +172,8 @@ class StdioClient:
             ToolCallError: Raised when tool call fails
         """
         if not self._initialized:
-            raise MCPError("Client not initialized, please call connect() first")
+            raise MCPError(
+                "Client not initialized, please call connect() first")
 
         try:
             params = {
@@ -197,6 +200,7 @@ class StdioClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit"""
         self.close()
+
 
 class StreambleHttpClient:
     """HTTP-based MCP client (supports streaming responses)"""
@@ -247,11 +251,13 @@ class StreambleHttpClient:
             # Get session_id during initialization
             results = list(self._send_request("initialize", init_params))
             if not results:
-                raise ConnectionError("Initialization failed: No response received")
+                raise ConnectionError(
+                    "Initialization failed: No response received")
 
             result = results[0]
             self._initialized = True
-            logger.info(f"Connection successful. Session ID: {self.session_id}, Server: {result.get('serverInfo')}")
+            logger.info(
+                f"Connection successful. Session ID: {self.session_id}, Server: {result.get('serverInfo')}")
             return result
 
         except Exception as e:
@@ -321,7 +327,8 @@ class StreambleHttpClient:
 
                     if "error" in data:
                         error = data["error"]
-                        raise MCPError(f"Server error [{error.get('code')}]: {error.get('message')}")
+                        raise MCPError(
+                            f"Server error [{error.get('code')}]: {error.get('message')}")
 
                     if "result" in data:
                         yield data["result"]
@@ -331,12 +338,15 @@ class StreambleHttpClient:
                     for line in response.iter_lines():
                         if line and line.startswith(b"data: "):
                             try:
-                                event_data = json.loads(line[6:].decode("utf-8"))
-                                logger.debug(f"Processing SSE stream response: {event_data}")
+                                event_data = json.loads(
+                                    line[6:].decode("utf-8"))
+                                logger.debug(
+                                    f"Processing SSE stream response: {event_data}")
 
                                 if "error" in event_data:
                                     error = event_data["error"]
-                                    raise MCPError(f"Stream error [{error.get('code')}]: {error.get('message')}")
+                                    raise MCPError(
+                                        f"Stream error [{error.get('code')}]: {error.get('message')}")
 
                                 # Return result or notification
                                 if "result" in event_data:
@@ -345,7 +355,8 @@ class StreambleHttpClient:
                                     yield event_data  # Notification event
 
                             except json.JSONDecodeError:
-                                logger.warning(f"Failed to parse SSE data: {line}")
+                                logger.warning(
+                                    f"Failed to parse SSE data: {line}")
                                 continue
                 else:
                     logger.warning(f"Unknown content-type: {content_type}")
@@ -361,7 +372,8 @@ class StreambleHttpClient:
             List of tools
         """
         if not self._initialized:
-            raise MCPError("Client not initialized, please call connect() first")
+            raise MCPError(
+                "Client not initialized, please call connect() first")
 
         results = list(self._send_request("tools/list"))
         if not results:
@@ -392,7 +404,8 @@ class StreambleHttpClient:
             ToolCallError: Raised when tool call fails
         """
         if not self._initialized:
-            raise MCPError("Client not initialized, please call connect() first")
+            raise MCPError(
+                "Client not initialized, please call connect() first")
 
         try:
             params = {
@@ -417,3 +430,28 @@ class StreambleHttpClient:
         self._initialized = False
         self.session_id = None
         logger.info("Connection closed")
+
+
+def convert_to_openai_format(tool_schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    将 MCP 工具描述转换为 OpenAI function-calling 格式
+
+    Args:
+        tool_schema: MCP 工具描述
+
+    Returns:
+        OpenAI 格式的工具描述
+    """
+    input_schema = tool_schema.get("inputSchema", {})
+    return {
+        "type": "function",
+        "function": {
+            "name": tool_schema["name"],
+            "description": tool_schema.get("description", ""),
+            "parameters": {
+                "type": "object",
+                "properties": input_schema.get("properties", {}),
+                "required": input_schema.get("required", []),
+            },
+        },
+    }

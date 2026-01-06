@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "http_server": {
+      "type": "streamableHttp",
+      "url": "http://localhost:8000/mcp",
+      "description": "用于测试的MCP服务器, 启动: python ./tests/http_server.py",
+      "timeout": 30,
+      "enabled": true
+    }
+  }
+}
