@@ -34,14 +34,23 @@ def generate_request_id() -> str:
 class StdioClient:
     """Stdio-based MCP client"""
 
-    def __init__(self, command: List[str]):
+    def __init__(
+        self,
+        command: List[str],
+        env: Optional[Dict[str, str]] = None,
+        cwd: Optional[Union[str, Path]] = None
+    ):
         """
         Initialize stdio client
 
         Args:
             command: Command list to start the server, e.g., ["python3", "server.py"]
+            env: Additional environment variables dict (merged with current environment)
+            cwd: Working directory path
         """
         self.command = command
+        self.env = env
+        self.cwd = Path(cwd) if cwd else None
         self.process: Optional[subprocess.Popen] = None
         self._initialized = False
 
@@ -56,6 +65,22 @@ class StdioClient:
             ConnectionError: Raised when connection fails
         """
         try:
+            # Prepare environment variables
+            import os
+            process_env = None
+            if self.env:
+                process_env = os.environ.copy()
+                process_env.update(self.env)
+                logger.debug(f"Using custom environment variables: {self.env}")
+
+            # Validate working directory
+            if self.cwd:
+                if not self.cwd.exists():
+                    raise ConnectionError(f"Working directory does not exist: {self.cwd}")
+                if not self.cwd.is_dir():
+                    raise ConnectionError(f"Working directory is not a directory: {self.cwd}")
+                logger.debug(f"Using working directory: {self.cwd}")
+
             # Start subprocess
             self.process = subprocess.Popen(
                 self.command,
@@ -63,8 +88,14 @@ class StdioClient:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=0
+                bufsize=0,
+                env=process_env,
+                cwd=str(self.cwd) if self.cwd else None
             )
+
+            logger.info(f"Process started: PID={self.process.pid}, command={' '.join(self.command)}")
+            if self.cwd:
+                logger.info(f"Working directory: {self.cwd}")
 
             # Send initialization request
             init_params = {
@@ -485,7 +516,11 @@ class MCPManager:
                     logger.error(f"服务器 '{name}' 命令无效")
                     return False
 
-                client = StdioClient(cmd)
+                client = StdioClient(
+                    cmd,
+                    env=server.env,
+                    cwd=server.cwd
+                )
                 client.connect()
                 logger.info(f"✓ 已连接 stdio 服务器: {name}")
 

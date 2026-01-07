@@ -11,8 +11,9 @@
       "type": "stdio",
       "command": "python",
       "args": [
-        "./server/stdio_server.py"
+        "stdio_server.py"
       ],
+      "cwd": "./server",
       "description": "用于测试的本地MCP服务器",
       "enabled": true
     }

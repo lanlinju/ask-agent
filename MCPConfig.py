@@ -38,7 +38,8 @@ class ServerConfig:
     command: Optional[str] = None
     args: Optional[List[str]] = None
     env: Optional[Dict[str, str]] = None
-    
+    cwd: Optional[str] = None
+
     # HTTP 配置
     url: Optional[str] = None
     headers: Optional[Dict[str, str]] = None
@@ -88,6 +89,7 @@ class ServerConfig:
                 command=config["command"],
                 args=config.get("args", []),
                 env=config.get("env"),
+                cwd=config.get("cwd"),
                 timeout=config.get("timeout"),
                 enabled=config.get("enabled", True),
                 description=config.get("description")
@@ -347,6 +349,8 @@ class MCPConfig:
                 result["args"] = server.args
             if server.env:
                 result["env"] = server.env
+            if server.cwd:
+                result["cwd"] = server.cwd
         else:
             result["url"] = server.url
             if server.headers:

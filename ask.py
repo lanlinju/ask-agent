@@ -681,14 +681,13 @@ def execute_tool(name: str, args: dict) -> str:
     if name == "Skill":
         return run_skill(args["skill"])
     if name.startswith("mcp_"):
-        if name.startswith("mcp_"):
-            # 解析 MCP 工具名称: mcp_<server>_<tool>
-            parts = name.split("_", 2)
-            if len(parts) >= 3:
-                server_name = parts[1]
-                tool_name = parts[2]
-                return MCP_MANAGER.call_mcp_tool(server_name, tool_name, args)
-            return f"Error: Invalid MCP tool name: {name}"
+        import re
+        match = re.match(r"^mcp_(.+)_(.+)$", name)
+        if match:
+            server_name = match.group(1)
+            tool_name = match.group(2)
+            return MCP_MANAGER.call_mcp_tool(server_name, tool_name, args)
+        return f"Error: Invalid MCP tool name: {name}"
     return f"Unknown tool: {name}"
 
 
@@ -816,17 +815,17 @@ def command(command: str):
 def use_all_mcp_servers():
     """连接并使用所有可用的 MCP 服务器"""
     servers = MCP_MANAGER.list_servers()
-    
+
     if not servers:
         print("❌ 未找到 MCP 服务器配置")
         print("   请在当前目录创建 mcp.json 配置文件")
         return
-    
+
     for name in servers:
         use_mcp_server(name)
 
     print(f"\n🔌 已连接所有 MCP 服务器 ({len(servers)} 个)...")
-    print()    
+    print()
 
 
 def use_mcp_server(name: str):
