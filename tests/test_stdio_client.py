@@ -18,7 +18,7 @@ def test_stdio_client():
     print("=" * 50 + "\n")
     
     try:
-        server_path = os.path.join(os.path.dirname(__file__), "stdio_server.py")
+        server_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server", "stdio_server.py")
         with StdioClient(["python3", server_path]) as client:
             # 列出工具
             print(">>> 列出可用工具")
