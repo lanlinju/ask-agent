@@ -165,7 +165,9 @@ class MCPConfig:
         try:
             # 检查文件是否存在
             if not self.path.exists():
-                raise ConfigLoadError(f"配置文件不存在: {self.path}")
+                self.servers = {}
+                logger.warning(f"MCP 配置文件不存在: {self.path}")
+                return True
             
             # 读取 JSON 文件
             with open(self.path, 'r', encoding='utf-8') as f:

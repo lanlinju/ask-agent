@@ -443,6 +443,7 @@ class MCPManager:
         # name -> (client, tools)
         self.active_clients: Dict[str, Tuple[Any, List[Dict]]] = {}
         self.loaded = False
+        self.load_config()
 
     def load_config(self) -> bool:
         """加载 MCP 配置"""
@@ -566,6 +567,8 @@ class MCPManager:
                     for item in content:
                         if isinstance(item, dict) and item.get("type") == "text":
                             text_parts.append(item.get("text", ""))
+
+                    logger.debug(f"MCP {server_name}:{tool_name} Tool Result: {content}")        
                     return "\n".join(text_parts) if text_parts else str(result)
                 return str(result)
 

@@ -13,6 +13,7 @@ import time
 from dotenv import load_dotenv
 from pathlib import Path
 import platform
+from mcp import MCPManager
 
 load_dotenv()
 
@@ -68,6 +69,7 @@ AGENT_TYPES = {
         "prompt": "You are a planning agent. Analyze the codebase and output a numbered implementation plan. Do NOT make changes.",
     },
 }
+
 
 class SkillLoader:
     """
@@ -166,7 +168,8 @@ class SkillLoader:
             if folder_path.exists():
                 files = list(folder_path.glob("*"))
                 if files:
-                    resources.append(f"{label}: {', '.join(f.name for f in files)}")
+                    resources.append(
+                        f"{label}: {', '.join(f.name for f in files)}")
 
         if resources:
             content += f"\n\n**Available resources in {skill['dir']}:**\n"
@@ -182,6 +185,9 @@ class SkillLoader:
 # Global skill loader instance
 SKILLS_DIR = WORKDIR / "skills"
 SKILLS = SkillLoader(SKILLS_DIR)
+
+# Global MCP manager instance
+MCP_MANAGER = MCPManager()
 
 
 def get_agent_descriptions() -> str:
@@ -616,7 +622,8 @@ Complete the task and return a clear, concise summary."""
 
     # Run the same agent loop (silently - don't print to main chat)
     while True:
-        content, tool_calls = get_streaming_response(sub_messages, sub_tools, True)
+        content, tool_calls = get_streaming_response(
+            sub_messages, sub_tools, True)
 
         # Add assistant response to subagent history
         sub_assistant_msg = {"role": "assistant", "content": content}
@@ -673,6 +680,15 @@ def execute_tool(name: str, args: dict) -> str:
         return run_task(args["description"], args["prompt"], args["agent_type"])
     if name == "Skill":
         return run_skill(args["skill"])
+    if name.startswith("mcp_"):
+        if name.startswith("mcp_"):
+            # 解析 MCP 工具名称: mcp_<server>_<tool>
+            parts = name.split("_", 2)
+            if len(parts) >= 3:
+                server_name = parts[1]
+                tool_name = parts[2]
+                return MCP_MANAGER.call_mcp_tool(server_name, tool_name, args)
+            return f"Error: Invalid MCP tool name: {name}"
     return f"Unknown tool: {name}"
 
 
@@ -768,10 +784,115 @@ def command(command: str):
         show_help()
         return
 
+    # 列出所有可用的 MCP 服务器
+    if command == '/mcp':
+        list_mcp_servers()
+        return
+
+    # 使用指定的 MCP 服务器
+    if command.startswith('/use '):
+        server_name = command[5:].strip()
+        use_mcp_server(server_name)
+        return
+
+    if command == '/mcp-status':
+        show_mcp_status()
+        return
+
+    if command.startswith('/disconnect '):
+        server_name = command[12:].strip()
+        disconnect_mcp_server(server_name)
+        return
+
     # 处理shell命令 (!开头)
     if command.startswith('!'):
         shell(command[1:])  # 提取命令，去掉前面的 !
         return
+
+
+def use_mcp_server(name: str):
+    """连接并使用指定的 MCP 服务器"""
+    print(f"\n🔌 连接 MCP 服务器: {name}...")
+
+    global TOOLS
+    if MCP_MANAGER.connect_server(name):
+        client, tools = MCP_MANAGER.active_clients[name]
+        TOOLS.extend(tools)
+        print(f"✅ 成功连接，加载了 {len(tools)} 个工具")
+
+        # 显示工具列表
+        if tools:
+            print(f"\n可用工具:")
+            for tool in tools:
+                tool_name = tool['function']['name']
+                desc = tool['function'].get('description', 'N/A')
+                # 移除 MCP 前缀以显示原始名称
+                display_name = tool_name.replace(f"mcp_{name}_", "")
+                print(f"  - {display_name}: {desc}")
+        print()
+    else:
+        print(f"❌ 连接失败\n")
+
+
+def list_mcp_servers():
+    """列出所有可用的 MCP 服务器"""
+    servers = MCP_MANAGER.list_servers()
+
+    if not servers:
+        print("❌ 未找到 MCP 服务器配置")
+        print("   请在当前目录创建 mcp.json 配置文件")
+        return
+
+    print(f"\n📋 可用的 MCP 服务器 ({len(servers)} 个):\n")
+
+    for name in servers:
+        server = MCP_MANAGER.get_server_info(name)
+        if not server:
+            continue
+
+        # 检查是否已连接
+        status = "✓ 已连接" if name in MCP_MANAGER.active_clients else "○ 未连接"
+        print(f"  [{status}] {name}")
+        print(f"    类型: {server.type}")
+        if server.description:
+            print(f"    描述: {server.description}")
+        if server.is_stdio():
+            cmd = server.get_full_command()
+            if cmd:
+                print(f"    命令: {' '.join(cmd)}")
+        else:
+            print(f"    URL: {server.url}")
+        if not server.enabled:
+            print(f"    状态: 已禁用")
+        print()
+
+
+def show_mcp_status():
+    """显示 MCP 连接状态"""
+    active = list(MCP_MANAGER.active_clients.keys())
+
+    if not active:
+        print("\n📊 当前没有活动的 MCP 连接\n")
+        return
+
+    print(f"\n📊 活动的 MCP 服务器 ({len(active)} 个):\n")
+
+    for name in active:
+        client, tools = MCP_MANAGER.active_clients[name]
+        print(f"  ✓ {name}")
+        print(f"    工具数量: {len(tools)}")
+        print(f"    类型: {type(client).__name__}")
+        print()
+
+
+def disconnect_mcp_server(name: str):
+    """断开指定的 MCP 服务器"""
+    print(f"\n🔌 断开 MCP 服务器: {name}...")
+
+    if MCP_MANAGER.disconnect_server(name):
+        print(f"✅ 已断开连接\n")
+    else:
+        print(f"❌ 断开失败\n")
 
 
 def show_help():
@@ -787,10 +908,17 @@ def show_help():
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
     exit          - 退出程序
 
+  🔹 MCP 服务器管理：
+    /mcp          - 列出所有可用的 MCP 服务器
+    /use <name>   - 连接并使用指定的 MCP 服务器
+    /disconnect <name> - 断开指定的 MCP 服务器
+    /mcp-status   - 显示当前 MCP 连接状态
+
   🔹 智能体模式功能：
     - 自动使用 Skills 工具加载领域知识（PDF处理、MCP开发等）
     - 支持通过 Task 工具启动子智能体
     - 支持通过 TodoWrite 工具管理任务列表
+    - 支持连接和使用 MCP 服务器提供的工具
  """
     print(help_text)
 
@@ -891,6 +1019,7 @@ def is_command(command: str) -> bool:
     """检查输入是否为命令"""
     return command.startswith('/') or command.startswith('!') or command.lower() == 'exit'
 
+
 def get_mode_prompt() -> str:
     """获取当前模式的提示符"""
     if current_mode == TRANSLATE:
@@ -899,7 +1028,8 @@ def get_mode_prompt() -> str:
         return "Agent"
     else:
         return "Ask"
-    
+
+
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
