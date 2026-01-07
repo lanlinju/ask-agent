@@ -709,6 +709,21 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
 
     collected_content = ""
     tool_calls_collected = []
+    reasoning_in_progress = False
+
+    def start_thinking():
+        nonlocal reasoning_in_progress
+        if not reasoning_in_progress:
+            reasoning_in_progress = True
+            if not silent:
+                print("\033[34mThinking: \033[0m", end='', flush=True)
+    
+    def stop_thinking():
+        nonlocal reasoning_in_progress
+        if reasoning_in_progress:
+            reasoning_in_progress = False
+            if not silent:
+                print('\n')
 
     with requests.post(f"{DEEPSEEK_API_URL}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
         if response.status_code != 200:
@@ -733,19 +748,24 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                         break
                     if "choices" in data and data["choices"][0]["delta"]:
                         delta = data["choices"][0]["delta"]
+                        # 推理内容
+                        if delta.get("reasoning_content"):
+                            start_thinking()
+                            if not silent:
+                                print(f"\033[90m{delta['reasoning_content']}\033[0m", end='', flush=True)
                         # 文本内容
-                        if delta.get("content"):
+                        elif delta.get("content"):
+                            stop_thinking()
                             content = delta["content"]
                             collected_content += content
                             if not silent:
                                 print(content, end='', flush=True)
                         # 工具调用
-                        if delta.get("tool_calls"):
+                        elif delta.get("tool_calls"):
                             tool_calls = delta["tool_calls"]
                             logger.debug("tool delta: %s", tool_calls)
                             for tool_call in tool_calls:
                                 tool_calls_collected.append(tool_call)
-
                 except json.JSONDecodeError:
                     continue
 
