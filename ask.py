@@ -17,7 +17,7 @@ from mcp import MCPManager
 
 load_dotenv()
 
-logging.basicConfig(format="[%(levelname)s] %(message)s")
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Ask Agent
