@@ -234,16 +234,18 @@ class StdioClient:
 class StreambleHttpClient:
     """HTTP-based MCP client (supports streaming responses)"""
 
-    def __init__(self, server_url: str, timeout: int = 30):
+    def __init__(self, server_url: str, timeout: int = 30, headers: Optional[Dict[str, str]] = None):
         """
         Initialize HTTP client
 
         Args:
             server_url: Server URL
             timeout: Request timeout in seconds
+            headers: Additional headers to include in requests
         """
         self.server_url = server_url.rstrip('/')
         self.timeout = timeout
+        self.headers = headers or {}
         self.session = requests.Session()
         self.session_id: Optional[str] = None
         self._initialized = False
@@ -300,6 +302,7 @@ class StreambleHttpClient:
         }
         if self.session_id:
             headers["mcp-session-id"] = self.session_id
+        headers.update(self.headers)
         return headers
 
     def _send_request(
@@ -529,7 +532,9 @@ class MCPManager:
                     logger.error(f"服务器 '{name}' 缺少 URL")
                     return False
                 client = StreambleHttpClient(
-                    server.url, timeout=server.timeout or 30)
+                    server.url,
+                    timeout=server.timeout or 30,
+                    headers=server.headers)
                 client.connect()
                 logger.info(f"✓ 已连接 HTTP 服务器: {name}")
 
