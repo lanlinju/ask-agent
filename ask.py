@@ -789,10 +789,13 @@ def command(command: str):
         list_mcp_servers()
         return
 
-    # 使用指定的 MCP 服务器
-    if command.startswith('/use '):
+    # 使用指定的 MCP 服务器（不指定名称则加载所有）
+    if command.startswith('/use'):
         server_name = command[5:].strip()
-        use_mcp_server(server_name)
+        if not server_name:
+            use_all_mcp_servers()
+        else:
+            use_mcp_server(server_name)
         return
 
     if command == '/mcp-status':
@@ -808,6 +811,22 @@ def command(command: str):
     if command.startswith('!'):
         shell(command[1:])  # 提取命令，去掉前面的 !
         return
+
+
+def use_all_mcp_servers():
+    """连接并使用所有可用的 MCP 服务器"""
+    servers = MCP_MANAGER.list_servers()
+    
+    if not servers:
+        print("❌ 未找到 MCP 服务器配置")
+        print("   请在当前目录创建 mcp.json 配置文件")
+        return
+    
+    for name in servers:
+        use_mcp_server(name)
+
+    print(f"\n🔌 已连接所有 MCP 服务器 ({len(servers)} 个)...")
+    print()    
 
 
 def use_mcp_server(name: str):
@@ -910,7 +929,7 @@ def show_help():
 
   🔹 MCP 服务器管理：
     /mcp          - 列出所有可用的 MCP 服务器
-    /use <name>   - 连接并使用指定的 MCP 服务器
+    /use [name]   - 连接并使用 MCP 服务器（不指定名称则连接所有）
     /disconnect <name> - 断开指定的 MCP 服务器
     /mcp-status   - 显示当前 MCP 连接状态
 

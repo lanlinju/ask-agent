@@ -473,6 +473,8 @@ class MCPManager:
         server = self.config.get_server(name)
         if not server:
             logger.error(f"未找到服务器 '{name}'")
+            print("❌ 未找到 MCP 服务器配置")
+            print("   请在当前目录创建 mcp.json 配置文件")
             return False
 
         if not server.enabled:
