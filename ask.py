@@ -710,6 +710,7 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
     collected_content = ""
     tool_calls_collected = []
     reasoning_in_progress = False
+    in_think_tag = False  # 跟踪是否在 <think> 标签内
 
     def start_thinking():
         nonlocal reasoning_in_progress
@@ -757,6 +758,17 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                         elif delta.get("content"):
                             stop_thinking()
                             content = delta["content"]
+                            if "<think>" in content:    
+                                in_think_tag = True
+                                print("\033[34mThinking: \033[0m", end='', flush=True)
+                                content = content.replace("<think>", "")           
+                            if "</think>" in content:    
+                                in_think_tag = False
+                                continue
+                            if in_think_tag:
+                                if not silent:
+                                    print(f"\033[90m{content}\033[0m", end='', flush=True)
+                                continue    
                             collected_content += content
                             if not silent:
                                 print(content, end='', flush=True)
@@ -1096,7 +1108,7 @@ def chat_loop():
 
         sanitize_memory()
 
-        print('\n')  # 换行
+        # print('\n')  # 换行
 
 
 def restore_tty():
