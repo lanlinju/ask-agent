@@ -719,8 +719,18 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                 decoded = chunk.decode('utf-8')
                 if not decoded.startswith("data:"):
                     continue
+                if decoded == "data: [DONE]":
+                    logger.debug("data: [DONE]")
+                    break
                 try:
                     data = json.loads(decoded[6:])  # 去掉 "data: " 前缀
+                    # logger.debug("data: %s", data)
+                    if len(data["choices"]) == 0:
+                        logger.debug("\nchoices length is 0")
+                        continue
+                    if data['choices'][0]['finish_reason'] != None:
+                        logger.info("\nfinish_reason: %s", data['choices'][0]['finish_reason'])
+                        break
                     if "choices" in data and data["choices"][0]["delta"]:
                         delta = data["choices"][0]["delta"]
                         # 文本内容
