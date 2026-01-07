@@ -9,3 +9,7 @@ debug:
 
 lint:
 	python3 -m py_compile ask.py	
+
+
+pipreqs:
+	pipreqs . --force --encoding=utf-8
