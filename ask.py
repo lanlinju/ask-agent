@@ -15,7 +15,7 @@ from pathlib import Path
 import platform
 from mcp import MCPManager
 
-load_dotenv()
+load_dotenv(override=True)
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
