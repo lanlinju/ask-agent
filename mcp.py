@@ -633,10 +633,6 @@ class MCPManager:
                     "properties": input_schema.get("properties", {}),
                     "required": input_schema.get("required", []),
                 },
-            },
-            "_mcp_meta": {
-                "server": server_name,
-                "original_name": mcp_tool["name"]
             }
         }
 
