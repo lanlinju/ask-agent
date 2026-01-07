@@ -20,6 +20,9 @@ load_dotenv(override=True)
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+if sys.platform != 'win32':
+    import readline
+    
 # Ask Agent
 
 # 配置API参数
@@ -218,6 +221,8 @@ Rules:
 
 Environment:
 - OS platform: {platform.system()}
+    - Windows: use PowerShell command.
+    - Linux/macOS: use Bash command.
 """
 
 ASK = 0         # 问答模式
@@ -1108,7 +1113,7 @@ def chat_loop():
 
         sanitize_memory()
 
-        # print('\n')  # 换行
+        print()  # 换行
 
 
 def restore_tty():
