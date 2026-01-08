@@ -473,7 +473,6 @@ class MCPManager:
         # name -> (client, tools)
         self.active_clients: Dict[str, Tuple[Any, List[Dict]]] = {}
         self.loaded = False
-        self.load_config()
 
     def load_config(self) -> bool:
         """加载 MCP 配置"""
