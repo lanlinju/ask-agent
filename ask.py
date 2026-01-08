@@ -843,51 +843,12 @@ def command(command: str):
 def handle_mcp_command(command: str):
     parts = command.split()
     if len(parts) > 1 and '-l' in parts:
-        list_mcp_servers()
+        MCP_MANAGER.list_mcp_servers()
     else:
         server_names = MCP_MANAGER.interactive_select_server()
         for name in server_names:
             client, tools = MCP_MANAGER.active_clients[name]
             TOOLS.extend(tools)
-
-def list_mcp_servers():
-    """列出所有可用的 MCP 服务器"""
-    servers = MCP_MANAGER.list_servers()
-
-    if not servers:
-        print("❌ 未找到 MCP 服务器配置")
-        print("   请在当前目录创建 mcp.json 配置文件")
-        return
-
-    print(f"\n📋 可用的 MCP 服务器 ({len(servers)} 个):\n")
-
-    for name in servers:
-        server = MCP_MANAGER.get_server_info(name)
-        if not server:
-            continue
-
-        # 检查是否已连接
-        is_connected = name in MCP_MANAGER.active_clients
-        status = "✓ 已连接" if is_connected else "○ 未连接"
-        print(f"  [{status}] {name}")
-        print(f"    类型: {server.type}")
-        if server.description:
-            print(f"    描述: {server.description}")
-        if server.is_stdio():
-            cmd = server.get_full_command()
-            if cmd:
-                print(f"    命令: {' '.join(cmd)}")
-        else:
-            print(f"    URL: {server.url}")
-        if not server.enabled:
-            print(f"    状态: 已禁用")
-        if is_connected:
-            _, tools = MCP_MANAGER.active_clients[name]
-            if tools:
-                tool_names = [tool['function']['name'].replace(f"mcp_{name}_", "") for tool in tools]
-                print(f"    工具: {', '.join(tool_names)}")
-        print()
-
 
 def show_help():
     """显示帮助信息"""
