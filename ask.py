@@ -1085,7 +1085,8 @@ def update_model_prompt():
     """更新当前模型和provider的提示符"""
     global model_prompt
     try:
-        model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
+        model_id = PROVIDER_CONFIG.default_model if PROVIDER_CONFIG.default_model else DEEPSEEK_MODEL
+        model_info = PROVIDER_CONFIG.get_model_info(model_id)
         if model_info:
             model_name = model_info.name if model_info.name else DEEPSEEK_MODEL
             provider = PROVIDER_CONFIG.get_provider(model_info.provider_id)
