@@ -721,6 +721,8 @@ Complete the task and return a clear, concise summary."""
     start = time.time()
     tool_count = 0
 
+    sub_turn = 1
+    reasoning_start_index = len(messages)
     # Run the same agent loop (silently - don't print to main chat)
     while True:
         content, reasoning_content, tool_calls = get_streaming_response(
@@ -730,10 +732,14 @@ Complete the task and return a clear, concise summary."""
         sub_assistant_msg = {"role": "assistant", "content": content}
         if tool_calls:
             sub_assistant_msg["tool_calls"] = tool_calls
+            if reasoning_content: # tool_calls 需添加推理内容
+                sub_assistant_msg["reasoning_content"] = reasoning_content
         sub_messages.append(sub_assistant_msg)
 
         # If no tools to execute, break
         if not tool_calls:
+            if reasoning_content:
+                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
             break
 
         # Execute tools
@@ -756,6 +762,8 @@ Complete the task and return a clear, concise summary."""
             sys.stdout.flush()
 
             sub_messages.append(tool_result)
+
+        sub_turn += 1
 
     # Final progress update
     elapsed = time.time() - start
@@ -869,6 +877,8 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                                 in_think_tag = False
                                 continue
                             if in_think_tag:
+                                # 在 think 标签内，作为推理内容
+                                reasoning_content += content
                                 if not silent:
                                     print(f"\033[90m{content}\033[0m", end='', flush=True)
                                 continue    
@@ -1018,6 +1028,10 @@ def agent(prompt: str):
     # 将用户新消息添加到消息列表
     messages.append({"role": "user", "content": prompt})
 
+    # 记录当前问题的工具调用轮次
+    sub_turn = 1
+    # 记录本轮推理开始时的消息索引
+    reasoning_start_index = len(messages)
     while True:
         # 调用API获取流式响应
         content, reasoning_content, tool_calls = get_streaming_response(messages, TOOLS)
@@ -1026,11 +1040,15 @@ def agent(prompt: str):
         assistant_msg = {"role": "assistant", "content": content}
         if tool_calls:
             assistant_msg["tool_calls"] = tool_calls
+            if reasoning_content: # tool_calls 需添加推理内容
+                assistant_msg["reasoning_content"] = reasoning_content
         messages.append(assistant_msg)
         logger.debug("添加助手回复: %s", assistant_msg)
 
         # 如果没有工具调用，结束循环
         if not tool_calls:
+            if reasoning_content:
+                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
             break
 
         for tool_call in tool_calls:
@@ -1064,6 +1082,30 @@ def agent(prompt: str):
             # 将工具执行结果添加到消息列表
             messages.append(tool_result)
 
+        sub_turn += 1
+
+
+def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round: int):
+    """
+    清理推理内容
+    
+    Args:
+        messages: 消息列表
+        start_index: 本轮问题开始的索引
+        tool_call_round: 工具调用轮次
+    """
+    if tool_call_round == 1:
+        logger.debug("本轮问题没有工具调用，不需要清理")
+        return
+    
+    logger.info("清理推理内容，共清理%d轮", tool_call_round)
+    
+    # 遍历从start_index之后的所有助手消息
+    for i in range(start_index, len(messages)):
+        if messages[i].get("role") == "assistant":
+            messages[i].pop("reasoning_content", None)
+    
+    logger.info("推理内容清理完成")
 
 def sanitize_memory():
     """翻译模式或不记忆模式时清理对话历史"""

@@ -499,3 +499,4 @@ echo $DEEPSEEK_API_KEY
 ## 参考
 
 - [learn-claude-code](https://github.com/shareAI-lab/learn-claude-code)
+- [deepseek-guides-thinking-mode-tool-calls](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8)
