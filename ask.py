@@ -931,12 +931,6 @@ def command(command: str):
         handle_mcp_command(command)
         return
     
-    # 切换模型
-    if command.startswith('/model '):
-        model_id = command[7:].strip()
-        switch_model(model_id)
-        return
-    
     # 列出可用模型
     if command == '/models':
         interactive_select_model()
