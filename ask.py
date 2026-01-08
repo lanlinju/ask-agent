@@ -1001,7 +1001,7 @@ def chat_loop():
 
         sanitize_memory()
 
-        print()  # 换行
+        print('\n')  # 换行
 
 
 def restore_tty():

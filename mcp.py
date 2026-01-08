@@ -643,46 +643,48 @@ class MCPManager:
     def interactive_select_server(self) -> List[str]:
         """
         交互式选择要连接的 MCP 服务器
-        
+
         Returns:
             成功连接的服务器名称列表，失败或取消返回空列表
         """
         if not self.loaded:
             self.load_config()
-        
+
         enabled_servers = self.config.list_enabled_servers()
-        
+
         if not enabled_servers:
             print("❌ 没有可用的 MCP 服务器")
             print("   请检查 mcp.json 配置文件")
             return []
-        
+
         print(f"\n可用的 MCP 服务器 ({len(enabled_servers)} 个):")
         print("-" * 60)
-        
+
         server_list = []
         for i, server_name in enumerate(enabled_servers, 1):
             server = self.config.get_server(server_name)
             if server:
+                is_connected = self.is_server_connected(server_name)
                 description = server.description if server.description else "无描述"
                 if len(description) > 40:
                     description = description[:37] + "..."
-                print(f"  {i}. {server_name:<20} {description}")
+                active_mark = " - \033[32m(已连接)\033[0m" if is_connected else ""
+                print(f"  {i}. {server_name:<20} {description}{active_mark}")
                 server_list.append(server_name)
-        
+
         print("-" * 60)
-        
+
         while True:
             try:
                 user_input = input("\n请输入要连接的服务器编号 (支持多个，用空格分隔，按 Enter 退出): ").strip()
-                
+
                 if not user_input:
                     print("取消操作")
                     return []
-                
+
                 indices = []
                 invalid_numbers = []
-                
+
                 for num_str in user_input.split():
                     try:
                         index = int(num_str) - 1
@@ -692,32 +694,32 @@ class MCPManager:
                             invalid_numbers.append(num_str)
                     except ValueError:
                         invalid_numbers.append(num_str)
-                
+
                 if invalid_numbers:
                     print(f"❌ 无效的编号: {', '.join(invalid_numbers)}")
                     print(f"   请输入 1-{len(server_list)} 之间的数字，用空格分隔")
                     continue
-                
+
                 if not indices:
                     print("❌ 未选择任何服务器")
                     continue
-                
+
                 selected_servers = [server_list[i] for i in indices]
                 connected_servers = []
-                
+
                 for server_name in selected_servers:
                     if self.connect_server(server_name):
                         connected_servers.append(server_name)
                     else:
                         print(f"⚠ 连接服务器 '{server_name}' 失败")
-                
+
                 if connected_servers:
                     print(f"\n✅ 成功连接 {len(connected_servers)} 个服务器")
                     return connected_servers
                 else:
                     print("\n❌ 所有服务器连接失败")
                     return []
-                    
+
             except ValueError:
                 print("❌ 请输入有效的数字")
             except KeyboardInterrupt:
