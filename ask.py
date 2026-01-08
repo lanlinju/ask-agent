@@ -923,7 +923,8 @@ def list_mcp_servers():
             continue
 
         # 检查是否已连接
-        status = "✓ 已连接" if name in MCP_MANAGER.active_clients else "○ 未连接"
+        is_connected = name in MCP_MANAGER.active_clients
+        status = "✓ 已连接" if is_connected else "○ 未连接"
         print(f"  [{status}] {name}")
         print(f"    类型: {server.type}")
         if server.description:
@@ -936,6 +937,11 @@ def list_mcp_servers():
             print(f"    URL: {server.url}")
         if not server.enabled:
             print(f"    状态: 已禁用")
+        if is_connected:
+            _, tools = MCP_MANAGER.active_clients[name]
+            if tools:
+                tool_names = [tool['function']['name'].replace(f"mcp_{name}_", "") for tool in tools]
+                print(f"    工具: {', '.join(tool_names)}")
         print()
 
 
