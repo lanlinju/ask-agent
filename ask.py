@@ -238,20 +238,53 @@ def switch_model(model_id: str):
     PROVIDER_CONFIG.save()
     
     update_model_prompt()
-    init_system_prompt(current_mode)
 
 
-def list_available_models():
-    """列出可用模型"""
+def list_available_models() -> list:
+    """列出可用模型并返回模型ID列表"""
     print("\n📋 可用模型:\n")
+    
+    model_list = []
+    index = 1
     
     for provider in PROVIDER_CONFIG.list_enabled_providers():
         print(f"  {provider.name}:")
         for model in provider.list_models():
             full_id = f"{provider.id}/{model.id}"
             marker = "→" if full_id == PROVIDER_CONFIG.default_model else " "
-            print(f"  {marker} {full_id}: {model.name}")
+            print(f"  {marker} [{index}] {full_id}: {model.name}")
+            model_list.append(full_id)
+            index += 1
         print()
+    
+    return model_list
+
+
+def interactive_select_model():
+    """交互式选择模型"""
+    model_list = list_available_models()
+    
+    if not model_list:
+        print("❌ 没有可用的模型\n")
+        return
+    
+    try:
+        choice = input("请输入模型编号 (0 取消): ").strip()
+        if choice == '0':
+            print("已取消\n")
+            return
+        
+        index = int(choice) - 1
+        if 0 <= index < len(model_list):
+            model_id = model_list[index]
+            logger.debug(f"Selected model: {model_id}")
+            switch_model(model_id)
+        else:
+            print("❌ 无效的编号\n")
+    except ValueError:
+        print("❌ 请输入有效的数字\n")
+    except KeyboardInterrupt:
+        print("\n已取消\n")
 
 
 def get_agent_descriptions() -> str:
@@ -906,7 +939,7 @@ def command(command: str):
     
     # 列出可用模型
     if command == '/models':
-        list_available_models()
+        interactive_select_model()
         return
     
     # 处理shell命令 (!开头)
@@ -933,8 +966,7 @@ def show_help():
     /agent        - 进入智能体模式
     /e            - 进入翻译模式
     /new          - 创建新会话
-    /models       - 列出所有可用模型
-    /model <id>   - 切换模型
+    /models       - 交互式选择模型
     /help         - 显示此帮助信息
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
     exit          - 退出程序
