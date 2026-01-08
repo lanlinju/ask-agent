@@ -87,11 +87,7 @@ class ServerConfig:
         Raises:
             ConfigValidationError: 配置验证失败
         """
-        server_type = config.get("type")
-
-        # 验证必需字段
-        if not server_type:
-            raise ConfigValidationError(f"服务器 '{name}' 缺少 'type' 字段")
+        server_type = config.get("type", "stdio")
 
         # 标准化类型
         normalized_type = cls._normalize_type(server_type)
