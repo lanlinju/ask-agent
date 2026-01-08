@@ -743,7 +743,7 @@ class MCPManager:
 
             # 检查是否已连接
             is_connected = name in self.active_clients
-            status = "✓ 已连接" if is_connected else "○ 未连接"
+            status = "✓ \033[32m已连接\033[0m" if is_connected else "○ 未连接"
             print(f"  [{status}] {name}")
             print(f"    类型: {server.type}")
             if server.description:
