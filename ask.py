@@ -831,11 +831,15 @@ def command(command: str):
         return
 
     # 列出所有可用的 MCP 服务器
-    if command == '/mcp':
-        server_names = MCP_MANAGER.interactive_select_server()
-        for name in server_names:
-            client, tools = MCP_MANAGER.active_clients[name]
-            TOOLS.extend(tools)
+    if command == '/mcp' or command.startswith('/mcp '):
+        parts = command.split()
+        if len(parts) > 1 and '-l' in parts:
+            list_mcp_servers()
+        else:
+            server_names = MCP_MANAGER.interactive_select_server()
+            for name in server_names:
+                client, tools = MCP_MANAGER.active_clients[name]
+                TOOLS.extend(tools)
         return
 
     # 使用指定的 MCP 服务器（不指定名称则加载所有）

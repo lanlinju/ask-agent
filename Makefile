@@ -10,6 +10,8 @@ debug:
 lint:
 	python3 -m py_compile ask.py	
 
+mcpserver:
+	python ./server/http_server.py
 
 pipreqs:
 	pipreqs . --force --encoding=utf-8
