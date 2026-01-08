@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import platform
 from mcp import MCPManager
+from provider import ProviderConfig
 
 load_dotenv(override=True)
 
@@ -191,6 +192,60 @@ SKILLS = SkillLoader(SKILLS_DIR)
 
 # Global MCP manager instance
 MCP_MANAGER = MCPManager()
+
+# Global provider config instance
+PROVIDER_CONFIG = ProviderConfig("providers.json")
+
+
+def init_providers() -> bool:
+    """初始化 Provider 配置"""
+    if not PROVIDER_CONFIG.load():
+        logger.warning("Provider 配置加载失败")
+        return False
+    
+    # 设置默认模型
+    global DEEPSEEK_MODEL, DEEPSEEK_API_URL, DEEPSEEK_API_KEY
+    
+    if PROVIDER_CONFIG.default_model:
+        api_config = PROVIDER_CONFIG.get_api_config(PROVIDER_CONFIG.default_model)
+        if api_config:
+            DEEPSEEK_API_URL = api_config['base_url'].rstrip('/v1')
+            DEEPSEEK_API_KEY = api_config['api_key']
+            DEEPSEEK_MODEL = api_config['model']
+            logger.info(f"使用默认模型: {PROVIDER_CONFIG.default_model}")
+    
+    return True
+
+
+def switch_model(model_id: str):
+    """切换模型"""
+    api_config = PROVIDER_CONFIG.get_api_config(model_id)
+    if not api_config:
+        print(f"❌ 未找到模型: {model_id}\n")
+        return
+    
+    global DEEPSEEK_MODEL, DEEPSEEK_API_URL, DEEPSEEK_API_KEY
+    
+    DEEPSEEK_API_URL = api_config['base_url'].rstrip('/v1')
+    DEEPSEEK_API_KEY = api_config['api_key']
+    DEEPSEEK_MODEL = api_config['model']
+    
+    model_info = PROVIDER_CONFIG.get_model_info(model_id)
+    print(f"✅ 已切换到模型: {model_info.name} ({model_info.provider_id})\n")
+    init_system_prompt(current_mode)
+
+
+def list_available_models():
+    """列出可用模型"""
+    print("\n📋 可用模型:\n")
+    
+    for provider in PROVIDER_CONFIG.list_enabled_providers():
+        print(f"  {provider.name}:")
+        for model in provider.list_models():
+            full_id = f"{provider.id}/{model.id}"
+            marker = "→" if full_id == PROVIDER_CONFIG.default_model else " "
+            print(f"  {marker} {full_id}: {model.name}")
+        print()
 
 
 def get_agent_descriptions() -> str:
@@ -698,14 +753,28 @@ def execute_tool(name: str, args: dict) -> str:
 
 def get_streaming_response(messages: List, tools: List, silent: bool = False) -> tuple[str, List]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
+    
+    # 使用 Provider 配置中的 API 参数
+    api_url = DEEPSEEK_API_URL
+    api_key = DEEPSEEK_API_KEY
+    model = DEEPSEEK_MODEL
+    
+    # 如果 Provider 配置加载成功且有默认模型，使用配置中的值
+    # if PROVIDER_CONFIG._loaded and PROVIDER_CONFIG.default_model:
+    #     api_config = PROVIDER_CONFIG.get_api_config(PROVIDER_CONFIG.default_model)
+    #     if api_config:
+    #         api_url = api_config['base_url'].rstrip('/v1')
+    #         api_key = api_config['api_key']
+    #         model = api_config['model']
+    
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "text/event-stream"
     }
 
     data = {
-        "model": DEEPSEEK_MODEL,
+        "model": model,
         "messages": messages,
         "tools": tools if current_mode == AGENT else [],
         "tool_choice": "auto" if current_mode == AGENT else "none",
@@ -731,7 +800,7 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
             if not silent:
                 print('\n')
 
-    with requests.post(f"{DEEPSEEK_API_URL}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
+    with requests.post(f"{api_url}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ("", [])
@@ -834,7 +903,18 @@ def command(command: str):
     if command == '/mcp' or command.startswith('/mcp '):
         handle_mcp_command(command)
         return
-
+    
+    # 切换模型
+    if command.startswith('/model '):
+        model_id = command[7:].strip()
+        switch_model(model_id)
+        return
+    
+    # 列出可用模型
+    if command == '/models':
+        list_available_models()
+        return
+    
     # 处理shell命令 (!开头)
     if command.startswith('!'):
         shell(command[1:])  # 提取命令，去掉前面的 !
@@ -859,6 +939,8 @@ def show_help():
     /agent        - 进入智能体模式
     /e            - 进入翻译模式
     /new          - 创建新会话
+    /models       - 列出所有可用模型
+    /model <id>   - 切换模型
     /help         - 显示此帮助信息
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
     exit          - 退出程序
@@ -1125,7 +1207,10 @@ def main():
 
     # 初始化系统提示词
     init_system_prompt(current_mode)
-
+    
+    # 初始化 Provider 配置
+    init_providers()
+    
     # 将多个参数连接成一个字符串
     query = " ".join(args.query) if args.query else None
 
