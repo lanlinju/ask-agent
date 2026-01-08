@@ -269,8 +269,8 @@ def interactive_select_model():
         return
     
     try:
-        choice = input("请输入模型编号 (0 取消): ").strip()
-        if choice == '0':
+        choice = input("请输入模型编号 (0 or 直接Enter 取消): ").strip()
+        if choice == '0' or choice == '':
             print("已取消\n")
             return
         
