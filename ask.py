@@ -723,7 +723,7 @@ Complete the task and return a clear, concise summary."""
 
     # Run the same agent loop (silently - don't print to main chat)
     while True:
-        content, tool_calls = get_streaming_response(
+        content, reasoning_content, tool_calls = get_streaming_response(
             sub_messages, sub_tools, True)
 
         # Add assistant response to subagent history
@@ -792,7 +792,7 @@ def execute_tool(name: str, args: dict) -> str:
     return f"Unknown tool: {name}"
 
 
-def get_streaming_response(messages: List, tools: List, silent: bool = False) -> tuple[str, List]:
+def get_streaming_response(messages: List, tools: List, silent: bool = False) -> tuple[str, str, List]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -810,6 +810,7 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
 
     collected_content = ""
     tool_calls_collected = []
+    reasoning_content = ""
     reasoning_in_progress = False
     in_think_tag = False  # 跟踪是否在 <think> 标签内
 
@@ -830,7 +831,7 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
     with requests.post(f"{DEEPSEEK_API_URL}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
-            return ("", [])
+            return ("", "", [])
         for chunk in response.iter_lines():
             if chunk:
                 decoded = chunk.decode('utf-8')
@@ -853,6 +854,7 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                         # 推理内容
                         if delta.get("reasoning_content"):
                             start_thinking()
+                            reasoning_content += delta["reasoning_content"]
                             if not silent:
                                 print(f"\033[90m{delta['reasoning_content']}\033[0m", end='', flush=True)
                         # 文本内容
@@ -884,7 +886,7 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
 
     # logger.info("完整回答: %s", tool_calls_collected)
 
-    return (collected_content, merge_arguments(tool_calls_collected))
+    return (collected_content, reasoning_content, merge_arguments(tool_calls_collected))
 
 
 def command(command: str):
@@ -1018,7 +1020,7 @@ def agent(prompt: str):
 
     while True:
         # 调用API获取流式响应
-        content, tool_calls = get_streaming_response(messages, TOOLS)
+        content, reasoning_content, tool_calls = get_streaming_response(messages, TOOLS)
 
         # 构建助手消息并添加到历史
         assistant_msg = {"role": "assistant", "content": content}
