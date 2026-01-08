@@ -232,7 +232,9 @@ def switch_model(model_id: str):
     
     model_info = PROVIDER_CONFIG.get_model_info(model_id)
     print(f"✅ 已切换到模型: {model_info.name} ({model_info.provider_id})\n")
-    init_system_prompt(current_mode)
+    
+    PROVIDER_CONFIG.default_model = model_id
+    PROVIDER_CONFIG.save()
 
 
 def list_available_models():
