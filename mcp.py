@@ -493,10 +493,14 @@ class MCPManager:
         """获取服务器配置信息"""
         return self.config.get_server(name)
 
+    def is_server_connected(self, name: str) -> bool:
+        """判断指定的 MCP 服务器是否已连接"""
+        return name in self.active_clients
+
     def connect_server(self, name: str) -> bool:
         """连接到指定的 MCP 服务器"""
         # 如果已经连接，直接返回
-        if name in self.active_clients:
+        if self.is_server_connected(name):
             logger.info(f"服务器 '{name}' 已连接")
             return True
 
