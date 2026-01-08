@@ -755,28 +755,14 @@ def execute_tool(name: str, args: dict) -> str:
 
 def get_streaming_response(messages: List, tools: List, silent: bool = False) -> tuple[str, List]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
-    
-    # 使用 Provider 配置中的 API 参数
-    api_url = DEEPSEEK_API_URL
-    api_key = DEEPSEEK_API_KEY
-    model = DEEPSEEK_MODEL
-    
-    # 如果 Provider 配置加载成功且有默认模型，使用配置中的值
-    # if PROVIDER_CONFIG._loaded and PROVIDER_CONFIG.default_model:
-    #     api_config = PROVIDER_CONFIG.get_api_config(PROVIDER_CONFIG.default_model)
-    #     if api_config:
-    #         api_url = api_config['base_url'].rstrip('/v1')
-    #         api_key = api_config['api_key']
-    #         model = api_config['model']
-    
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json",
         "Accept": "text/event-stream"
     }
 
     data = {
-        "model": model,
+        "model": DEEPSEEK_MODEL,
         "messages": messages,
         "tools": tools if current_mode == AGENT else [],
         "tool_choice": "auto" if current_mode == AGENT else "none",
@@ -802,7 +788,7 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
             if not silent:
                 print('\n')
 
-    with requests.post(f"{api_url}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
+    with requests.post(f"{DEEPSEEK_API_URL}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ("", [])
@@ -1189,10 +1175,10 @@ def main():
     if args.api_key:
         DEEPSEEK_API_KEY = args.api_key
 
-    if not DEEPSEEK_API_KEY:
-        print("❌ 错误: 未设置 API 密钥。请使用 --api-key 参数或设置 DEEPSEEK_API_KEY 环境变量",
-              file=sys.stderr)
-        sys.exit(1)
+    # if not DEEPSEEK_API_KEY:
+    #     print("❌ 错误: 未设置 API 密钥。请使用 --api-key 参数或设置 DEEPSEEK_API_KEY 环境变量",
+    #           file=sys.stderr)
+    #     sys.exit(1)
 
     # 设置记忆模式
     global memory
