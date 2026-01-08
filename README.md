@@ -331,6 +331,8 @@ ag
 - `description`: 服务器描述，用于交互式选择时显示
 - `type`: 服务器类型，支持 "stdio" 或 "http"（支持别名："local"、"remote"、"streamablehttp"）
 
+**详细配置说明：** 查看 [MCP 配置文档](docs/mcp-config.md) 了解完整的配置选项和示例。
+
 ## 运行示例
 ```bash
 ➜  ask-agent git:(main) ✗ ./ag
@@ -496,4 +498,4 @@ echo $DEEPSEEK_API_KEY
 
 ## 参考
 
-[learn-claude-code](https://github.com/shareAI-lab/learn-claude-code)
+- [learn-claude-code](https://github.com/shareAI-lab/learn-claude-code)
