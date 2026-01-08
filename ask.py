@@ -832,32 +832,7 @@ def command(command: str):
 
     # 列出所有可用的 MCP 服务器
     if command == '/mcp' or command.startswith('/mcp '):
-        parts = command.split()
-        if len(parts) > 1 and '-l' in parts:
-            list_mcp_servers()
-        else:
-            server_names = MCP_MANAGER.interactive_select_server()
-            for name in server_names:
-                client, tools = MCP_MANAGER.active_clients[name]
-                TOOLS.extend(tools)
-        return
-
-    # 使用指定的 MCP 服务器（不指定名称则加载所有）
-    if command.startswith('/use'):
-        server_name = command[5:].strip()
-        if not server_name:
-            use_all_mcp_servers()
-        else:
-            use_mcp_server(server_name)
-        return
-
-    if command == '/mcp-status':
-        show_mcp_status()
-        return
-
-    if command.startswith('/disconnect '):
-        server_name = command[12:].strip()
-        disconnect_mcp_server(server_name)
+        handle_mcp_command(command)
         return
 
     # 处理shell命令 (!开头)
@@ -865,46 +840,15 @@ def command(command: str):
         shell(command[1:])  # 提取命令，去掉前面的 !
         return
 
-
-def use_all_mcp_servers():
-    """连接并使用所有可用的 MCP 服务器"""
-    servers = MCP_MANAGER.list_servers()
-
-    if not servers:
-        print("❌ 未找到 MCP 服务器配置")
-        print("   请在当前目录创建 mcp.json 配置文件")
-        return
-
-    for name in servers:
-        use_mcp_server(name)
-
-    print(f"\n🔌 已连接所有 MCP 服务器 ({len(servers)} 个)...")
-    print()
-
-
-def use_mcp_server(name: str):
-    """连接并使用指定的 MCP 服务器"""
-    print(f"\n🔌 连接 MCP 服务器: {name}...")
-
-    global TOOLS
-    if MCP_MANAGER.connect_server(name):
-        client, tools = MCP_MANAGER.active_clients[name]
-        TOOLS.extend(tools)
-        print(f"✅ 成功连接，加载了 {len(tools)} 个工具")
-
-        # 显示工具列表
-        if tools:
-            print(f"\n可用工具:")
-            for tool in tools:
-                tool_name = tool['function']['name']
-                desc = tool['function'].get('description', 'N/A')
-                # 移除 MCP 前缀以显示原始名称
-                display_name = tool_name.replace(f"mcp_{name}_", "")
-                print(f"  - {display_name}: {desc}")
-        print()
+def handle_mcp_command(command: str):
+    parts = command.split()
+    if len(parts) > 1 and '-l' in parts:
+        list_mcp_servers()
     else:
-        print(f"❌ 连接失败\n")
-
+        server_names = MCP_MANAGER.interactive_select_server()
+        for name in server_names:
+            client, tools = MCP_MANAGER.active_clients[name]
+            TOOLS.extend(tools)
 
 def list_mcp_servers():
     """列出所有可用的 MCP 服务器"""
@@ -945,34 +889,6 @@ def list_mcp_servers():
         print()
 
 
-def show_mcp_status():
-    """显示 MCP 连接状态"""
-    active = list(MCP_MANAGER.active_clients.keys())
-
-    if not active:
-        print("\n📊 当前没有活动的 MCP 连接\n")
-        return
-
-    print(f"\n📊 活动的 MCP 服务器 ({len(active)} 个):\n")
-
-    for name in active:
-        client, tools = MCP_MANAGER.active_clients[name]
-        print(f"  ✓ {name}")
-        print(f"    工具数量: {len(tools)}")
-        print(f"    类型: {type(client).__name__}")
-        print()
-
-
-def disconnect_mcp_server(name: str):
-    """断开指定的 MCP 服务器"""
-    print(f"\n🔌 断开 MCP 服务器: {name}...")
-
-    if MCP_MANAGER.disconnect_server(name):
-        print(f"✅ 已断开连接\n")
-    else:
-        print(f"❌ 断开失败\n")
-
-
 def show_help():
     """显示帮助信息"""
     help_text = """
@@ -987,10 +903,8 @@ def show_help():
     exit          - 退出程序
 
   🔹 MCP 服务器管理：
-    /mcp          - 列出所有可用的 MCP 服务器
-    /use [name]   - 连接并使用 MCP 服务器（不指定名称则连接所有）
-    /disconnect <name> - 断开指定的 MCP 服务器
-    /mcp-status   - 显示当前 MCP 连接状态
+    /mcp          - 交互式选择并连接 MCP 服务器
+    /mcp -l       - 列出所有可用的 MCP 服务器
 
   🔹 智能体模式功能：
     - 自动使用 Skills 工具加载领域知识（PDF处理、MCP开发等）

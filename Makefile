@@ -8,7 +8,8 @@ debug:
 	python ask.py --agent --log-level DEBUG
 
 lint:
-	python3 -m py_compile ask.py	
+# 	python3 -m py_compile ask.py
+	pyright ask.py	
 
 mcpserver:
 	python ./server/http_server.py
