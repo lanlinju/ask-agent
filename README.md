@@ -11,6 +11,7 @@
 - 🔧 **多种使用方式** - 交互、一问一答、管道模式
 - 🤖 **智能体模式** - 支持代码编辑、文件操作等高级功能
 - 🧩 **可扩展技能** - 通过 Skills 加载领域知识
+- 🔌 **MCP 支持** - 集成 Model Context Protocol，支持外部工具
 
 ## 安装
 
@@ -29,7 +30,11 @@ cd ask-agent
 
 2. 安装依赖
 ```bash
-pip install requests
+# 方式一：从 requirements.txt 安装（推荐）
+pip install -r requirements.txt
+
+# 方式二：单独安装依赖
+pip install python-dotenv requests
 ```
 
 3. 创建软链接（可选，简化使用）
@@ -108,6 +113,8 @@ python ag
 - `/e` - 进入翻译模式（清空对话历史）
 - `/new` - 创建新会话（清空对话历史）
 - `/help` - 显示帮助信息
+- `/mcp` - 交互式选择并连接 MCP 服务器
+- `/mcp -l` - 列出所有可用的 MCP 服务器
 - `!command` - 执行shell命令（如 `!ls`, `!pwd`, `!cat file.txt`），命令和输出会自动添加到消息历史
 
 ### 2. 一问一答模式
@@ -241,22 +248,112 @@ ag
 - 任务管理
 - 子智能体调用
 - 技能加载
+- MCP 服务器工具调用
+
+### 使用 MCP 工具
+```bash
+# 1. 进入智能体模式
+ag --agent
+
+# 2. 连接 MCP 服务器
+/mcp
+# 选择需要的服务器编号
+
+# 3. 智能体将自动使用 MCP 提供的工具
+帮我读取 /tmp 目录下的文件列表
+```
+
+## MCP 服务器管理
+
+Ask Agent 支持 Model Context Protocol (MCP)，可以连接外部工具服务器扩展功能。
+
+### 配置 MCP 服务器
+
+在项目根目录创建 `mcp.json` 配置文件(示例配置)：
+
+```json
+{
+  "servers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "description": "文件系统访问服务器",
+      "enabled": true
+    },
+    "http_server": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp",
+      "description": "HTTP 服务器",
+      "timeout": 30,
+      "enabled": true
+    },
+    "stdio_server": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["./server/stdio_server.py"],
+      "description": "本地 MCP 服务器",
+      "enabled": true
+    }
+  }
+}
+```
+
+### 服务器类型
+
+1. **stdio 类型** - 本地服务器，通过标准输入/输出通信
+   - `command`: 启动命令
+   - `args`: 命令参数
+   - `env`: 环境变量（可选）
+   - `cwd`: 工作目录（可选）
+
+2. **http 类型** - 远程服务器，通过 HTTP 通信
+   - `url`: 服务器地址
+   - `headers`: 请求头（可选）
+   - `timeout`: 超时时间（可选）
+
+### 使用 MCP 命令
+
+在交互模式中使用 MCP 相关命令：
+
+```bash
+ag
+# 进入交互模式后
+/mcp          # 交互式选择并连接服务器
+/mcp -l       # 列出所有可用服务器
+```
+
+交互式选择时，已连接的服务器会显示绿色的 `(active)` 标记。
+
+### MCP 配置说明
+
+- `enabled`: 是否启用该服务器（默认：true）
+- `description`: 服务器描述，用于交互式选择时显示
+- `type`: 服务器类型，支持 "stdio" 或 "http"（支持别名："local"、"remote"、"streamablehttp"）
 
 ## 运行示例
 ```bash
-➜  ask-agent git:(main) ✗ ./ag                                
+➜  ask-agent git:(main) ✗ ./ag
 💬^ :
 UEFI是什么缩写？
 
-🤖 Assistant: 
+🤖 Assistant:
 UEFI = Unified Extensible Firmware Interface（统一可扩展固件接口）
 
 💬^ :
-/ls
-ag
-README.md
-💬^ :
+/mcp
 
+可用的 MCP 服务器 (2 个):
+------------------------------------------------------------
+  1. http_server          用于测试的MCP服务器
+  2. stdio_server         用于测试的本地MCP服务器      (active)
+------------------------------------------------------------
+
+请输入要连接的服务器编号 (支持多个，用空格分隔，按 Enter 退出): 1
+
+✅ 成功连接 1 个服务器
+
+💬^ :
 ```
 
 ## 环境变量
@@ -292,12 +389,6 @@ LOG_LEVEL=ERROR
 2. 添加所需的配置项
 3. `.env` 文件会在程序启动时自动加载
 
-### .gitignore 配置
-
-```bash
-# .gitignore
-.env
-```
 
 ## 特性详解
 
@@ -322,6 +413,7 @@ LOG_LEVEL=ERROR
 - **智能体工具系统** - 支持文件读写、命令执行、任务管理等工具
 - **技能系统** - 可扩展的技能加载机制，支持领域知识注入
 - **子智能体** - 支持派生子智能体处理特定任务
+- **MCP 集成** - 支持 Model Context Protocol，可连接外部工具服务器
 
 ## 系统提示词
 
@@ -344,6 +436,7 @@ ag 根据不同模式使用不同的系统提示词：
 - 支持子智能体调用
 - 任务列表管理
 - 工具优先于解释
+- 支持调用已连接的 MCP 服务器工具
 
 ## 技能系统（Skills）
 
@@ -370,6 +463,27 @@ ag 支持通过 `skills/` 目录加载可扩展的技能模块。每个技能是
 
 ```bash
 export DEEPSEEK_API_KEY="your-api-key"
+```
+
+### MCP 配置错误
+
+如果遇到 MCP 服务器连接问题：
+
+1. 检查 `mcp.json` 文件格式是否正确
+2. 确保 stdio 类型的 `command` 和 `args` 配置正确
+3. 确保 http 类型的 `url` 可以访问
+4. 查看日志输出（使用 `--log-level DEBUG`）获取详细信息
+
+```bash
+# 启用调试日志
+ag --log-level DEBUG
+```
+
+### 查看已连接的 MCP 服务器
+
+```bash
+ag
+/mcp -l
 ```
 
 ### API 错误 (401)
