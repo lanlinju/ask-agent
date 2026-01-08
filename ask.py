@@ -214,6 +214,7 @@ def init_providers() -> bool:
             DEEPSEEK_MODEL = api_config['model']
             logger.info(f"使用默认模型: {PROVIDER_CONFIG.default_model}")
     
+    update_model_prompt()
     return True
 
 
@@ -235,6 +236,9 @@ def switch_model(model_id: str):
     
     PROVIDER_CONFIG.default_model = model_id
     PROVIDER_CONFIG.save()
+    
+    update_model_prompt()
+    init_system_prompt(current_mode)
 
 
 def list_available_models():
@@ -290,6 +294,8 @@ current_mode: int = ASK
 messages: List[Dict[str, str | List]] = []
 # 问答模式是否记忆上下文
 memory = True
+# 当前模型提示符
+model_prompt = ""
 
 
 class TodoManager:
@@ -1043,6 +1049,22 @@ def is_command(command: str) -> bool:
     return command.startswith('/') or command.startswith('!') or command.lower() == 'exit'
 
 
+def update_model_prompt():
+    """更新当前模型和provider的提示符"""
+    global model_prompt
+    try:
+        model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
+        if model_info:
+            model_name = model_info.name if model_info.name else DEEPSEEK_MODEL
+            provider = PROVIDER_CONFIG.get_provider(model_info.provider_id)
+            provider_name = provider.name if provider else model_info.provider_id
+            model_prompt = f"{model_name} \033[90m{provider_name}\033[0m"
+        else:
+            model_prompt = DEEPSEEK_MODEL
+    except:
+        model_prompt = DEEPSEEK_MODEL
+
+
 def get_mode_prompt() -> str:
     """获取当前模式的提示符"""
     if current_mode == TRANSLATE:
@@ -1066,7 +1088,7 @@ def chat_loop():
             command(user_input.lower())
             continue
 
-        print("\n🤖 Assistant: ", flush=True)
+        print(f"\n🤖 Assistant ({model_prompt}): ", flush=True)
         agent(user_input)
 
         sanitize_memory()
