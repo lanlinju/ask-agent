@@ -12,13 +12,15 @@
 - 🤖 **智能体模式** - 支持代码编辑、文件操作等高级功能
 - 🧩 **可扩展技能** - 通过 Skills 加载领域知识
 - 🔌 **MCP 支持** - 集成 Model Context Protocol，支持外部工具
+- 🎯 **多 Provider 支持** - 支持多个 AI Provider（OpenAI、DeepSeek 等）
+- 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
 
 ## 安装
 
 ### 前置要求
 
 - Python 3.7+
-- 有效的 DeepSeek API 密钥
+- 至少一个有效的 AI Provider API 密钥（DeepSeek、OpenAI 等）
 
 ### 步骤
 
@@ -51,46 +53,111 @@ export PATH="$HOME/.local/bin:$PATH"
 
 之后就可以直接使用 `ag` 命令了！
 
-4. 获取并设置 API 密钥
+4. 配置 AI Providers
 
-访问 [DeepSeek 官网](https://www.deepseek.com) 获取 API 密钥：
-1. 前往 https://platform.deepseek.com/
-2. 注册或登录账户
-3. 进入 API Keys 页面
-4. 创建新的 API 密钥
-5. 设置环境变量或通过命令行参数使用
+ag 支持多个 AI Provider，通过 `providers.json` 配置文件管理。
+
+创建 `providers.json` 文件（示例）：
+
+```json
+{
+  "model": "deepseek/deepseek-chat",
+  "providers": {
+    "deepseek": {
+      "name": "DeepSeek",
+      "enabled": true,
+      "options": {
+        "baseURL": "https://api.deepseek.com/v1",
+        "apiKey": "env:DEEPSEEK_API_KEY",
+      },
+      "models": {
+        "deepseek-chat": {
+          "name": "DeepSeek Chat"
+        },
+        "deepseek-reasoner": {
+          "name": "DeepSeek Reasoner"
+        }
+      }
+    },
+    "openai": {
+      "name": "OpenAI",
+      "enabled": true,
+      "options": {
+        "baseURL": "https://api.openai.com/v1",
+        "apiKey": "env:OPENAI_API_KEY",
+      },
+      "models": {
+        "gpt-4o": {
+          "name": "GPT-4o"
+        },
+        "gpt-4-turbo": {
+        }
+      }
+    }
+  }
+}
+```
+
+**API Key 设置：**
+
+支持环境变量引用（推荐），格式为 `env:ENV_VAR_NAME`。
 
 **方式一：环境变量（推荐用于长期使用）**
 ```bash
 # Linux
 export DEEPSEEK_API_KEY="sk-your-api-key-here"
+export OPENAI_API_KEY="sk-openai-api-key-here"
 
 # Windows
 $env:DEEPSEEK_API_KEY="sk-your-api-key-here"
+$env:OPENAI_API_KEY="sk-openai-api-key-here"
 
 # 为了永久设置，添加到 ~/.bashrc 或 ~/.zshrc
 echo 'export DEEPSEEK_API_KEY="sk-your-api-key-here"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-**方式二：命令行参数（推荐用于单次使用）**
+**方式二：直接在配置文件中设置**
+```json
+"options": {
+  "baseURL": "https://api.deepseek.com/v1",
+  "apiKey": "sk-your-api-key-here"
+}
+```
+
+**方式三：命令行参数（不推荐，仅用于单次测试）**
 ```bash
 ag --api-key "sk-your-api-key-here" "你的问题"
 ```
 
-**方式三：.env 文件**
+**方式四：.env 文件**
 
 在项目根目录创建 `.env` 文件：
 
 ```bash
-# .env 文件示例
+# DeepSeek API 配置
 DEEPSEEK_API_KEY=sk-your-api-key-here
-DEEPSEEK_MODEL=deepseek-chat
-DEEPSEEK_API_URL=https://api.deepseek.com
+
+# OpenAI API 配置
+OPENAI_API_KEY=sk-openai-api-key-here
+
+# 日志配置
 LOG_LEVEL=ERROR
 ```
 
 .env 文件会自动被加载，无需手动设置环境变量。
+
+5. 获取 API 密钥
+
+访问以下官网获取 API 密钥：
+
+**DeepSeek：**
+访问 [DeepSeek 官网](https://www.deepseek.com) 获取 API 密钥：
+1. 前往 https://platform.deepseek.com/
+2. 注册或登录账户
+3. 进入 API Keys 页面
+4. 创建新的 API 密钥
+5. 在 providers.json 中设置环境变量引用或直接设置
 
 ## 使用
 
@@ -112,10 +179,36 @@ python ag
 - `/agent` - 进入智能体模式（清空对话历史）
 - `/e` - 进入翻译模式（清空对话历史）
 - `/new` - 创建新会话（清空对话历史）
+- `/models` - 交互式选择和切换模型
 - `/help` - 显示帮助信息
 - `/mcp` - 交互式选择并连接 MCP 服务器
 - `/mcp -l` - 列出所有可用的 MCP 服务器
 - `!command` - 执行shell命令（如 `!ls`, `!pwd`, `!cat file.txt`），命令和输出会自动添加到消息历史
+
+### 模型切换
+
+ag 支持在多个 AI Provider 之间切换模型：
+
+```bash
+# 交互式选择模型
+ag /models
+
+# 示例输出：
+# 📋 可用模型:
+#
+#   DeepSeek:
+#   → [1] deepseek/deepseek-chat: DeepSeek Chat
+#     [2] deepseek/deepseek-reasoner: DeepSeek Reasoner
+#
+#   OpenAI:
+#     [3] openai/gpt-4o: GPT-4o
+#     [4] openai/gpt-4-turbo: GPT-4 Turbo
+#
+# 请输入模型编号 (0 or 直接Enter 取消): 3
+# ✅ 已切换到模型: GPT-4o (openai)
+```
+
+选择的模型会自动保存为默认模型，下次启动时自动使用。
 
 ### 2. 一问一答模式
 
@@ -187,7 +280,7 @@ optional arguments:
   -e, --translate      进入翻译模式
   --agent              进入智能体模式
   -n, --no-memory      不记忆上下文，每次问答后只保留系统提示词
-  --api-key API_KEY    DeepSeek API 密钥（如果不提供，将使用 DEEPSEEK_API_KEY 环境变量）
+  --api-key API_KEY    API 密钥（临时覆盖配置文件中的设置，不推荐长期使用）
   --log-level LOG_LEVEL  设置日志级别（DEBUG, INFO, WARNING, ERROR, CRITICAL）
 ```
 
@@ -222,6 +315,7 @@ ag -n "这是独立的问题，不需要记忆历史"
 ```bash
 ag --api-key "sk-your-api-key" "你的问题"
 ```
+建议使用 `providers.json` 配置文件管理 API 密钥。
 
 ### 学习和讨论
 ```bash
@@ -362,24 +456,28 @@ UEFI = Unified Extensible Firmware Interface（统一可扩展固件接口）
 
 以下环境变量可以通过系统环境变量设置，也可以在 `.env` 文件中配置：
 
-- `DEEPSEEK_API_KEY` - **必需** DeepSeek API 密钥
-- `DEEPSEEK_MODEL` - 可选，模型名称（默认：deepseek-chat）
-- `DEEPSEEK_API_URL` - 可选，API 端点（默认：https://api.deepseek.com）
+- `DEEPSEEK_API_KEY` - DeepSeek API 密钥（如果在 providers.json 中使用 `env:DEEPSEEK_API_KEY`）
+- `OPENAI_API_KEY` - OpenAI API 密钥（如果在 providers.json 中使用 `env:OPENAI_API_KEY`）
 - `LOG_LEVEL` - 可选，日志级别（默认：ERROR，可选：DEBUG, INFO, WARNING, ERROR, CRITICAL）
 
-**配置优先级**：命令行参数 > 系统环境变量 > .env 文件
+**配置优先级**：
+1. providers.json 配置文件
+2. 系统环境变量
+3. .env 文件
+4. 命令行参数 `--api-key`（仅用于临时覆盖）
 
 ## .env 文件配置
 
-在项目根目录创建 `.env` 文件可以方便地管理配置：
+在项目根目录创建 `.env` 文件可以方便地管理 API 密钥：
 
 ### .env 文件示例
 
 ```bash
 # DeepSeek API 配置
-DEEPSEEK_API_KEY=sk-your-api-key-here
-DEEPSEEK_MODEL=deepseek-chat
-DEEPSEEK_API_URL=https://api.deepseek.com
+DEEPSEEK_API_KEY=sk-your-deepseek-api-key-here
+
+# OpenAI API 配置
+OPENAI_API_KEY=sk-openai-api-key-here
 
 # 日志配置
 LOG_LEVEL=ERROR
@@ -388,8 +486,9 @@ LOG_LEVEL=ERROR
 ### 使用说明
 
 1. 在项目根目录创建 `.env` 文件
-2. 添加所需的配置项
-3. `.env` 文件会在程序启动时自动加载
+2. 添加所需的 API 密钥
+3. 在 `providers.json` 中使用 `env:ENV_VAR_NAME` 引用这些环境变量
+4. `.env` 文件会在程序启动时自动加载
 
 
 ## 特性详解
@@ -405,6 +504,78 @@ LOG_LEVEL=ERROR
 2. **翻译模式** - 英汉互译，包含音标和释义
 3. **智能体模式** - 支持文件操作、Shell命令执行等高级功能
 4. **Shell命令集成** - 执行命令结果自动添加到对话历史
+
+## Provider 配置系统
+
+ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理。
+
+### 配置文件结构
+
+```json
+{
+  "model": "deepseek/deepseek-chat",
+  "providers": {
+    "provider_id": {
+      "name": "Provider 显示名称",
+      "enabled": true,
+      "options": {
+        "baseURL": "https://api.example.com/v1",
+        "apiKey": "env:API_KEY",
+        "timeout": 60,
+        "maxRetries": 3
+      },
+      "models": {
+        "model_id": {
+          "name": "模型显示名称"
+        }
+      }
+    }
+  }
+}
+```
+
+### 配置说明
+
+**顶层字段：**
+- `model`: 默认模型 ID（格式：`provider_id/model_id`），可选
+- `providers`: Provider 配置对象
+
+**Provider 配置：**
+- `name`: Provider 显示名称
+- `enabled`: 是否启用该 Provider（布尔值）
+- `options.baseURL`: API 基础 URL
+- `options.apiKey`: API 密钥，支持直接值或环境变量引用（格式：`env:ENV_VAR_NAME`）
+- `options.timeout`: 请求超时时间（秒），可选
+- `options.maxRetries`: 最大重试次数，可选
+- `models`: 模型配置对象
+
+**模型配置：**
+- `model_id`: 模型 ID（Provider 的模型标识符）
+- `name`: 模型显示名称
+
+### 环境变量引用
+
+支持通过 `env:` 前缀引用环境变量：
+
+```json
+{
+  "options": {
+    "apiKey": "env:DEEPSEEK_API_KEY"
+  }
+}
+```
+
+程序会自动从环境变量中读取对应的值。
+
+### 支持的 Provider
+
+ag 支持任何兼容 OpenAI API 格式的 Provider：
+
+**示例：**
+- DeepSeek
+- OpenAI
+
+只要 Provider 兼容 OpenAI API 格式，都可以在 `providers.json` 中配置。
 
 ## 架构
 
@@ -493,7 +664,13 @@ ag
 检查 API 密钥是否正确：
 
 ```bash
+# 检查 DeepSeek API 密钥
 echo $DEEPSEEK_API_KEY
+
+# 检查 OpenAI API 密钥
+echo $OPENAI_API_KEY
+
+# 检查其他 Provider 的 API 密钥
 ```
 
 ## 参考
