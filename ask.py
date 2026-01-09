@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 if sys.platform != 'win32':
     import readline
-    
+
 # Ask Agent
 
 # 配置API参数
@@ -173,7 +173,7 @@ class SkillLoader:
                 files = list(folder_path.glob("*"))
                 if files:
                     resources.append(
-                        f"{label}: {', '.join(f.name for f in files)}")
+                        f"{label}: {', '.join(str(f.relative_to(skill['dir'])) for f in files)}")
 
         if resources:
             content += f"\n\n**Available resources in {skill['dir']}:**\n"
@@ -202,18 +202,19 @@ def init_providers() -> bool:
     if not PROVIDER_CONFIG.load():
         logger.warning("Provider 配置加载失败")
         return False
-    
+
     # 设置默认模型
     global DEEPSEEK_MODEL, DEEPSEEK_API_URL, DEEPSEEK_API_KEY
-    
+
     if PROVIDER_CONFIG.default_model:
-        api_config = PROVIDER_CONFIG.get_api_config(PROVIDER_CONFIG.default_model)
+        api_config = PROVIDER_CONFIG.get_api_config(
+            PROVIDER_CONFIG.default_model)
         if api_config:
             DEEPSEEK_API_URL = api_config['base_url'].rstrip('/v1')
             DEEPSEEK_API_KEY = api_config['api_key']
             DEEPSEEK_MODEL = api_config['model']
             logger.info(f"使用默认模型: {PROVIDER_CONFIG.default_model}")
-    
+
     update_model_prompt()
     return True
 
@@ -224,29 +225,29 @@ def switch_model(model_id: str):
     if not api_config:
         print(f"❌ 未找到模型: {model_id}\n")
         return
-    
+
     global DEEPSEEK_MODEL, DEEPSEEK_API_URL, DEEPSEEK_API_KEY
-    
+
     DEEPSEEK_API_URL = api_config['base_url'].rstrip('/v1')
     DEEPSEEK_API_KEY = api_config['api_key']
     DEEPSEEK_MODEL = api_config['model']
-    
+
     model_info = PROVIDER_CONFIG.get_model_info(model_id)
     print(f"✅ 已切换到模型: {model_info.name} ({model_info.provider_id})\n")
-    
+
     PROVIDER_CONFIG.default_model = model_id
     PROVIDER_CONFIG.save()
-    
+
     update_model_prompt()
 
 
 def list_available_models() -> list:
     """列出可用模型并返回模型ID列表"""
     print("\n📋 可用模型:\n")
-    
+
     model_list = []
     index = 1
-    
+
     for provider in PROVIDER_CONFIG.list_enabled_providers():
         print(f"  {provider.name}:")
         for model in provider.list_models():
@@ -256,24 +257,24 @@ def list_available_models() -> list:
             model_list.append(full_id)
             index += 1
         print()
-    
+
     return model_list
 
 
 def interactive_select_model():
     """交互式选择模型"""
     model_list = list_available_models()
-    
+
     if not model_list:
         print("❌ 没有可用的模型\n")
         return
-    
+
     try:
         choice = input("请输入模型编号 (0 or 直接Enter 取消): ").strip()
         if choice == '0' or choice == '':
             print("已取消\n")
             return
-        
+
         index = int(choice) - 1
         if 0 <= index < len(model_list):
             model_id = model_list[index]
@@ -732,14 +733,15 @@ Complete the task and return a clear, concise summary."""
         sub_assistant_msg = {"role": "assistant", "content": content}
         if tool_calls:
             sub_assistant_msg["tool_calls"] = tool_calls
-            if reasoning_content: # tool_calls 需添加推理内容
+            if reasoning_content:  # tool_calls 需添加推理内容
                 sub_assistant_msg["reasoning_content"] = reasoning_content
         sub_messages.append(sub_assistant_msg)
 
         # If no tools to execute, break
         if not tool_calls:
             if reasoning_content:
-                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
+                cleanup_reasoning_content(
+                    messages, reasoning_start_index, sub_turn)
             break
 
         # Execute tools
@@ -828,7 +830,7 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
             reasoning_in_progress = True
             if not silent:
                 print("\033[34mThinking: \033[0m", end='', flush=True)
-    
+
     def stop_thinking():
         nonlocal reasoning_in_progress
         if reasoning_in_progress:
@@ -855,7 +857,8 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                         logger.debug("\nchoices length is 0")
                         continue
                     if data['choices'][0]['finish_reason'] != None:
-                        logger.info("\nfinish_reason: %s", data['choices'][0]['finish_reason'])
+                        logger.info("\nfinish_reason: %s",
+                                    data['choices'][0]['finish_reason'])
                         break
                     if "choices" in data and data["choices"][0]["delta"]:
                         delta = data["choices"][0]["delta"]
@@ -864,24 +867,27 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                             start_thinking()
                             reasoning_content += delta["reasoning_content"]
                             if not silent:
-                                print(f"\033[90m{delta['reasoning_content']}\033[0m", end='', flush=True)
+                                print(
+                                    f"\033[90m{delta['reasoning_content']}\033[0m", end='', flush=True)
                         # 文本内容
                         elif delta.get("content"):
                             stop_thinking()
                             content = delta["content"]
-                            if "<think>" in content:    
+                            if "<think>" in content:
                                 in_think_tag = True
-                                print("\033[34mThinking: \033[0m", end='', flush=True)
-                                content = content.replace("<think>", "")           
-                            if "</think>" in content:    
+                                print("\033[34mThinking: \033[0m",
+                                      end='', flush=True)
+                                content = content.replace("<think>", "")
+                            if "</think>" in content:
                                 in_think_tag = False
                                 continue
                             if in_think_tag:
                                 # 在 think 标签内，作为推理内容
                                 reasoning_content += content
                                 if not silent:
-                                    print(f"\033[90m{content}\033[0m", end='', flush=True)
-                                continue    
+                                    print(
+                                        f"\033[90m{content}\033[0m", end='', flush=True)
+                                continue
                             collected_content += content
                             if not silent:
                                 print(content, end='', flush=True)
@@ -942,16 +948,17 @@ def command(command: str):
     if command == '/mcp' or command.startswith('/mcp '):
         handle_mcp_command(command)
         return
-    
+
     # 列出可用模型
     if command == '/models':
         interactive_select_model()
         return
-    
+
     # 处理shell命令 (!开头)
     if command.startswith('!'):
         shell(command[1:])  # 提取命令，去掉前面的 !
         return
+
 
 def handle_mcp_command(command: str):
     parts = command.split()
@@ -962,6 +969,7 @@ def handle_mcp_command(command: str):
         for name in server_names:
             client, tools = MCP_MANAGER.active_clients[name]
             TOOLS.extend(tools)
+
 
 def show_help():
     """显示帮助信息"""
@@ -1034,13 +1042,14 @@ def agent(prompt: str):
     reasoning_start_index = len(messages)
     while True:
         # 调用API获取流式响应
-        content, reasoning_content, tool_calls = get_streaming_response(messages, TOOLS)
+        content, reasoning_content, tool_calls = get_streaming_response(
+            messages, TOOLS)
 
         # 构建助手消息并添加到历史
         assistant_msg = {"role": "assistant", "content": content}
         if tool_calls:
             assistant_msg["tool_calls"] = tool_calls
-            if reasoning_content: # tool_calls 需添加推理内容
+            if reasoning_content:  # tool_calls 需添加推理内容
                 assistant_msg["reasoning_content"] = reasoning_content
         messages.append(assistant_msg)
         logger.debug("添加助手回复: %s", assistant_msg)
@@ -1048,7 +1057,8 @@ def agent(prompt: str):
         # 如果没有工具调用，结束循环
         if not tool_calls:
             if reasoning_content:
-                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
+                cleanup_reasoning_content(
+                    messages, reasoning_start_index, sub_turn)
             break
 
         for tool_call in tool_calls:
@@ -1088,7 +1098,7 @@ def agent(prompt: str):
 def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round: int):
     """
     清理推理内容
-    
+
     Args:
         messages: 消息列表
         start_index: 本轮问题开始的索引
@@ -1097,15 +1107,16 @@ def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round:
     if tool_call_round == 1:
         logger.debug("本轮问题没有工具调用，不需要清理")
         return
-    
+
     logger.info("清理推理内容，共清理%d轮", tool_call_round)
-    
+
     # 遍历从start_index之后的所有助手消息
     for i in range(start_index, len(messages)):
         if messages[i].get("role") == "assistant":
             messages[i].pop("reasoning_content", None)
-    
+
     logger.info("推理内容清理完成")
+
 
 def sanitize_memory():
     """翻译模式或不记忆模式时清理对话历史"""
@@ -1288,10 +1299,10 @@ def main():
 
     # 初始化系统提示词
     init_system_prompt(current_mode)
-    
+
     # 初始化 Provider 配置
     init_providers()
-    
+
     # 将多个参数连接成一个字符串
     query = " ".join(args.query) if args.query else None
 
