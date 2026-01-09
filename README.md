@@ -509,6 +509,8 @@ LOG_LEVEL=ERROR
 
 ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理。
 
+📖 **详细文档**：[Provider 配置说明](docs/provider-config.md) - 包含完整配置指南、常见问题和最佳实践。
+
 ### 配置文件结构
 
 ```json
@@ -674,6 +676,13 @@ echo $OPENAI_API_KEY
 ```
 
 ## 参考
+
+### 文档
+
+- [Provider 配置说明](docs/provider-config.md) - 多 Provider 配置详细指南
+- [MCP 配置](docs/mcp-config.md) - Model Context Protocol 服务器配置
+
+### 外部链接
 
 - [learn-claude-code](https://github.com/shareAI-lab/learn-claude-code)
 - [deepseek-guides-thinking-mode-tool-calls](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8)
