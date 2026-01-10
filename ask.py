@@ -1207,13 +1207,45 @@ def command(command: str):
         assert ROLE_MANAGER is not None
 
         default_role = ROLE_MANAGER.default_role
+
         if default_role and ROLE_MANAGER.get_role(default_role):
             current_role_id = default_role
             current_mode = ROLE
             init_system_prompt(current_mode, current_role_id)
             print(f"✅ 已进入角色扮演模式: {get_role_name(current_role_id)}\n")
-        else:
-            print("❌ 未配置默认角色\n")
+            return
+
+        # 没有默认角色，让用户选择
+        roles = list_roles()
+        if not roles:
+            print("📭 暂无可用角色\n")
+            print("💡 提示: 在 roles/ 目录下创建 .md 文件即可添加角色\n")
+            return
+
+        print("\n📋 可用角色:\n")
+        for i, role in enumerate(roles, 1):
+            print(f"  [{i}] {role['name']} ({role['id']})")
+            print(f"      {role['description']}\n")
+
+        try:
+            choice = input("请选择角色 (编号 或 0/Enter 取消): ").strip()
+            if choice == "0" or choice == "":
+                print("已取消\n")
+                return
+
+            index = int(choice) - 1
+            if 0 <= index < len(roles):
+                role_id = roles[index]["id"]
+                current_role_id = role_id
+                current_mode = ROLE
+                init_system_prompt(current_mode, current_role_id)
+                print(f"✅ 已进入角色扮演模式: {get_role_name(current_role_id)}\n")
+            else:
+                print("❌ 无效的编号\n")
+        except ValueError:
+            print("❌ 请输入有效的数字\n")
+        except KeyboardInterrupt:
+            print("\n已取消\n")
         return
 
     # 列出角色

@@ -88,14 +88,6 @@ class RoleManager:
         self.load_config()
         self._discover_roles()
 
-        # 如果默认角色为空且有角色存在，设置为第一个角色
-        if not self.default_role and self.roles:
-            first_role_id = list(self.roles.keys())[0]
-            self.default_role = first_role_id
-            logger.info(f"默认角色设置为: {first_role_id}")
-            # 自动保存配置
-            self.save_config()
-
     def generate_session_type(self, role_id: str) -> str:
         """
         生成角色会话类型（用于 SessionManager）
@@ -149,13 +141,6 @@ class RoleManager:
 
             logger.info(f"成功加载 {len(self.roles)} 个角色配置")
 
-            # 如果默认角色为空且有角色存在，设置为第一个角色
-            if not self.default_role and self.roles:
-                first_role_id = list(self.roles.keys())[0]
-                self.default_role = first_role_id
-                logger.info(f"默认角色设置为: {first_role_id}")
-                # 自动保存配置
-                self.save_config()
 
             return True
 
