@@ -16,3 +16,6 @@ mcpserver:
 
 pipreqs:
 	pipreqs . --force --encoding=utf-8
+
+clean:
+	rm -rf ./cache

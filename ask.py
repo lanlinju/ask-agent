@@ -13,6 +13,7 @@ import time
 from dotenv import load_dotenv
 from pathlib import Path
 import platform
+import threading
 from mcp import MCPManager
 from provider import ProviderConfig
 from session import SessionManager
@@ -333,6 +334,8 @@ messages: List[Dict[str, str | List]] = []
 memory = True
 # 当前模型提示符
 model_prompt = ""
+# 标题是否已生成
+title_generated = False
 
 
 class TodoManager:
@@ -409,7 +412,9 @@ def init_session_manager(mode: int = ASK):
 
 def init_system_prompt(mode: int = ASK):
     """初始化系统提示词"""
+    global title_generated
     messages.clear()
+    title_generated = False
     if mode == TRANSLATE:
         system_prompt = SYSTEM_PROMPT_TRANSLATE
     elif mode == AGENT:
@@ -814,6 +819,30 @@ def execute_tool(name: str, args: dict) -> str:
     return f"Unknown tool: {name}"
 
 
+def llm_generate_title(messages: List[Dict]) -> str:
+    """使用LLM生成会话标题"""
+    conversation_text = ""
+    for msg in messages:
+        if msg.get("role") in ("user", "assistant"):
+            content = msg.get("content", "")
+            if content:
+                conversation_text += f"{msg['role']}: {content}\n"
+
+    prompt = f"请为以下对话生成一个简洁的标题（不超过15字），概括主要话题：\n{conversation_text}"
+
+    try:
+        title, _, _ = get_streaming_response(
+            messages=[{"role": "user", "content": prompt}],
+            tools=[],
+            silent=True,
+            useTools=False,
+        )
+        return title.strip()[:15]  # 限制在15字以内
+    except Exception as e:
+        logger.warning(f"生成标题失败: {e}")
+        return "新会话"
+
+
 def get_streaming_response(
     messages: List, tools: List, silent: bool = False, useTools: bool = True
 ) -> tuple[str, str, List]:
@@ -900,7 +929,8 @@ def get_streaming_response(
                             content = delta["content"]
                             if "<think>" in content:
                                 in_think_tag = True
-                                print("\033[34mThinking: \033[0m", end="", flush=True)
+                                if not silent:
+                                    print("\033[34mThinking: \033[0m", end="", flush=True)
                                 content = content.replace("<think>", "")
                             if "</think>" in content:
                                 in_think_tag = False
@@ -1303,6 +1333,24 @@ def get_mode_prompt() -> str:
         return "Ask"
 
 
+def generate_title():
+    """异步生成会话标题，不阻塞主对话"""
+
+    def _generate():
+        try:
+            global title_generated
+            if not title_generated and SESSION_MANAGER:
+                title = llm_generate_title(messages)
+                SESSION_MANAGER.current_session_name = title
+                title_generated = True
+                logger.info(f"生成会话标题: {title}")
+        except Exception as e:
+            logger.warning(f"异步生成标题失败: {e}")
+
+    thread = threading.Thread(target=_generate, daemon=True)
+    thread.start()
+
+
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
@@ -1320,7 +1368,7 @@ def chat_loop():
         agent(user_input)
 
         sanitize_memory()
-
+        generate_title()
         print("\n")  # 换行
 
 

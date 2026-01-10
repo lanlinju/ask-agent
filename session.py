@@ -117,7 +117,7 @@ class SessionManager:
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(session_data, f, indent=2, ensure_ascii=False)
 
-            logger.info(f"会话已保存: {session_id} -> {file_path}")
+            logger.info(f"会话已保存: {session_id} -> {file_path}, name = {session_name}")
             return (session_id, file_path)
 
         except Exception as e:
