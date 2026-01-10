@@ -75,7 +75,6 @@ class SessionManager:
         messages: List[Dict],
         session_id: Optional[str] = None,
         session_name: Optional[str] = None,
-        metadata: Optional[Dict] = None,
     ) -> Optional[Tuple[str, Path]]:
         """
         保存会话到文件
@@ -84,7 +83,6 @@ class SessionManager:
             messages: 消息列表
             session_id: 会话 ID（如果为 None 则自动生成）
             session_name: 会话名称（如果为 None 则自动生成）
-            metadata: 额外的元数据
 
         Returns:
             (session_id, file_path)，如果消息只有 system prompt 则返回 None
@@ -107,7 +105,6 @@ class SessionManager:
             "name": session_name,
             "created_at": datetime.now().isoformat(),
             "message_count": len(messages),
-            "metadata": metadata or {},
             "messages": messages,
         }
 
@@ -117,7 +114,9 @@ class SessionManager:
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(session_data, f, indent=2, ensure_ascii=False)
 
-            logger.info(f"会话已保存: {session_id} -> {file_path}, name = {session_name}")
+            logger.info(
+                f"会话已保存: {session_id} -> {file_path}, name = {session_name}"
+            )
             return (session_id, file_path)
 
         except Exception as e:
