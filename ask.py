@@ -842,6 +842,7 @@ def llm_generate_title(messages: List[Dict]) -> str:
         logger.warning(f"生成标题失败: {e}")
         return "新会话"
 
+
 def stat_token(data: Dict):
     usage = data.get("usage", None)
     if usage:
@@ -855,6 +856,7 @@ def stat_token(data: Dict):
             completion_tokens,
             total_tokens,
         )
+
 
 def get_streaming_response(
     messages: List, tools: List, silent: bool = False, useTools: bool = True
@@ -1078,7 +1080,7 @@ def command(command: str):
         return
 
     # 列出会话
-    if command == "/sessions":
+    if command == "/session":
         list_sessions()
         return
 
@@ -1092,7 +1094,7 @@ def command(command: str):
         return
 
     # 列出所有可用的 MCP 服务器
-    if command == "/mcp" or command.startswith("/mcp "):
+    if command == "/mcp":
         handle_mcp_command(command)
         return
 
@@ -1167,8 +1169,8 @@ def show_help():
     /agent        - 进入智能体模式
     /e            - 进入翻译模式
     /new          - 创建新会话
-    /sessions     - 列出当前模式的所有会话
-    /load <id>    - 加载指定会话（使用 /sessions 查看 ID）
+    /session      - 列出当前模式的所有会话
+    /load <id>    - 加载指定会话（使用 /session 查看 ID）
     /models       - 交互式选择模型
     /help         - 显示此帮助信息
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
