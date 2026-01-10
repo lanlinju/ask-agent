@@ -843,6 +843,39 @@ def llm_generate_title(messages: List[Dict]) -> str:
         return "新会话"
 
 
+def llm_compress_messages(messages: List[Dict]) -> str:
+    """使用LLM压缩消息历史"""
+    if len(messages) <= 2:
+        return None
+
+    conversation_text = ""
+    for msg in messages:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role in ("user", "assistant") and content:
+            conversation_text += f"{role}: {content}\n"
+
+    prompt = f"""请将以下对话压缩成简洁的摘要，保留关键信息：
+- 保留对话的核心主题和关键信息
+- 突出重要的决定、解决方案或结论
+- 保持对话的逻辑连贯性
+- 用第三人称概括对话内容
+
+摘要应简洁明了，便于后续对话继续：\n{conversation_text}"""
+
+    try:
+        summary, _, _ = get_streaming_response(
+            messages=[{"role": "user", "content": prompt}],
+            tools=[],
+            silent=True,
+            useTools=False,
+        )
+        return summary.strip()
+    except Exception as e:
+        logger.warning(f"压缩消息失败: {e}")
+        return None
+
+
 def stat_token(data: Dict):
     usage = data.get("usage", None)
     if usage:
@@ -995,6 +1028,41 @@ def save_current_session():
         print(f"❌ 保存会话失败: {e}")
 
 
+def compress_messages():
+    """压缩对话历史"""
+    global messages
+
+    if len(messages) <= 4:
+        print("❌ 消息数量过少，无需压缩")
+        return
+
+    # 需要压缩的消数量（前3/4）
+    compress_count = len(messages) * 3 // 4
+
+    # 保留后1/4的原始消息
+    recent_msgs = messages[compress_count:]
+
+    # 需要压缩的消息（前3/4）
+    to_compress = messages[:compress_count]
+
+    print(f"🔄 正在压缩前 {len(to_compress)} 条消息...")
+    summary = llm_compress_messages(to_compress)
+
+    if not summary:
+        print("❌ 压缩失败")
+        return
+
+    system_msg = messages[0] if messages[0].get("role") == "system" else None
+    compressed_messages = [system_msg] if system_msg else []
+    compressed_messages.append(
+        {"role": "system", "content": f"[历史对话摘要]\n{summary}"}
+    )
+    compressed_messages.extend(recent_msgs)
+
+    messages = compressed_messages
+    print(f"✅ 压缩完成，当前消息数: {len(messages)}")
+
+
 def load_session(session_id: str):
     """加载指定会话"""
     if not SESSION_MANAGER:
@@ -1084,6 +1152,11 @@ def command(command: str):
         list_sessions()
         return
 
+    # 压缩对话
+    if command == "/summarize":
+        compress_messages()
+        return
+
     # 加载会话
     if command.startswith("/load "):
         session_id = command[6:].strip()
@@ -1171,6 +1244,7 @@ def show_help():
     /new          - 创建新会话
     /session      - 列出当前模式的所有会话
     /load <id>    - 加载指定会话（使用 /session 查看 ID）
+    /summarize    - 压缩对话历史，将前3/4的消息压缩为摘要
     /models       - 交互式选择模型
     /help         - 显示此帮助信息
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
