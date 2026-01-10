@@ -17,6 +17,7 @@ import threading
 from mcp import MCPManager
 from provider import ProviderConfig
 from session import SessionManager
+from role import RoleManager
 from typing import Optional
 
 load_dotenv(override=True)
@@ -202,6 +203,44 @@ PROVIDER_CONFIG = ProviderConfig("providers.json")
 # Global session manager instance - will be initialized with the current mode
 SESSION_MANAGER: Optional[SessionManager] = None
 
+# Global role manager instance
+ROLE_MANAGER: Optional[RoleManager] = None
+current_role_id: Optional[str] = None
+
+
+def init_role_manager() -> RoleManager:
+    """初始化角色管理器"""
+    global ROLE_MANAGER
+    if not ROLE_MANAGER:
+        ROLE_MANAGER = RoleManager()
+    return ROLE_MANAGER
+
+
+def get_role_name(role_id: str) -> str:
+    """获取角色名称"""
+    if not ROLE_MANAGER:
+        return role_id
+
+    role = ROLE_MANAGER.get_role(role_id)
+    return role.name if role else role_id
+
+
+def list_roles() -> List[Dict]:
+    """列出所有可用角色"""
+    init_role_manager()
+    assert ROLE_MANAGER is not None
+
+    roles_list = []
+    for role in ROLE_MANAGER.list_roles():
+        roles_list.append(
+            {
+                "id": role.role_id,
+                "name": role.name,
+                "description": role.description,
+            }
+        )
+    return roles_list
+
 
 def init_providers() -> bool:
     """初始化 Provider 配置"""
@@ -327,6 +366,7 @@ Environment:
 ASK = 0  # 问答模式
 TRANSLATE = 1  # 翻译模式
 AGENT = 2  # 智能体模式
+ROLE = 3  # 角色扮演模式
 current_mode: int = ASK
 # 对话历史缓冲
 messages: List[Dict[str, str | List]] = []
@@ -396,21 +436,35 @@ class TodoManager:
 TODO = TodoManager()
 
 
-def init_session_manager(mode: int = ASK):
+def init_session_manager(mode: int = ASK, role_id: Optional[str] = None):
     """初始化会话管理器，根据模式设置对应的子目录"""
     global SESSION_MANAGER
 
     if mode == TRANSLATE:
         session_type = "translate"
+        cache_dir = None
+        use_subdir = True
     elif mode == AGENT:
         session_type = "agent"
+        cache_dir = None
+        use_subdir = True
+    elif mode == ROLE and role_id:
+        init_role_manager()
+        assert ROLE_MANAGER is not None
+        cache_dir = ROLE_MANAGER.get_history_dir(role_id)
+        session_type = "role"
+        use_subdir = False
     else:
         session_type = "ask"
+        cache_dir = None
+        use_subdir = True
 
-    SESSION_MANAGER = SessionManager(session_type=session_type)
+    SESSION_MANAGER = SessionManager(
+        cache_dir=cache_dir, session_type=session_type, use_subdir=use_subdir
+    )
 
 
-def init_system_prompt(mode: int = ASK):
+def init_system_prompt(mode: int = ASK, role_id: Optional[str] = None):
     """初始化系统提示词"""
     global title_generated
     messages.clear()
@@ -419,11 +473,20 @@ def init_system_prompt(mode: int = ASK):
         system_prompt = SYSTEM_PROMPT_TRANSLATE
     elif mode == AGENT:
         system_prompt = SYSTEM_PROMPT_AGENT
+    elif mode == ROLE and role_id:
+        init_role_manager()
+        assert ROLE_MANAGER is not None
+        system_prompt = ROLE_MANAGER.get_role_prompt(role_id)
+        if not system_prompt:
+            print(f"❌ 未找到角色: {role_id}")
+            current_mode = ASK
+            system_prompt = SYSTEM_PROMPT_ASK
+            role_id = None
     else:
         system_prompt = SYSTEM_PROMPT_ASK
     messages.append({"role": "system", "content": system_prompt})
 
-    init_session_manager(mode)
+    init_session_manager(mode, role_id)
 
 
 TOOLS = [
@@ -1023,7 +1086,9 @@ def save_current_session():
             session_name=SESSION_MANAGER.current_session_name,
         )
         if result:
-            logger.info(f"💾 会话已保存到 cache/{SESSION_MANAGER.session_type}/, id = {SESSION_MANAGER.current_session_id}")
+            logger.info(
+                f"💾 会话已保存到 cache/{SESSION_MANAGER.session_type}/, id = {SESSION_MANAGER.current_session_id}"
+            )
     except Exception as e:
         print(f"❌ 保存会话失败: {e}")
 
@@ -1105,7 +1170,7 @@ def list_sessions():
 
 def command(command: str):
     """处理命令"""
-    global current_mode
+    global current_mode, current_role_id
 
     if command == "exit":
         save_current_session()
@@ -1133,6 +1198,57 @@ def command(command: str):
         current_mode = AGENT
         init_system_prompt(current_mode)
         print("✅ 已进入智能体模式\n")
+        return
+
+    # 进入角色扮演模式
+    if command == "/role":
+        save_current_session()
+        init_role_manager()
+        assert ROLE_MANAGER is not None
+
+        default_role = ROLE_MANAGER.default_role
+        if default_role and ROLE_MANAGER.get_role(default_role):
+            current_role_id = default_role
+            current_mode = ROLE
+            init_system_prompt(current_mode, current_role_id)
+            print(f"✅ 已进入角色扮演模式: {get_role_name(current_role_id)}\n")
+        else:
+            print("❌ 未配置默认角色\n")
+        return
+
+    # 列出角色
+    if command == "/roles":
+        roles = list_roles()
+        if not roles:
+            print("📭 暂无可用角色\n")
+            return
+
+        print("\n📋 可用角色:\n")
+        for i, role in enumerate(roles, 1):
+            marker = "→ " if role["id"] == current_role_id else "  "
+            print(f"{marker}[{i}] {role['name']} ({role['id']})")
+            print(f"     {role['description']}\n")
+        return
+
+    # 选择角色
+    if command.startswith("/role "):
+        save_current_session()
+        role_id = command[6:].strip()
+        if not role_id:
+            print("❌ 请提供角色 ID，例如: /role frieren")
+            return
+
+        init_role_manager()
+        assert ROLE_MANAGER is not None
+
+        if not ROLE_MANAGER.get_role(role_id):
+            print(f"❌ 未找到角色: {role_id}\n")
+            return
+
+        current_role_id = role_id
+        current_mode = ROLE
+        init_system_prompt(current_mode, current_role_id)
+        print(f"✅ 已切换到角色: {get_role_name(current_role_id)}\n")
         return
 
     # 创建新会话
@@ -1241,6 +1357,9 @@ def show_help():
     /ask          - 进入问答模式
     /agent        - 进入智能体模式
     /e            - 进入翻译模式
+    /role         - 进入角色扮演模式（使用默认角色）
+    /role <id>    - 选择指定角色进入角色扮演模式
+    /roles        - 列出所有可用角色
     /new          - 创建新会话
     /session      - 列出当前模式的所有会话
     /load <id>    - 加载指定会话（使用 /session 查看 ID）
@@ -1260,8 +1379,13 @@ def show_help():
     - 支持通过 TodoWrite 工具管理任务列表
     - 支持连接和使用 MCP 服务器提供的工具
 
+  🔹 角色扮演模式功能：
+    - 使用角色扮演系统提示词与角色对话
+    - 每个角色拥有独立的对话历史
+    - 角色配置存放在 roles.json，提示词存放在 roles/ 目录
+
   🔹 会话管理：
-    - 会话按模式自动分类保存到 cache/ask/、cache/agent/、cache/translate/
+    - 会话按模式自动分类保存到 cache/ask/、cache/agent/、cache/translate/、cache/role_<角色id>/
     - 切换模式或退出时自动保存当前会话
  """
     print(help_text)
@@ -1421,6 +1545,8 @@ def get_mode_prompt() -> str:
         return "Translate"
     elif current_mode == AGENT:
         return "Agent"
+    elif current_mode == ROLE and current_role_id:
+        return get_role_name(current_role_id)
     else:
         return "Ask"
 
@@ -1529,6 +1655,7 @@ def main():
     )
     parser.add_argument("-e", "--translate", action="store_true", help="进入翻译模式")
     parser.add_argument("--agent", action="store_true", help="进入智能体模式")
+    parser.add_argument("--role", type=str, help="进入角色扮演模式，指定角色ID")
     parser.add_argument(
         "-n",
         "--no-memory",
@@ -1568,16 +1695,27 @@ def main():
     memory = not args.no_memory
 
     # 更新当前模式
-    global current_mode
-    if args.agent:
+    global current_mode, current_role_id
+    if args.role:
+        init_role_manager()
+        assert ROLE_MANAGER is not None
+
+        if not ROLE_MANAGER.get_role(args.role):
+            print(f"❌ 未找到角色: {args.role}", file=sys.stderr)
+            sys.exit(1)
+
+        current_role_id = args.role
+        current_mode = ROLE
+        init_system_prompt(current_mode, current_role_id)
+    elif args.agent:
         current_mode = AGENT
+        init_system_prompt(current_mode)
     elif args.translate:
         current_mode = TRANSLATE
+        init_system_prompt(current_mode)
     else:
         current_mode = ASK
-
-    # 初始化系统提示词
-    init_system_prompt(current_mode)
+        init_system_prompt(current_mode)
 
     # 初始化 Provider 配置
     init_providers()

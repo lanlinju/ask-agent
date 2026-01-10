@@ -16,16 +16,25 @@ logger = logging.getLogger(__name__)
 class SessionManager:
     """会话管理器"""
 
-    def __init__(self, cache_dir: Optional[Path] = None, session_type: str = "default"):
+    def __init__(
+        self,
+        cache_dir: Optional[Path] = None,
+        session_type: str = "default",
+        use_subdir: bool = True,
+    ):
         """
         初始化会话管理器
 
         Args:
             cache_dir: 缓存目录路径，默认为 ./cache
             session_type: 会话类型（ask/agent/translate等），用于创建子目录
+            use_subdir: 是否在 cache_dir 后添加 session_type 子目录
         """
         base_dir = cache_dir or Path("cache")
-        self.cache_dir = base_dir / session_type
+        if use_subdir:
+            self.cache_dir = base_dir / session_type
+        else:
+            self.cache_dir = base_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.current_session_id: Optional[str] = None
