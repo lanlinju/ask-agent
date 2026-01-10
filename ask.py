@@ -1023,7 +1023,7 @@ def save_current_session():
             session_name=SESSION_MANAGER.current_session_name,
         )
         if result:
-            print(f"💾 会话已保存到 cache/{SESSION_MANAGER.session_type}/")
+            logger.info(f"💾 会话已保存到 cache/{SESSION_MANAGER.session_type}/, id = {SESSION_MANAGER.current_session_id}")
     except Exception as e:
         print(f"❌ 保存会话失败: {e}")
 
