@@ -1080,14 +1080,18 @@ def save_current_session():
         return
 
     try:
+        session_id = SESSION_MANAGER.current_session_id
+        if current_mode == ROLE and current_role_id:
+            session_id = current_role_id
+
         result = SESSION_MANAGER.save_session(
             messages,
-            session_id=SESSION_MANAGER.current_session_id,
+            session_id=session_id,
             session_name=SESSION_MANAGER.current_session_name,
         )
         if result:
             logger.info(
-                f"💾 会话已保存到 cache/{SESSION_MANAGER.session_type}/, id = {SESSION_MANAGER.current_session_id}"
+                f"💾 会话已保存到 cache/{SESSION_MANAGER.session_type}/, id = {session_id}"
             )
     except Exception as e:
         print(f"❌ 保存会话失败: {e}")
