@@ -842,6 +842,19 @@ def llm_generate_title(messages: List[Dict]) -> str:
         logger.warning(f"生成标题失败: {e}")
         return "新会话"
 
+def stat_token(data: Dict):
+    usage = data.get("usage", None)
+    if usage:
+        usage = data["usage"]
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+        total_tokens = usage.get("total_tokens", 0)
+        logger.info(
+            "Token 使用: prompt=%d, completion=%d, total=%d",
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+        )
 
 def get_streaming_response(
     messages: List, tools: List, silent: bool = False, useTools: bool = True
@@ -907,9 +920,10 @@ def get_streaming_response(
                         logger.debug("\nchoices length is 0")
                         continue
                     if data["choices"][0]["finish_reason"] != None:
-                        logger.info(
-                            "\nfinish_reason: %s", data["choices"][0]["finish_reason"]
-                        )
+                        finish_reason = data["choices"][0]["finish_reason"]
+                        logger.info("\nfinish_reason: %s", finish_reason)
+                        # 打印 token 使用情况
+                        stat_token(data)
                         break
                     if "choices" in data and data["choices"][0]["delta"]:
                         delta = data["choices"][0]["delta"]
@@ -930,7 +944,9 @@ def get_streaming_response(
                             if "<think>" in content:
                                 in_think_tag = True
                                 if not silent:
-                                    print("\033[34mThinking: \033[0m", end="", flush=True)
+                                    print(
+                                        "\033[34mThinking: \033[0m", end="", flush=True
+                                    )
                                 content = content.replace("<think>", "")
                             if "</think>" in content:
                                 in_think_tag = False
