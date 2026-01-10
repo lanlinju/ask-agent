@@ -1265,6 +1265,7 @@ def command(command: str):
                 role_id = roles[index]["id"]
                 current_role_id = role_id
                 current_mode = ROLE
+                ROLE_MANAGER.set_default_role(role_id)
                 init_system_prompt(current_mode, current_role_id)
                 print(f"✅ 已进入角色扮演模式: {get_role_name(current_role_id)}\n")
             else:
@@ -1306,6 +1307,7 @@ def command(command: str):
 
         current_role_id = role_id
         current_mode = ROLE
+        ROLE_MANAGER.set_default_role(role_id)
         init_system_prompt(current_mode, current_role_id)
         print(f"✅ 已切换到角色: {get_role_name(current_role_id)}\n")
         return
@@ -1614,6 +1616,7 @@ def generate_title():
     """异步生成会话标题，不阻塞主对话"""
     if current_mode == ROLE:
         return
+
     def _generate():
         try:
             global title_generated
