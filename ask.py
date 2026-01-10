@@ -488,6 +488,9 @@ def init_system_prompt(mode: int = ASK, role_id: Optional[str] = None):
 
     init_session_manager(mode, role_id)
 
+    if mode == ROLE and role_id and SESSION_MANAGER:
+        load_role_session(role_id)
+
 
 TOOLS = [
     {
@@ -1095,6 +1098,23 @@ def save_current_session():
             )
     except Exception as e:
         print(f"❌ 保存会话失败: {e}")
+
+
+def load_role_session(role_id: str):
+    """加载角色的历史会话"""
+    if not SESSION_MANAGER:
+        return
+
+    session_data = SESSION_MANAGER.load_session(role_id)
+    if session_data:
+        global messages, title_generated
+        messages = session_data.get("messages", [])
+        title_generated = True
+        SESSION_MANAGER.current_session_id = role_id
+        SESSION_MANAGER.current_session_name = session_data.get("name")
+        message_count = len(messages)
+        print(f"  📖 已加载历史会话 ({message_count} 条消息)\n")
+        logger.info(f"已加载角色历史会话: {role_id}")
 
 
 def summarizer():
