@@ -15,13 +15,15 @@ from pathlib import Path
 import platform
 from mcp import MCPManager
 from provider import ProviderConfig
+from session import SessionManager
+from typing import Optional
 
 load_dotenv(override=True)
 
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-if sys.platform != 'win32':
+if sys.platform != "win32":
     import readline
 
 # Ask Agent
@@ -149,8 +151,7 @@ class SkillLoader:
             return "(no skills available)"
 
         return "\n".join(
-            f"- {name}: {skill['description']}"
-            for name, skill in self.skills.items()
+            f"- {name}: {skill['description']}" for name, skill in self.skills.items()
         )
 
     def get_skill_content(self, name: str) -> str:
@@ -166,14 +167,15 @@ class SkillLoader:
         for folder, label in [
             ("scripts", "Scripts"),
             ("references", "References"),
-            ("assets", "Assets")
+            ("assets", "Assets"),
         ]:
             folder_path = skill["dir"] / folder
             if folder_path.exists():
                 files = list(folder_path.glob("*"))
                 if files:
                     resources.append(
-                        f"{label}: {', '.join(str(f.relative_to(skill['dir'])) for f in files)}")
+                        f"{label}: {', '.join(str(f.relative_to(skill['dir'])) for f in files)}"
+                    )
 
         if resources:
             content += f"\n\n**Available resources in {skill['dir']}:**\n"
@@ -196,6 +198,9 @@ MCP_MANAGER = MCPManager()
 # Global provider config instance
 PROVIDER_CONFIG = ProviderConfig("providers.json")
 
+# Global session manager instance - will be initialized with the current mode
+SESSION_MANAGER: Optional[SessionManager] = None
+
 
 def init_providers() -> bool:
     """初始化 Provider 配置"""
@@ -207,12 +212,11 @@ def init_providers() -> bool:
     global DEEPSEEK_MODEL, DEEPSEEK_API_URL, DEEPSEEK_API_KEY
 
     if PROVIDER_CONFIG.default_model:
-        api_config = PROVIDER_CONFIG.get_api_config(
-            PROVIDER_CONFIG.default_model)
+        api_config = PROVIDER_CONFIG.get_api_config(PROVIDER_CONFIG.default_model)
         if api_config:
-            DEEPSEEK_API_URL = api_config['base_url'].rstrip('/v1')
-            DEEPSEEK_API_KEY = api_config['api_key']
-            DEEPSEEK_MODEL = api_config['model']
+            DEEPSEEK_API_URL = api_config["base_url"].rstrip("/v1")
+            DEEPSEEK_API_KEY = api_config["api_key"]
+            DEEPSEEK_MODEL = api_config["model"]
             logger.info(f"使用默认模型: {PROVIDER_CONFIG.default_model}")
 
     update_model_prompt()
@@ -228,9 +232,9 @@ def switch_model(model_id: str):
 
     global DEEPSEEK_MODEL, DEEPSEEK_API_URL, DEEPSEEK_API_KEY
 
-    DEEPSEEK_API_URL = api_config['base_url'].rstrip('/v1')
-    DEEPSEEK_API_KEY = api_config['api_key']
-    DEEPSEEK_MODEL = api_config['model']
+    DEEPSEEK_API_URL = api_config["base_url"].rstrip("/v1")
+    DEEPSEEK_API_KEY = api_config["api_key"]
+    DEEPSEEK_MODEL = api_config["model"]
 
     model_info = PROVIDER_CONFIG.get_model_info(model_id)
     print(f"✅ 已切换到模型: {model_info.name} ({model_info.provider_id})\n")
@@ -271,7 +275,7 @@ def interactive_select_model():
 
     try:
         choice = input("请输入模型编号 (0 or 直接Enter 取消): ").strip()
-        if choice == '0' or choice == '':
+        if choice == "0" or choice == "":
             print("已取消\n")
             return
 
@@ -291,8 +295,7 @@ def interactive_select_model():
 def get_agent_descriptions() -> str:
     """Generate agent type descriptions for the Task tool."""
     return "\n".join(
-        f"- {name}: {cfg['description']}"
-        for name, cfg in AGENT_TYPES.items()
+        f"- {name}: {cfg['description']}" for name, cfg in AGENT_TYPES.items()
     )
 
 
@@ -320,9 +323,9 @@ Environment:
     - Linux/macOS: use Bash command.
 """
 
-ASK = 0         # 问答模式
-TRANSLATE = 1   # 翻译模式
-AGENT = 2       # 智能体模式
+ASK = 0  # 问答模式
+TRANSLATE = 1  # 翻译模式
+AGENT = 2  # 智能体模式
 current_mode: int = ASK
 # 对话历史缓冲
 messages: List[Dict[str, str | List]] = []
@@ -356,10 +359,7 @@ class TodoManager:
             if status == "in_progress":
                 in_progress_count += 1
 
-            validated.append({
-                "content": content,
-                "status": status
-            })
+            validated.append({"content": content, "status": status})
 
         # Enforce constraints
         if len(validated) > 20:
@@ -393,6 +393,20 @@ class TodoManager:
 TODO = TodoManager()
 
 
+def init_session_manager(mode: int = ASK):
+    """初始化会话管理器，根据模式设置对应的子目录"""
+    global SESSION_MANAGER
+
+    if mode == TRANSLATE:
+        session_type = "translate"
+    elif mode == AGENT:
+        session_type = "agent"
+    else:
+        session_type = "ask"
+
+    SESSION_MANAGER = SessionManager(session_type=session_type)
+
+
 def init_system_prompt(mode: int = ASK):
     """初始化系统提示词"""
     messages.clear()
@@ -403,6 +417,8 @@ def init_system_prompt(mode: int = ASK):
     else:
         system_prompt = SYSTEM_PROMPT_ASK
     messages.append({"role": "system", "content": system_prompt})
+
+    init_session_manager(mode)
 
 
 TOOLS = [
@@ -416,7 +432,7 @@ TOOLS = [
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The shell command to execute (bash/zsh/PowerShell)"
+                        "description": "The shell command to execute (bash/zsh/PowerShell)",
                     }
                 },
                 "required": ["command"],
@@ -433,11 +449,11 @@ TOOLS = [
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Relative path to the file"
+                        "description": "Relative path to the file",
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Max lines to read (default: all)"
+                        "description": "Max lines to read (default: all)",
                     },
                 },
                 "required": ["path"],
@@ -454,12 +470,9 @@ TOOLS = [
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Relative path for the file"
+                        "description": "Relative path for the file",
                     },
-                    "content": {
-                        "type": "string",
-                        "description": "Content to write"
-                    },
+                    "content": {"type": "string", "description": "Content to write"},
                 },
                 "required": ["path", "content"],
             },
@@ -475,16 +488,13 @@ TOOLS = [
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Relative path to the file"
+                        "description": "Relative path to the file",
                     },
                     "old_text": {
                         "type": "string",
-                        "description": "Exact text to find (must match precisely)"
+                        "description": "Exact text to find (must match precisely)",
                     },
-                    "new_text": {
-                        "type": "string",
-                        "description": "Replacement text"
-                    },
+                    "new_text": {"type": "string", "description": "Replacement text"},
                 },
                 "required": ["path", "old_text", "new_text"],
             },
@@ -506,16 +516,16 @@ TOOLS = [
                             "properties": {
                                 "content": {
                                     "type": "string",
-                                    "description": "Task description"
+                                    "description": "Task description",
                                 },
                                 "status": {
                                     "type": "string",
                                     "enum": ["pending", "in_progress", "completed"],
-                                    "description": "Task status"
-                                }
+                                    "description": "Task status",
+                                },
                             },
                             "required": ["content", "status"],
-                        }
+                        },
                     }
                 },
                 "required": ["todos"],
@@ -532,16 +542,16 @@ TOOLS = [
                 "properties": {
                     "description": {
                         "type": "string",
-                        "description": "Short task name (3-5 words) for progress display"
+                        "description": "Short task name (3-5 words) for progress display",
                     },
                     "prompt": {
                         "type": "string",
-                        "description": "Detailed instructions for the subagent"
+                        "description": "Detailed instructions for the subagent",
                     },
                     "agent_type": {
                         "type": "string",
                         "enum": list(AGENT_TYPES.keys()),
-                        "description": "Type of agent to spawn"
+                        "description": "Type of agent to spawn",
                     },
                 },
                 "required": ["description", "prompt", "agent_type"],
@@ -558,7 +568,7 @@ TOOLS = [
                 "properties": {
                     "skill": {
                         "type": "string",
-                        "description": "Name of the skill to load"
+                        "description": "Name of the skill to load",
                     }
                 },
                 "required": ["skill"],
@@ -656,7 +666,7 @@ def merge_arguments(tool_calls_collected: List) -> List:
             tool_calls_by_index[index] = {
                 "id": "",
                 "type": "function",
-                "function": {"name": "", "arguments": ""}
+                "function": {"name": "", "arguments": ""},
             }
 
         current = tool_calls_by_index[index]
@@ -670,8 +680,7 @@ def merge_arguments(tool_calls_collected: List) -> List:
             if func.get("arguments"):
                 current["function"]["arguments"] += func["arguments"]
 
-    result = [tool_calls_by_index[i]
-              for i in sorted(tool_calls_by_index.keys())]
+    result = [tool_calls_by_index[i] for i in sorted(tool_calls_by_index.keys())]
     logger.debug("merge arguments result:\n%s", json.dumps(result, indent=2))
 
     return result
@@ -714,11 +723,11 @@ Complete the task and return a clear, concise summary."""
     # The subagent starts fresh, doesn't see parent's conversation
     sub_messages = [
         {"role": "system", "content": sub_system},
-        {"role": "user", "content": prompt}
+        {"role": "user", "content": prompt},
     ]
 
     # Progress tracking
-    print(f"  [{agent_type}] {description}", end='', flush=True)
+    print(f"  [{agent_type}] {description}", end="", flush=True)
     start = time.time()
     tool_count = 0
 
@@ -727,7 +736,8 @@ Complete the task and return a clear, concise summary."""
     # Run the same agent loop (silently - don't print to main chat)
     while True:
         content, reasoning_content, tool_calls = get_streaming_response(
-            sub_messages, sub_tools, True)
+            sub_messages, sub_tools, True
+        )
 
         # Add assistant response to subagent history
         sub_assistant_msg = {"role": "assistant", "content": content}
@@ -740,27 +750,27 @@ Complete the task and return a clear, concise summary."""
         # If no tools to execute, break
         if not tool_calls:
             if reasoning_content:
-                cleanup_reasoning_content(
-                    messages, reasoning_start_index, sub_turn)
+                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
             break
 
         # Execute tools
         for tool_call in tool_calls:
             tool_count += 1
-            name = tool_call['function']['name']
-            args = json.loads(tool_call['function']['arguments'])
+            name = tool_call["function"]["name"]
+            args = json.loads(tool_call["function"]["arguments"])
             output = execute_tool(name, args)
 
             tool_result = {
                 "role": "tool",
                 "tool_call_id": tool_call["id"],
-                "content": output
+                "content": output,
             }
 
             # Update progress line (in-place)
             elapsed = time.time() - start
             sys.stdout.write(
-                f"\r  [{agent_type}] {description} ... {tool_count} tools, {elapsed:.1f}s")
+                f"\r  [{agent_type}] {description} ... {tool_count} tools, {elapsed:.1f}s"
+            )
             sys.stdout.flush()
 
             sub_messages.append(tool_result)
@@ -770,7 +780,8 @@ Complete the task and return a clear, concise summary."""
     # Final progress update
     elapsed = time.time() - start
     sys.stdout.write(
-        f"\r  [{agent_type}] {description} - done ({tool_count} tools, {elapsed:.1f}s)\n")
+        f"\r  [{agent_type}] {description} - done ({tool_count} tools, {elapsed:.1f}s)\n"
+    )
 
     # Return the final text content
     return content
@@ -793,6 +804,7 @@ def execute_tool(name: str, args: dict) -> str:
         return run_skill(args["skill"])
     if name.startswith("mcp_"):
         import re
+
         match = re.match(r"^mcp_(.+)_(.+)$", name)
         if match:
             server_name = match.group(1)
@@ -802,12 +814,14 @@ def execute_tool(name: str, args: dict) -> str:
     return f"Unknown tool: {name}"
 
 
-def get_streaming_response(messages: List, tools: List, silent: bool = False) -> tuple[str, str, List]:
+def get_streaming_response(
+    messages: List, tools: List, silent: bool = False
+) -> tuple[str, str, List]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json",
-        "Accept": "text/event-stream"
+        "Accept": "text/event-stream",
     }
 
     data = {
@@ -815,7 +829,7 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
         "messages": messages,
         "tools": tools if current_mode == AGENT else [],
         "tool_choice": "auto" if current_mode == AGENT else "none",
-        "stream": True
+        "stream": True,
     }
 
     collected_content = ""
@@ -829,22 +843,27 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
         if not reasoning_in_progress:
             reasoning_in_progress = True
             if not silent:
-                print("\033[34mThinking: \033[0m", end='', flush=True)
+                print("\033[34mThinking: \033[0m", end="", flush=True)
 
     def stop_thinking():
         nonlocal reasoning_in_progress
         if reasoning_in_progress:
             reasoning_in_progress = False
             if not silent:
-                print('\n')
+                print("\n")
 
-    with requests.post(f"{DEEPSEEK_API_URL}/v1/chat/completions", headers=headers, json=data, stream=True) as response:
+    with requests.post(
+        f"{DEEPSEEK_API_URL}/v1/chat/completions",
+        headers=headers,
+        json=data,
+        stream=True,
+    ) as response:
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ("", "", [])
         for chunk in response.iter_lines():
             if chunk:
-                decoded = chunk.decode('utf-8')
+                decoded = chunk.decode("utf-8")
                 if not decoded.startswith("data:"):
                     continue
                 if decoded == "data: [DONE]":
@@ -856,9 +875,10 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                     if len(data["choices"]) == 0:
                         logger.debug("\nchoices length is 0")
                         continue
-                    if data['choices'][0]['finish_reason'] != None:
-                        logger.info("\nfinish_reason: %s",
-                                    data['choices'][0]['finish_reason'])
+                    if data["choices"][0]["finish_reason"] != None:
+                        logger.info(
+                            "\nfinish_reason: %s", data["choices"][0]["finish_reason"]
+                        )
                         break
                     if "choices" in data and data["choices"][0]["delta"]:
                         delta = data["choices"][0]["delta"]
@@ -868,15 +888,17 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                             reasoning_content += delta["reasoning_content"]
                             if not silent:
                                 print(
-                                    f"\033[90m{delta['reasoning_content']}\033[0m", end='', flush=True)
+                                    f"\033[90m{delta['reasoning_content']}\033[0m",
+                                    end="",
+                                    flush=True,
+                                )
                         # 文本内容
                         elif delta.get("content"):
                             stop_thinking()
                             content = delta["content"]
                             if "<think>" in content:
                                 in_think_tag = True
-                                print("\033[34mThinking: \033[0m",
-                                      end='', flush=True)
+                                print("\033[34mThinking: \033[0m", end="", flush=True)
                                 content = content.replace("<think>", "")
                             if "</think>" in content:
                                 in_think_tag = False
@@ -886,11 +908,12 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
                                 reasoning_content += content
                                 if not silent:
                                     print(
-                                        f"\033[90m{content}\033[0m", end='', flush=True)
+                                        f"\033[90m{content}\033[0m", end="", flush=True
+                                    )
                                 continue
                             collected_content += content
                             if not silent:
-                                print(content, end='', flush=True)
+                                print(content, end="", flush=True)
                         # 工具调用
                         elif delta.get("tool_calls"):
                             tool_calls = delta["tool_calls"]
@@ -905,64 +928,180 @@ def get_streaming_response(messages: List, tools: List, silent: bool = False) ->
     return (collected_content, reasoning_content, merge_arguments(tool_calls_collected))
 
 
+def save_current_session():
+    """保存当前会话"""
+    if not SESSION_MANAGER:
+        return
+
+    try:
+        result = SESSION_MANAGER.save_session(
+            messages,
+            session_id=SESSION_MANAGER.current_session_id,
+            session_name=SESSION_MANAGER.current_session_name,
+        )
+        if result:
+            print(f"💾 会话已保存到 cache/{SESSION_MANAGER.session_type}/")
+    except Exception as e:
+        print(f"❌ 保存会话失败: {e}")
+
+
+def load_session(session_id: str):
+    """加载指定会话"""
+    if not SESSION_MANAGER:
+        print("❌ 会话管理器未初始化")
+        return
+
+    session_data = SESSION_MANAGER.load_session(session_id)
+    if not session_data:
+        print(f"❌ 未找到会话: {session_id}")
+        return
+
+    global messages
+    messages = session_data.get("messages", [])
+    SESSION_MANAGER.current_session_id = session_id
+    SESSION_MANAGER.current_session_name = session_data.get("name")
+
+    print(f"✅ 已加载会话: {SESSION_MANAGER.current_session_name}")
+
+
+def list_sessions():
+    """列出当前模式的所有会话"""
+    if not SESSION_MANAGER:
+        print("❌ 会话管理器未初始化")
+        return
+
+    sessions = SESSION_MANAGER.list_sessions(limit=5)
+    if not sessions:
+        print(f"📭 cache/{SESSION_MANAGER.session_type}/ 目录下暂无会话")
+        return
+
+    print(f"\n📋 最近会话 ({SESSION_MANAGER.session_type}):\n")
+    for i, session in enumerate(sessions, 1):
+        marker = "→ " if session["id"] == SESSION_MANAGER.current_session_id else "  "
+        print(f"{marker}[{i}] {session['name']}")
+        print(f"     ID: {session['id']}")
+        print(
+            f"     消息数: {session['message_count']}, 创建时间: {session['created_at'][:19]}\n"
+        )
+
+
 def command(command: str):
     """处理命令"""
     global current_mode
 
-    if command == 'exit':
+    if command == "exit":
+        save_current_session()
         sys.exit(0)
 
     # 进入翻译模式
-    if command == '/e':
+    if command == "/e":
+        save_current_session()
         current_mode = TRANSLATE
         init_system_prompt(current_mode)
         print("✅ 已进入翻译模式\n")
         return
 
     # 进入问答模式
-    if command == '/ask':
+    if command == "/ask":
+        save_current_session()
         current_mode = ASK
         init_system_prompt(current_mode)
         print("✅ 已进入问答模式\n")
         return
 
     # 进入智能体模式
-    if command == '/agent':
+    if command == "/agent":
+        save_current_session()
         current_mode = AGENT
         init_system_prompt(current_mode)
         print("✅ 已进入智能体模式\n")
         return
 
     # 创建新会话
-    if command == '/new':
+    if command == "/new":
+        save_current_session()
         init_system_prompt(current_mode)
         print("✅ 已创建新会话\n")
         return
 
     # 显示帮助
-    if command == '/help':
+    if command == "/help":
         show_help()
         return
 
+    # 列出会话
+    if command == "/sessions":
+        list_sessions()
+        return
+
+    # 加载会话
+    if command.startswith("/load "):
+        session_id = command[6:].strip()
+        if session_id:
+            load_session(session_id)
+        else:
+            print("❌ 请提供会话 ID，例如: /load 20250109_120000_abc123")
+        return
+
     # 列出所有可用的 MCP 服务器
-    if command == '/mcp' or command.startswith('/mcp '):
+    if command == "/mcp" or command.startswith("/mcp "):
         handle_mcp_command(command)
         return
 
     # 列出可用模型
-    if command == '/models':
+    if command == "/models":
         interactive_select_model()
         return
 
     # 处理shell命令 (!开头)
-    if command.startswith('!'):
+    if command.startswith("!"):
+        shell(command[1:])  # 提取命令，去掉前面的 !
+        return
+
+    # 进入问答模式
+    if command == "/ask":
+        current_mode = ASK
+        init_system_prompt(current_mode)
+        print("✅ 已进入问答模式\n")
+        return
+
+    # 进入智能体模式
+    if command == "/agent":
+        current_mode = AGENT
+        init_system_prompt(current_mode)
+        print("✅ 已进入智能体模式\n")
+        return
+
+    # 创建新会话
+    if command == "/new":
+        init_system_prompt(current_mode)
+        print("✅ 已创建新会话\n")
+        return
+
+    # 显示帮助
+    if command == "/help":
+        show_help()
+        return
+
+    # 列出所有可用的 MCP 服务器
+    if command == "/mcp" or command.startswith("/mcp "):
+        handle_mcp_command(command)
+        return
+
+    # 列出可用模型
+    if command == "/models":
+        interactive_select_model()
+        return
+
+    # 处理shell命令 (!开头)
+    if command.startswith("!"):
         shell(command[1:])  # 提取命令，去掉前面的 !
         return
 
 
 def handle_mcp_command(command: str):
     parts = command.split()
-    if len(parts) > 1 and '-l' in parts:
+    if len(parts) > 1 and "-l" in parts:
         MCP_MANAGER.list_mcp_servers()
     else:
         server_names = MCP_MANAGER.interactive_select_server()
@@ -980,10 +1119,12 @@ def show_help():
     /agent        - 进入智能体模式
     /e            - 进入翻译模式
     /new          - 创建新会话
+    /sessions     - 列出当前模式的所有会话
+    /load <id>    - 加载指定会话（使用 /sessions 查看 ID）
     /models       - 交互式选择模型
     /help         - 显示此帮助信息
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
-    exit          - 退出程序
+    exit          - 退出程序（自动保存会话）
 
   🔹 MCP 服务器管理：
     /mcp          - 交互式选择并连接 MCP 服务器
@@ -994,6 +1135,10 @@ def show_help():
     - 支持通过 Task 工具启动子智能体
     - 支持通过 TodoWrite 工具管理任务列表
     - 支持连接和使用 MCP 服务器提供的工具
+
+  🔹 会话管理：
+    - 会话按模式自动分类保存到 cache/ask/、cache/agent/、cache/translate/
+    - 切换模式或退出时自动保存当前会话
  """
     print(help_text)
 
@@ -1002,12 +1147,7 @@ def execute_cmd(cmd: str) -> str:
     """执行shell命令并返回输出"""
     try:
         result = subprocess.run(
-            cmd,
-            shell=True,
-            cwd=WORKDIR,
-            capture_output=True,
-            text=True,
-            timeout=10
+            cmd, shell=True, cwd=WORKDIR, capture_output=True, text=True, timeout=10
         )
         output = result.stdout + result.stderr
         return (output.strip() if output else "(no output)")[:50000]
@@ -1042,8 +1182,7 @@ def agent(prompt: str):
     reasoning_start_index = len(messages)
     while True:
         # 调用API获取流式响应
-        content, reasoning_content, tool_calls = get_streaming_response(
-            messages, TOOLS)
+        content, reasoning_content, tool_calls = get_streaming_response(messages, TOOLS)
 
         # 构建助手消息并添加到历史
         assistant_msg = {"role": "assistant", "content": content}
@@ -1057,13 +1196,12 @@ def agent(prompt: str):
         # 如果没有工具调用，结束循环
         if not tool_calls:
             if reasoning_content:
-                cleanup_reasoning_content(
-                    messages, reasoning_start_index, sub_turn)
+                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
             break
 
         for tool_call in tool_calls:
-            name = tool_call['function']['name']
-            args = json.loads(tool_call['function']['arguments'])
+            name = tool_call["function"]["name"]
+            args = json.loads(tool_call["function"]["arguments"])
             logger.info("执行工具: %s, 参数: %s", name, args)
 
             # Task and Skill tools have special display handling
@@ -1085,7 +1223,7 @@ def agent(prompt: str):
             tool_result = {
                 "role": "tool",
                 "tool_call_id": tool_call["id"],
-                "content": output
+                "content": output,
             }
 
             logger.debug("Add tool output: %s", tool_result)
@@ -1127,14 +1265,20 @@ def sanitize_memory():
 
 def is_command(command: str) -> bool:
     """检查输入是否为命令"""
-    return command.startswith('/') or command.startswith('!') or command.lower() == 'exit'
+    return (
+        command.startswith("/") or command.startswith("!") or command.lower() == "exit"
+    )
 
 
 def update_model_prompt():
     """更新当前模型和provider的提示符"""
     global model_prompt
     try:
-        model_id = PROVIDER_CONFIG.default_model if PROVIDER_CONFIG.default_model else DEEPSEEK_MODEL
+        model_id = (
+            PROVIDER_CONFIG.default_model
+            if PROVIDER_CONFIG.default_model
+            else DEEPSEEK_MODEL
+        )
         model_info = PROVIDER_CONFIG.get_model_info(model_id)
         if model_info:
             model_name = model_info.name if model_info.name else DEEPSEEK_MODEL
@@ -1175,20 +1319,22 @@ def chat_loop():
 
         sanitize_memory()
 
-        print('\n')  # 换行
+        print("\n")  # 换行
 
 
 def restore_tty():
     """重新打开 stdin 用于交互"""
     if sys.stdin.isatty():
         return
-    if sys.platform != 'win32':
-        sys.stdin = open('/dev/tty')
+    if sys.platform != "win32":
+        sys.stdin = open("/dev/tty")
     else:
-        sys.stdin = open('CON', 'r')
+        sys.stdin = open("CON", "r")
 
 
-def pipe_mode(prompt: str | None = None, quit: bool = False, continue_conversation: bool = False):
+def pipe_mode(
+    prompt: str | None = None, quit: bool = False, continue_conversation: bool = False
+):
     """管道模式：支持管道输入 + 额外问题组合"""
     stdin_input = None
 
@@ -1223,50 +1369,41 @@ def pipe_mode(prompt: str | None = None, quit: bool = False, continue_conversati
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ask Agent - DeepSeek 问答客户端",
-        prog="ag"
+        description="Ask Agent - DeepSeek 问答客户端", prog="ag"
     )
     parser.add_argument(
         "query",
-        nargs="*",       # 接收多个参数
-        help="要提问的内容（如果未提供，将从标准输入读取）"
+        nargs="*",  # 接收多个参数
+        help="要提问的内容（如果未提供，将从标准输入读取）",
     )
     parser.add_argument(
-        "-q", "--quit",
+        "-q",
+        "--quit",
         action="store_true",
-        help="一问一答模式，回答后直接退出（默认为连续对话）"
+        help="一问一答模式，回答后直接退出（默认为连续对话）",
     )
     parser.add_argument(
-        "-a", "--after",
-        action="store_true",
-        help="管道模式中，回答后进入连续对话模式"
+        "-a", "--after", action="store_true", help="管道模式中，回答后进入连续对话模式"
     )
+    parser.add_argument("-e", "--translate", action="store_true", help="进入翻译模式")
+    parser.add_argument("--agent", action="store_true", help="进入智能体模式")
     parser.add_argument(
-        "-e", "--translate",
+        "-n",
+        "--no-memory",
         action="store_true",
-        help="进入翻译模式"
-    )
-    parser.add_argument(
-        "--agent",
-        action="store_true",
-        help="进入智能体模式"
-    )
-    parser.add_argument(
-        "-n", "--no-memory",
-        action="store_true",
-        help="不记忆上下文，每次问答后只保留系统提示词"
+        help="不记忆上下文，每次问答后只保留系统提示词",
     )
     parser.add_argument(
         "--api-key",
         type=str,
-        help="DeepSeek API 密钥（如果不提供，将使用 DEEPSEEK_API_KEY 环境变量）"
+        help="DeepSeek API 密钥（如果不提供，将使用 DEEPSEEK_API_KEY 环境变量）",
     )
     parser.add_argument(
         "--log-level",
         type=str,
-        default=os.getenv("LOG_LEVEL", "ERROR"),    # 默认日志级别
+        default=os.getenv("LOG_LEVEL", "ERROR"),  # 默认日志级别
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="设置日志级别（默认: ERROR，可通过 .env 文件的 LOG_LEVEL 配置）"
+        help="设置日志级别（默认: ERROR，可通过 .env 文件的 LOG_LEVEL 配置）",
     )
 
     args = parser.parse_args()
@@ -1314,6 +1451,7 @@ def main():
             # 否则进入交互模式
             chat_loop()
     except (KeyboardInterrupt, EOFError):
+        save_current_session()
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ 发生错误: {e}")
