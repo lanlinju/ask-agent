@@ -1084,13 +1084,16 @@ def save_current_session():
 
     try:
         session_id = SESSION_MANAGER.current_session_id
+        session_name = SESSION_MANAGER.current_session_name
+
         if current_mode == ROLE and current_role_id:
             session_id = current_role_id
+            session_name = current_role_id
 
         result = SESSION_MANAGER.save_session(
             messages,
             session_id=session_id,
-            session_name=SESSION_MANAGER.current_session_name,
+            session_name=session_name,
         )
         if result:
             logger.info(
@@ -1111,7 +1114,7 @@ def load_role_session(role_id: str):
         messages = session_data.get("messages", [])
         title_generated = True
         SESSION_MANAGER.current_session_id = role_id
-        SESSION_MANAGER.current_session_name = session_data.get("name")
+        SESSION_MANAGER.current_session_name = role_id
         message_count = len(messages)
         print(f"  📖 已加载历史会话 ({message_count} 条消息)\n")
         logger.info(f"已加载角色历史会话: {role_id}")
@@ -1609,7 +1612,8 @@ def get_mode_prompt() -> str:
 
 def generate_title():
     """异步生成会话标题，不阻塞主对话"""
-
+    if current_mode == ROLE:
+        return
     def _generate():
         try:
             global title_generated
