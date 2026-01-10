@@ -815,7 +815,7 @@ def execute_tool(name: str, args: dict) -> str:
 
 
 def get_streaming_response(
-    messages: List, tools: List, silent: bool = False
+    messages: List, tools: List, silent: bool = False, useTools: bool = True
 ) -> tuple[str, str, List]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
     headers = {
@@ -827,10 +827,12 @@ def get_streaming_response(
     data = {
         "model": DEEPSEEK_MODEL,
         "messages": messages,
-        "tools": tools if current_mode == AGENT else [],
-        "tool_choice": "auto" if current_mode == AGENT else "none",
         "stream": True,
     }
+
+    if useTools and current_mode == AGENT:
+        data["tools"] = tools
+        data["tool_choice"] = "auto"
 
     collected_content = ""
     tool_calls_collected = []
