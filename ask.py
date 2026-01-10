@@ -1028,7 +1028,7 @@ def save_current_session():
         print(f"❌ 保存会话失败: {e}")
 
 
-def compress_messages():
+def summarizer():
     """压缩对话历史"""
     global messages
 
@@ -1154,7 +1154,7 @@ def command(command: str):
 
     # 压缩对话
     if command == "/summarize":
-        compress_messages()
+        summarizer()
         return
 
     # 加载会话
