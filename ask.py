@@ -233,7 +233,10 @@ def get_role_name(role_id: str) -> str:
 
     role = ROLE_MANAGER.get_role(role_id)
     name = role.name if role else role_id
-    result = name.capitalize() if name else role_id
+    result = name if name else role_id
+    # 仅对英文名称首字母大写
+    if result and result[0].isalpha() and result[0].isascii():
+        result = result.capitalize()
     return f"{GREEN}{result}{RESET}"
 
 
@@ -314,9 +317,17 @@ def _print_prompt():
     current_role_id_val = get_current_role_id()
     if current_mode == ROLE and current_role_id_val:
         role_name = get_role_name(current_role_id_val)
-        print(f"\n{role_name} ({model_prompt}): ", flush=True)
+        print(f"{role_name} ({model_prompt}): ", flush=True)
     else:
         print(f"\n🤖 Assistant ({model_prompt}): ", flush=True)
+
+
+def _print_newline():
+    """打印响应后的分隔符"""
+    if current_mode == ROLE:
+        print()
+    else:
+        print("\n")
 
 
 def init_providers() -> bool:
@@ -1682,7 +1693,7 @@ def chat_loop():
 
         sanitize_memory()
         generate_title()
-        print("\n")  # 换行
+        _print_newline()
 
 
 def restore_tty():
