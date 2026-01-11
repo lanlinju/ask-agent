@@ -242,6 +242,60 @@ def list_roles() -> List[Dict]:
     return roles_list
 
 
+def _display_roles(roles: List[Dict], show_current_marker: bool = False):
+    """显示角色列表
+
+    Args:
+        roles: 角色列表
+        show_current_marker: 是否显示当前角色标记
+    """
+    print("\n📋 可用角色:\n")
+    for i, role in enumerate(roles, 1):
+        if show_current_marker:
+            marker = "→ " if role["id"] == current_role_id else "  "
+            print(f"{marker}[{i}] {role['name']} ({role['id']})")
+            print(f"     {role['description']}\n")
+        else:
+            print(f"  [{i}] {role['name']} ({role['id']})")
+            print(f"      {role['description']}\n")
+
+
+def _select_role_interactive(roles: List[Dict], save_session: bool = True) -> bool:
+    """交互式选择角色
+
+    Args:
+        roles: 角色列表
+        save_session: 是否保存当前会话
+
+    Returns:
+        是否成功选择了角色
+    """
+    try:
+        choice = input("请选择角色 (编号 或 0/Enter 取消): ").strip()
+        if choice == "0" or choice == "":
+            print("已取消\n")
+            return False
+
+        index = int(choice) - 1
+        if 0 <= index < len(roles):
+            role_id = roles[index]["id"]
+            if save_session:
+                save_current_session()
+            current_role_id = role_id
+            current_mode = ROLE
+            ROLE_MANAGER.set_default_role(role_id)
+            init_system_prompt(current_mode, current_role_id)
+            print(f"✅ 已切换到角色: {get_role_name(current_role_id)}\n")
+            return True
+        else:
+            print("❌ 无效的编号\n")
+    except ValueError:
+        print("❌ 请输入有效的数字\n")
+    except KeyboardInterrupt:
+        print("\n已取消\n")
+    return False
+
+
 def init_providers() -> bool:
     """初始化 Provider 配置"""
     if not PROVIDER_CONFIG.load():
@@ -1249,31 +1303,8 @@ def command(command: str):
             print("💡 提示: 在 roles/ 目录下创建 .md 文件即可添加角色\n")
             return
 
-        print("\n📋 可用角色:\n")
-        for i, role in enumerate(roles, 1):
-            print(f"  [{i}] {role['name']} ({role['id']})")
-            print(f"      {role['description']}\n")
-
-        try:
-            choice = input("请选择角色 (编号 或 0/Enter 取消): ").strip()
-            if choice == "0" or choice == "":
-                print("已取消\n")
-                return
-
-            index = int(choice) - 1
-            if 0 <= index < len(roles):
-                role_id = roles[index]["id"]
-                current_role_id = role_id
-                current_mode = ROLE
-                ROLE_MANAGER.set_default_role(role_id)
-                init_system_prompt(current_mode, current_role_id)
-                print(f"✅ 已进入角色扮演模式: {get_role_name(current_role_id)}\n")
-            else:
-                print("❌ 无效的编号\n")
-        except ValueError:
-            print("❌ 请输入有效的数字\n")
-        except KeyboardInterrupt:
-            print("\n已取消\n")
+        _display_roles(roles, show_current_marker=False)
+        _select_role_interactive(roles, save_session=False)
         return
 
     # 列出角色
@@ -1283,33 +1314,8 @@ def command(command: str):
             print("📭 暂无可用角色\n")
             return
 
-        print("\n📋 可用角色:\n")
-        for i, role in enumerate(roles, 1):
-            marker = "→ " if role["id"] == current_role_id else "  "
-            print(f"{marker}[{i}] {role['name']} ({role['id']})")
-            print(f"     {role['description']}\n")
-        return
-
-    # 选择角色
-    if command.startswith("/role "):
-        save_current_session()
-        role_id = command[6:].strip()
-        if not role_id:
-            print("❌ 请提供角色 ID，例如: /role frieren")
-            return
-
-        init_role_manager()
-        assert ROLE_MANAGER is not None
-
-        if not ROLE_MANAGER.get_role(role_id):
-            print(f"❌ 未找到角色: {role_id}\n")
-            return
-
-        current_role_id = role_id
-        current_mode = ROLE
-        ROLE_MANAGER.set_default_role(role_id)
-        init_system_prompt(current_mode, current_role_id)
-        print(f"✅ 已切换到角色: {get_role_name(current_role_id)}\n")
+        _display_roles(roles, show_current_marker=True)
+        _select_role_interactive(roles, save_session=True)
         return
 
     # 创建新会话
@@ -1419,7 +1425,6 @@ def show_help():
     /agent        - 进入智能体模式
     /e            - 进入翻译模式
     /role         - 进入角色扮演模式（使用默认角色）
-    /role <id>    - 选择指定角色进入角色扮演模式
     /roles        - 列出所有可用角色
     /new          - 创建新会话
     /session      - 列出当前模式的所有会话
