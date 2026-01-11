@@ -13,8 +13,9 @@
 - 🧩 **可扩展技能** - 通过 Skills 加载领域知识
 - 🔌 **MCP 支持** - 集成 Model Context Protocol，支持外部工具
 - 🎭 **角色扮演模式** - 支持角色扮演对话，每个角色独立对话历史
-- 🎯 **多 Provider 支持** - 支持多个 AI Provider（OpenAI、DeepSeek 等）
-- 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
+ - 🎯 **多 Provider 支持** - 支持多个 AI Provider（OpenAI、DeepSeek 等）
+ - 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
+ - 📦 **自定义命令** - 将常用提示词保存为命令，快速调用
 
 ## 安装
 
@@ -187,9 +188,10 @@ python ag
 - `/summarize` - 压缩对话历史，将前 3/4 的消息压缩为摘要
 - `/models` - 交互式选择和切换模型
 - `/help` - 显示帮助信息
-- `/mcp` - 交互式选择并连接 MCP 服务器
-- `/mcp -l` - 列出所有可用的 MCP 服务器
-- `!command` - 执行shell命令（如 `!ls`, `!pwd`, `!cat file.txt`），命令和输出会自动添加到消息历史
+ - `/mcp` - 交互式选择并连接 MCP 服务器
+ - `/mcp -l` - 列出所有可用的 MCP 服务器
+ - `/commands` - 列出所有自定义命令
+ - `!command` - 执行shell命令（如 `!ls`, `!pwd`, `!cat file.txt`），命令和输出会自动添加到消息历史
 
 ### 模型切换
 
@@ -451,6 +453,50 @@ ag
 - `type`: 服务器类型，支持 "stdio" 或 "http"（支持别名："local"、"remote"、"streamablehttp"）
 
 **详细配置说明：** 查看 [MCP 配置文档](docs/mcp-config.md) 了解完整的配置选项和示例。
+
+## 自定义命令
+
+Ask Agent 支持自定义命令功能，可以将常用的提示词模板保存为命令，通过 `/命令名` 快速调用。
+
+### 创建命令
+
+**方式一：Markdown 文件**
+
+在 `command/` 目录下创建 `.md` 文件：
+
+```markdown
+---
+description: Code review assistant
+---
+请作为代码审查助手分析以下代码...
+```
+
+文件名 `review.md` 对应命令 `/review`。
+
+**方式二：JSON 配置**
+
+在 `command.json` 中配置：
+
+```json
+{
+  "command": {
+    "review": {
+      "template": "请作为代码审查助手分析以下代码...",
+      "description": "Code review assistant"
+    }
+  }
+}
+```
+
+### 使用自定义命令
+
+```bash
+ag
+/commands          # 列出所有自定义命令
+/review            # 执行 review 命令
+```
+
+**详细说明：** 查看 [自定义命令配置文档](docs/command-config.md) 了解完整的使用方法。
 
 ## 角色扮演模式配置
 
@@ -805,6 +851,7 @@ echo $OPENAI_API_KEY
 
 - [Provider 配置说明](docs/provider-config.md) - 多 Provider 配置详细指南
 - [MCP 配置](docs/mcp-config.md) - Model Context Protocol 服务器配置
+- [自定义命令配置](docs/command-config.md) - 自定义命令创建和使用指南
 
 ### 外部链接
 
