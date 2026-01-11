@@ -1344,6 +1344,10 @@ def command(command: str):
 
     # 列出角色
     if command == "/roles":
+        if current_mode != ROLE:
+            print("❌ 请先进入角色扮演模式: /role\n")
+            return
+
         roles = list_roles()
         if not roles:
             print("📭 暂无可用角色\n")
@@ -1459,7 +1463,7 @@ def show_help():
     /ask          - 进入问答模式
     /agent        - 进入智能体模式
     /e            - 进入翻译模式
-    /role         - 进入角色扮演模式（使用默认角色）
+    /role         - 进入角色扮演模式
     /roles        - 列出所有可用角色
     /new          - 创建新会话
     /session      - 列出当前模式的所有会话
