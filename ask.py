@@ -18,6 +18,7 @@ from mcp import MCPManager
 from provider import ProviderConfig
 from session import SessionManager
 from role import RoleManager
+from command import CommandManager
 from typing import Optional
 
 load_dotenv(override=True)
@@ -206,6 +207,11 @@ SESSION_MANAGER: Optional[SessionManager] = None
 # Global role manager instance
 ROLE_MANAGER: Optional[RoleManager] = None
 
+# Command manager globals
+COMMAND_DIR = WORKDIR / "command"
+COMMAND_CONFIG = WORKDIR / "command.json"
+COMMAND_MANAGER: Optional[CommandManager] = None
+
 YELLOW = "\033[1;38;2;229;192;123m"
 GREEN = "\033[1;38;2;152;195;121m"
 RESET = "\033[0m"
@@ -349,6 +355,47 @@ def init_providers() -> bool:
 
     update_model_prompt()
     return True
+
+
+def init_command_manager() -> CommandManager:
+    """初始化命令管理器"""
+    global COMMAND_MANAGER
+    if not COMMAND_MANAGER:
+        COMMAND_MANAGER = CommandManager(COMMAND_DIR, COMMAND_CONFIG)
+    return COMMAND_MANAGER
+
+
+def list_custom_commands():
+    """列出所有自定义命令"""
+    init_command_manager()
+
+    commands = COMMAND_MANAGER.list_commands()
+    if not commands:
+        print("\n📭 暂无自定义命令")
+        print("💡 提示: 在 command/ 目录创建 .md 文件或编辑 command.json 添加命令\n")
+        return
+
+    print("\n📋 自定义命令:\n")
+    for cmd in sorted(commands, key=lambda x: x.name):
+        print(f"  /{cmd.name}")
+        if cmd.description:
+            print(f"     {cmd.description}")
+        print()
+
+
+def handle_custom_command(cmd_name: str, full_command: str):
+    """处理自定义命令"""
+    cmd = COMMAND_MANAGER.get_command(cmd_name)
+    if not cmd:
+        return
+
+    print(f"🚀 执行命令: /{cmd_name}")
+    if cmd.description:
+        print(f"   {cmd.description}")
+
+    _print_prompt()
+    agent(cmd.template)
+    _print_newline()
 
 
 def switch_model(model_id: str):
@@ -1402,44 +1449,23 @@ def command(command: str):
         interactive_select_model()
         return
 
-    # 处理shell命令 (!开头)
-    if command.startswith("!"):
-        shell(command[1:])  # 提取命令，去掉前面的 !
+    # 列出自定义命令
+    if command == "/commands":
+        list_custom_commands()
         return
 
-    # 进入问答模式
-    if command == "/ask":
-        current_mode = ASK
-        init_system_prompt(current_mode)
-        print("✅ 已进入问答模式\n")
-        return
+    # 新增: 处理自定义命令
+    if command.startswith("/"):
+        cmd_name = command[1:].split()[0]
+        init_command_manager()
+        if COMMAND_MANAGER.has_command(cmd_name):
+            handle_custom_command(cmd_name, command)
+            return
 
-    # 进入智能体模式
-    if command == "/agent":
-        current_mode = AGENT
-        init_system_prompt(current_mode)
-        print("✅ 已进入智能体模式\n")
-        return
-
-    # 创建新会话
-    if command == "/new":
-        init_system_prompt(current_mode)
-        print("✅ 已创建新会话\n")
-        return
-
-    # 显示帮助
-    if command == "/help":
-        show_help()
-        return
-
-    # 列出所有可用的 MCP 服务器
-    if command == "/mcp" or command.startswith("/mcp "):
-        handle_mcp_command(command)
-        return
-
-    # 列出可用模型
-    if command == "/models":
-        interactive_select_model()
+    # 如果不是已知命令，显示错误
+    if command.startswith("/"):
+        print(f"❌ 未知命令: {command}")
+        print("💡 使用 /help 查看可用命令\n")
         return
 
     # 处理shell命令 (!开头)
@@ -1461,7 +1487,12 @@ def handle_mcp_command(command: str):
 
 def show_help():
     """显示帮助信息"""
-    help_text = """
+    command_descriptions = (
+        COMMAND_MANAGER.get_command_descriptions()
+        if COMMAND_MANAGER
+        else "  (暂无自定义命令)"
+    )
+    help_text = f"""
  📖 Ask Agent 命令帮助
   🔹 交互模式命令：
     /ask          - 进入问答模式
@@ -1474,9 +1505,13 @@ def show_help():
     /load <id>    - 加载指定会话（使用 /session 查看 ID）
     /summarize    - 压缩对话历史，将前3/4的消息压缩为摘要
     /models       - 交互式选择模型
+    /commands     - 列出所有自定义命令
     /help         - 显示此帮助信息
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
     exit          - 退出程序（自动保存会话）
+
+  🔹 自定义命令：
+{command_descriptions}
 
   🔹 MCP 服务器管理：
     /mcp          - 交互式选择并连接 MCP 服务器
@@ -1833,6 +1868,9 @@ def main():
 
     # 初始化 Provider 配置
     init_providers()
+
+    # 初始化命令管理器
+    init_command_manager()
 
     # 将多个参数连接成一个字符串
     query = " ".join(args.query) if args.query else None
