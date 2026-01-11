@@ -205,7 +205,10 @@ SESSION_MANAGER: Optional[SessionManager] = None
 
 # Global role manager instance
 ROLE_MANAGER: Optional[RoleManager] = None
-current_role_id: Optional[str] = None
+
+YELLOW = "\033[1;38;2;229;192;123m"
+GREEN = "\033[1;38;2;152;195;121m"
+RESET = "\033[0m"
 
 
 def init_role_manager() -> RoleManager:
@@ -216,13 +219,22 @@ def init_role_manager() -> RoleManager:
     return ROLE_MANAGER
 
 
+def get_current_role_id() -> Optional[str]:
+    """获取当前角色 ID"""
+    if not ROLE_MANAGER:
+        return None
+    return ROLE_MANAGER.current_role.role_id if ROLE_MANAGER.current_role else None
+
+
 def get_role_name(role_id: str) -> str:
     """获取角色名称"""
     if not ROLE_MANAGER:
         return role_id
 
     role = ROLE_MANAGER.get_role(role_id)
-    return role.name if role else role_id
+    name = role.name if role else role_id
+    result = name.capitalize() if name else role_id
+    return f"{GREEN}{result}{RESET}"
 
 
 def list_roles() -> List[Dict]:
@@ -249,10 +261,11 @@ def _display_roles(roles: List[Dict], show_current_marker: bool = False):
         roles: 角色列表
         show_current_marker: 是否显示当前角色标记
     """
+    current_role_id_val = get_current_role_id()
     print("\n📋 可用角色:\n")
     for i, role in enumerate(roles, 1):
         if show_current_marker:
-            marker = "→ " if role["id"] == current_role_id else "  "
+            marker = "→ " if role["id"] == current_role_id_val else "  "
             print(f"{marker}[{i}] {role['name']} ({role['id']})")
             print(f"     {role['description']}\n")
         else:
@@ -281,11 +294,11 @@ def _select_role_interactive(roles: List[Dict], save_session: bool = True) -> bo
             role_id = roles[index]["id"]
             if save_session:
                 save_current_session()
-            current_role_id = role_id
+            ROLE_MANAGER.set_current_role(role_id)
             current_mode = ROLE
             ROLE_MANAGER.set_default_role(role_id)
-            init_system_prompt(current_mode, current_role_id)
-            print(f"✅ 已切换到角色: {get_role_name(current_role_id)}\n")
+            init_system_prompt(current_mode, role_id)
+            print(f"✅ 已切换到角色: {get_role_name(role_id)}\n")
             return True
         else:
             print("❌ 无效的编号\n")
@@ -294,6 +307,16 @@ def _select_role_interactive(roles: List[Dict], save_session: bool = True) -> bo
     except KeyboardInterrupt:
         print("\n已取消\n")
     return False
+
+
+def _print_prompt():
+    """打印当前提示符"""
+    current_role_id_val = get_current_role_id()
+    if current_mode == ROLE and current_role_id_val:
+        role_name = get_role_name(current_role_id_val)
+        print(f"\n{role_name} ({model_prompt}): ", flush=True)
+    else:
+        print(f"\n🤖 Assistant ({model_prompt}): ", flush=True)
 
 
 def init_providers() -> bool:
@@ -1140,9 +1163,10 @@ def save_current_session():
         session_id = SESSION_MANAGER.current_session_id
         session_name = SESSION_MANAGER.current_session_name
 
-        if current_mode == ROLE and current_role_id:
-            session_id = current_role_id
-            session_name = current_role_id
+        current_role_id_val = get_current_role_id()
+        if current_mode == ROLE and current_role_id_val:
+            session_id = current_role_id_val
+            session_name = current_role_id_val
 
         result = SESSION_MANAGER.save_session(
             messages,
@@ -1251,7 +1275,7 @@ def list_sessions():
 
 def command(command: str):
     """处理命令"""
-    global current_mode, current_role_id
+    global current_mode
 
     if command == "exit":
         save_current_session()
@@ -1290,10 +1314,10 @@ def command(command: str):
         default_role = ROLE_MANAGER.default_role
 
         if default_role and ROLE_MANAGER.get_role(default_role):
-            current_role_id = default_role
+            ROLE_MANAGER.set_current_role(default_role)
             current_mode = ROLE
-            init_system_prompt(current_mode, current_role_id)
-            print(f"✅ 已进入角色扮演模式: {get_role_name(current_role_id)}\n")
+            init_system_prompt(current_mode, default_role)
+            print(f"✅ 已进入角色扮演模式: {get_role_name(default_role)}\n")
             return
 
         # 没有默认角色，让用户选择
@@ -1607,14 +1631,17 @@ def update_model_prompt():
 
 def get_mode_prompt() -> str:
     """获取当前模式的提示符"""
+    prefix = "💬^"
+    current_role_id_val = get_current_role_id()
     if current_mode == TRANSLATE:
-        return "Translate"
+        prompt = "(Translate)"
     elif current_mode == AGENT:
-        return "Agent"
-    elif current_mode == ROLE and current_role_id:
-        return get_role_name(current_role_id)
+        prompt = "(Agent)"
+    elif current_mode == ROLE and current_role_id_val:
+        return f"{YELLOW}You:{RESET}\n"
     else:
-        return "Ask"
+        return "(Ask)"
+    return f"{prefix} {prompt}:\n"
 
 
 def generate_title():
@@ -1641,7 +1668,7 @@ def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
     while True:
-        user_input = input(f"💬^ ({get_mode_prompt()}):\n").strip()
+        user_input = input(f"{get_mode_prompt()}").strip()
         if not user_input:
             continue
 
@@ -1650,7 +1677,7 @@ def chat_loop():
             command(user_input.lower())
             continue
 
-        print(f"\n🤖 Assistant ({model_prompt}): ", flush=True)
+        _print_prompt()
         agent(user_input)
 
         sanitize_memory()
@@ -1763,7 +1790,7 @@ def main():
     memory = not args.no_memory
 
     # 更新当前模式
-    global current_mode, current_role_id
+    global current_mode
     if args.role:
         init_role_manager()
         assert ROLE_MANAGER is not None
@@ -1772,9 +1799,9 @@ def main():
             print(f"❌ 未找到角色: {args.role}", file=sys.stderr)
             sys.exit(1)
 
-        current_role_id = args.role
+        ROLE_MANAGER.set_current_role(args.role)
         current_mode = ROLE
-        init_system_prompt(current_mode, current_role_id)
+        init_system_prompt(current_mode, args.role)
     elif args.agent:
         current_mode = AGENT
         init_system_prompt(current_mode)
