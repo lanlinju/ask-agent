@@ -1113,6 +1113,10 @@ def get_streaming_response(
                         logger.info("\nfinish_reason: %s", finish_reason)
                         # 打印 token 使用情况
                         stat_token(data)
+                        # 在角色模式下，如果因长度限制而停止，自动压缩上下文
+                        if finish_reason == "length" and current_mode == ROLE:
+                            print("\n📝 上下文即将达到限制，自动压缩对话历史...\n")
+                            summarizer()
                         break
                     if "choices" in data and data["choices"][0]["delta"]:
                         delta = data["choices"][0]["delta"]
