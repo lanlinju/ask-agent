@@ -201,6 +201,9 @@ MCP_MANAGER = MCPManager()
 # Global provider config instance
 PROVIDER_CONFIG = ProviderConfig("providers.json")
 
+# Global config file path
+CONFIG_FILE = WORKDIR / "config.json"
+
 # Global session manager instance - will be initialized with the current mode
 SESSION_MANAGER: Optional[SessionManager] = None
 
@@ -1256,7 +1259,7 @@ def load_role_session(role_id: str):
         SESSION_MANAGER.current_session_id = role_id
         SESSION_MANAGER.current_session_name = role_id
         message_count = len(messages)
-        print(f"  📖 已加载历史会话 ({message_count} 条消息)\n")
+        logger.info(f"  📖 已加载历史会话 ({message_count} 条消息)\n")
         logger.info(f"已加载角色历史会话: {role_id}")
 
 
@@ -1341,6 +1344,7 @@ def command(command: str):
 
     if command == "exit":
         save_current_session()
+        save_config(current_mode)
         sys.exit(0)
 
     # 进入翻译模式
@@ -1683,6 +1687,35 @@ def update_model_prompt():
         model_prompt = DEEPSEEK_MODEL
 
 
+def load_config() -> dict:
+    """加载配置文件"""
+    if not CONFIG_FILE.exists():
+        return {"mode": ASK}
+
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            return config
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"加载配置文件失败: {e}")
+        return {"mode": ASK}
+
+
+def save_config(mode: int):
+    """保存配置文件"""
+    try:
+        current_role_id_val = get_current_role_id()
+        if mode == ROLE and current_role_id_val:
+            config = {"mode": mode, "role_id": current_role_id_val}
+        else:
+            config = {"mode": mode}
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        logger.info(f"配置已保存: mode={mode}")
+    except IOError as e:
+        logger.warning(f"保存配置文件失败: {e}")
+
+
 def get_mode_prompt() -> str:
     """获取当前模式的提示符"""
     prefix = "💬^"
@@ -1694,7 +1727,7 @@ def get_mode_prompt() -> str:
     elif current_mode == ROLE and current_role_id_val:
         return f"{YELLOW}You:{RESET}\n"
     else:
-        return "(Ask)"
+        prompt = "(Ask)"
     return f"{prefix} {prompt}:\n"
 
 
@@ -1843,6 +1876,11 @@ def main():
     global memory
     memory = not args.no_memory
 
+    # 加载上次保存的模式
+    saved_config = load_config()
+    saved_mode = saved_config.get("mode", ASK)
+    saved_role_id = saved_config.get("role_id")
+
     # 更新当前模式
     global current_mode
     if args.role:
@@ -1862,8 +1900,14 @@ def main():
     elif args.translate:
         current_mode = TRANSLATE
         init_system_prompt(current_mode)
+    elif saved_mode == ROLE and saved_role_id:
+        init_role_manager()
+        assert ROLE_MANAGER is not None
+        ROLE_MANAGER.set_current_role(saved_role_id)
+        current_mode = ROLE
+        init_system_prompt(current_mode, saved_role_id)
     else:
-        current_mode = ASK
+        current_mode = saved_mode
         init_system_prompt(current_mode)
 
     # 初始化 Provider 配置
@@ -1884,6 +1928,7 @@ def main():
             chat_loop()
     except (KeyboardInterrupt, EOFError):
         save_current_session()
+        save_config(current_mode)
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ 发生错误: {e}")
