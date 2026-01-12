@@ -1120,19 +1120,20 @@ def get_streaming_response(
     reasoning_content = ""
     reasoning_in_progress = False
     in_think_tag = False  # 跟踪是否在 <think> 标签内
+    should_display = not silent and current_mode != ROLE
 
     def start_thinking():
         nonlocal reasoning_in_progress
         if not reasoning_in_progress:
             reasoning_in_progress = True
-            if not silent:
+            if should_display:
                 print("\033[34mThinking: \033[0m", end="", flush=True)
 
     def stop_thinking():
         nonlocal reasoning_in_progress
         if reasoning_in_progress:
             reasoning_in_progress = False
-            if not silent:
+            if should_display:
                 print("\n")
 
     with requests.post(
@@ -1174,7 +1175,7 @@ def get_streaming_response(
                         if delta.get("reasoning_content"):
                             start_thinking()
                             reasoning_content += delta["reasoning_content"]
-                            if not silent:
+                            if should_display:
                                 print(
                                     f"\033[90m{delta['reasoning_content']}\033[0m",
                                     end="",
@@ -1186,7 +1187,7 @@ def get_streaming_response(
                             content = delta["content"]
                             if "<think>" in content:
                                 in_think_tag = True
-                                if not silent:
+                                if should_display:
                                     print(
                                         "\033[34mThinking: \033[0m", end="", flush=True
                                     )
@@ -1197,7 +1198,7 @@ def get_streaming_response(
                             if in_think_tag:
                                 # 在 think 标签内，作为推理内容
                                 reasoning_content += content
-                                if not silent:
+                                if should_display:
                                     print(
                                         f"\033[90m{content}\033[0m", end="", flush=True
                                     )
