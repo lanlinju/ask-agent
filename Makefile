@@ -19,3 +19,4 @@ pipreqs:
 
 clean:
 	rm -rf ./cache
+	rm -f config.json roles.json

@@ -1375,6 +1375,7 @@ def command(command: str):
     # 进入角色扮演模式
     if command == "/role":
         save_current_session()
+        current_mode = ROLE
         init_role_manager()
         assert ROLE_MANAGER is not None
 
@@ -1382,7 +1383,6 @@ def command(command: str):
 
         if default_role and ROLE_MANAGER.get_role(default_role):
             ROLE_MANAGER.set_current_role(default_role)
-            current_mode = ROLE
             init_system_prompt(current_mode, default_role)
             print(f"✅ 已进入角色扮演模式: {get_role_name(default_role)}\n")
             return
@@ -1720,12 +1720,11 @@ def save_config(mode: int):
 def get_mode_prompt() -> str:
     """获取当前模式的提示符"""
     prefix = "💬^"
-    current_role_id_val = get_current_role_id()
     if current_mode == TRANSLATE:
         prompt = "(Translate)"
     elif current_mode == AGENT:
         prompt = "(Agent)"
-    elif current_mode == ROLE and current_role_id_val:
+    elif current_mode == ROLE:
         return f"{YELLOW}You:{RESET}\n"
     else:
         prompt = "(Ask)"
