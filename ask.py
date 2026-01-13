@@ -1808,11 +1808,11 @@ def pipe_mode(
         sys.exit(1)
 
     agent(combined_prompt)
+    print()
 
     # 如果启用连续对话，则进入交互模式
     if not continue_conversation and not (prompt and not quit):
         return
-
     restore_tty()
     chat_loop()
 
