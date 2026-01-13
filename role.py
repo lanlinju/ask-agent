@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
+from config import ConfigPathManager
 
 logger = logging.getLogger(__name__)
 
@@ -66,23 +67,43 @@ class RoleManager:
         初始化角色管理器
 
         Args:
-            roles_dir: 角色目录，默认为 ./roles
+            roles_dir: 角色目录，默认为 ./roles 或 ~/.ask-agent/roles
             cache_dir: 缓存目录，默认为 ./cache
-            config_file: 配置文件路径，默认为根目录的 roles.json
+            config_file: 配置文件路径，默认为根目录的 roles.json 或 ~/.ask-agent/roles.json
         """
         base_dir = Path.cwd()
-        self.roles_dir = roles_dir or (base_dir / "roles")
-        self.config_file = config_file or (base_dir / "roles.json")
         self.cache_dir = cache_dir or (base_dir / "cache")
         self.role_cache_dir = self.cache_dir / "role"
         self.role_cache_dir.mkdir(parents=True, exist_ok=True)
 
+        # 使用 ConfigPathManager 查找配置文件 - 固定使用用户目录
+        if config_file is None:
+            config_manager = ConfigPathManager("roles.json")
+            self.config_file = config_manager.user_dir_path
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            self.config_file = Path(config_file)
+
+        # 查找 roles 目录：当前目录优先，否则使用用户目录
+        if roles_dir is None:
+            current_roles_dir = base_dir / "roles"
+            user_roles_dir = Path.home() / ".ask-agent" / "roles"
+
+            if current_roles_dir.exists() and any(current_roles_dir.glob("*.md")):
+                self.roles_dir = current_roles_dir
+                logger.debug(f"使用当前目录的 roles: {self.roles_dir}")
+            elif user_roles_dir.exists() and any(user_roles_dir.glob("*.md")):
+                self.roles_dir = user_roles_dir
+                logger.debug(f"使用用户目录的 roles: {self.roles_dir}")
+            else:
+                self.roles_dir = current_roles_dir
+                logger.debug(f"使用默认的 roles 目录: {self.roles_dir}")
+        else:
+            self.roles_dir = Path(roles_dir)
+
         self.roles: Dict[str, RoleConfig] = {}
         self.default_role: Optional[str] = None
         self.current_role: Optional[RoleConfig] = None
-
-        # 确保目录存在
-        self.roles_dir.mkdir(parents=True, exist_ok=True)
 
         # 加载配置和自动发现角色
         self.load_config()
@@ -140,7 +161,6 @@ class RoleManager:
                 self.roles[role_id] = RoleConfig.from_dict(role_id, role_data)
 
             logger.info(f"成功加载 {len(self.roles)} 个角色配置")
-
 
             return True
 

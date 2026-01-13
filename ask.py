@@ -20,6 +20,7 @@ from session import SessionManager
 from role import RoleManager
 from command import CommandManager
 from typing import Optional
+from config import ConfigPathManager, get_config_path
 
 load_dotenv(override=True)
 
@@ -198,11 +199,18 @@ SKILLS = SkillLoader(SKILLS_DIR)
 # Global MCP manager instance
 MCP_MANAGER = MCPManager()
 
-# Global provider config instance
-PROVIDER_CONFIG = ProviderConfig("providers.json")
+# Config path managers
+_PROVIDERS_PATH_MANAGER = ConfigPathManager("providers.json")
+_COMMAND_PATH_MANAGER = ConfigPathManager("command.json")
 
-# Global config file path
-CONFIG_FILE = WORKDIR / "config.json"
+# Global provider config instance
+PROVIDERS_PATH = _PROVIDERS_PATH_MANAGER.find_config()
+PROVIDER_CONFIG = ProviderConfig(PROVIDERS_PATH if PROVIDERS_PATH else "providers.json")
+
+# Global config file path - always use user directory
+_CONFIG_PATH_MANAGER = ConfigPathManager("config.json")
+CONFIG_FILE = _CONFIG_PATH_MANAGER.user_dir_path
+CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Global session manager instance - will be initialized with the current mode
 SESSION_MANAGER: Optional[SessionManager] = None
@@ -212,7 +220,7 @@ ROLE_MANAGER: Optional[RoleManager] = None
 
 # Command manager globals
 COMMAND_DIR = WORKDIR / "command"
-COMMAND_CONFIG = WORKDIR / "command.json"
+COMMAND_CONFIG = _COMMAND_PATH_MANAGER.find_config() or (WORKDIR / "command.json")
 COMMAND_MANAGER: Optional[CommandManager] = None
 
 YELLOW = "\033[1;38;2;229;192;123m"
@@ -1391,7 +1399,9 @@ def command(command: str):
         roles = list_roles()
         if not roles:
             print("📭 暂无可用角色\n")
-            print("💡 提示: 在 roles/ 目录下创建 .md 文件即可添加角色\n")
+            print(
+                "💡 提示: 在 roles/ 目录或 ~/.ask-agent/roles/ 下创建 .md 文件即可添加角色\n"
+            )
             return
 
         _display_roles(roles, show_current_marker=False)
