@@ -1835,6 +1835,7 @@ def main():
     parser.add_argument(
         "-a", "--after", action="store_true", help="管道模式中，回答后进入连续对话模式"
     )
+    parser.add_argument("--ask", action="store_true", help="进入问答模式")
     parser.add_argument("-e", "--translate", action="store_true", help="进入翻译模式")
     parser.add_argument("--agent", action="store_true", help="进入智能体模式")
     parser.add_argument("--role", type=str, help="进入角色扮演模式，指定角色ID")
@@ -1894,6 +1895,9 @@ def main():
         ROLE_MANAGER.set_current_role(args.role)
         current_mode = ROLE
         init_system_prompt(current_mode, args.role)
+    elif args.ask:
+        current_mode = ASK
+        init_system_prompt(current_mode)
     elif args.agent:
         current_mode = AGENT
         init_system_prompt(current_mode)
