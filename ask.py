@@ -354,7 +354,9 @@ def _print_newline():
 def init_providers() -> bool:
     """初始化 Provider 配置"""
     if not PROVIDER_CONFIG.load():
-        logger.warning("Provider 配置加载失败")
+        logger.warning("Provider 配置加载失败，使用默认配置")
+        # 确保使用默认的 DEEPSEEK_MODEL 作为 fallback
+        update_model_prompt()
         return False
 
     # 设置默认模型
@@ -523,7 +525,7 @@ messages: List[Dict[str, str | List]] = []
 # 问答模式是否记忆上下文
 memory = True
 # 当前模型提示符
-model_prompt = ""
+model_prompt = DEEPSEEK_MODEL
 # 标题是否已生成
 title_generated = False
 
@@ -1698,7 +1700,8 @@ def update_model_prompt():
             model_prompt = f"{model_name} \033[90m{provider_name}\033[0m"
         else:
             model_prompt = DEEPSEEK_MODEL
-    except:
+    except Exception as e:
+        logger.warning(f"更新模型提示符失败: {e}, 使用默认值")
         model_prompt = DEEPSEEK_MODEL
 
 
@@ -1930,6 +1933,10 @@ def main():
 
     # 初始化 Provider 配置
     init_providers()
+
+    # 确保 model_prompt 已设置
+    if not model_prompt:
+        update_model_prompt()
 
     # 初始化命令管理器
     init_command_manager()
