@@ -14,8 +14,9 @@
 - 🔌 **MCP 支持** - 集成 Model Context Protocol，支持外部工具
 - 🎭 **角色扮演模式** - 支持角色扮演对话，每个角色独立对话历史
  - 🎯 **多 Provider 支持** - 支持多个 AI Provider（OpenAI、DeepSeek 等）
- - 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
- - 📦 **自定义命令** - 将常用提示词保存为命令，快速调用
+  - 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
+  - 📦 **自定义命令** - 将常用提示词保存为命令，快速调用
+  - 📁 **统一配置管理** - 支持全局配置目录 `~/.ask-agent/` 和项目本地配置
 
 ## 角色扮演模式截图
 
@@ -61,9 +62,9 @@ export PATH="$HOME/.local/bin:$PATH"
 
 4. 配置 AI Providers
 
-ag 支持多个 AI Provider，通过 `providers.json` 配置文件管理。
+ ag 支持多个 AI Provider，通过 `providers.json` 配置文件管理。
 
-创建 `providers.json` 文件（示例）：
+ 创建 `~/.ask-agent/providers.json` 配置文件（示例）：
 
 ```json
 {
@@ -151,9 +152,36 @@ OPENAI_API_KEY=sk-openai-api-key-here
 LOG_LEVEL=ERROR
 ```
 
-.env 文件会自动被加载，无需手动设置环境变量。
+ .env 文件会自动被加载，无需手动设置环境变量。
 
-5. 获取 API 密钥
+ 5. 配置文件路径管理
+
+ Ask Agent 支持全局配置和项目本地配置两种方式，配置文件存储规则如下：
+
+ | 配置文件 | 存储位置 | 查找规则 |
+ |----------|---------|---------|
+ | `config.json` | `~/.ask-agent/config.json` | 固定存储在用户目录 |
+ | `roles.json` | `~/.ask-agent/roles.json` | 固定存储在用户目录 |
+ | `providers.json` | `~/.ask-agent/providers.json` | 优先用户目录，备选项目目录 |
+ | `command.json` | 当前目录 `command.json` | 优先项目目录，备选用户目录 |
+ | `roles/` 目录 | `~/.ask-agent/roles/` | 优先项目目录（有文件），备选用户目录 |
+
+ **配置目录结构：**
+ ```
+ ~/.ask-agent/
+ ├── config.json       # 全局配置文件（模式、设置等）
+ ├── providers.json    # 全局 AI Provider 配置
+ ├── roles.json        # 全局角色配置
+ └── roles/            # 全局角色文件
+     ├── frieren.md
+     └── 纳西妲.md
+ ```
+
+ **首次使用：**
+ - 程序会自动创建 `~/.ask-agent/` 目录
+ - 配置文件会在首次使用时生成或从示例创建
+
+ 6. 获取 API 密钥
 
 访问以下官网获取 API 密钥：
 
@@ -392,9 +420,9 @@ ag --agent
 
 Ask Agent 支持 Model Context Protocol (MCP)，可以连接外部工具服务器扩展功能。
 
-### 配置 MCP 服务器
+ ### 配置 MCP 服务器
 
-在项目根目录创建 `mcp.json` 配置文件(示例配置)：
+ 在 `~/.ask-agent/` 或项目根目录创建 `mcp.json` 配置文件（示例）：
 
 ```json
 {
@@ -479,7 +507,7 @@ description: Code review assistant
 
 **方式二：JSON 配置**
 
-在 `command.json` 中配置：
+ 在 `~/.ask-agent/command.json` 或项目根目录 `command.json` 中配置：
 
 ```json
 {
@@ -506,22 +534,32 @@ ag
 
 Ask Agent 支持角色扮演模式，可以与预设角色进行对话。
 
-### 创建角色
+ ### 创建角色
 
-创建角色非常简单，只需在 `roles/` 目录下创建以角色命名的 `.md` 文件，文件内容即为角色的系统提示词。
+ 创建角色非常简单，只需在 `roles/` 目录下创建以角色命名的 `.md` 文件，文件内容即为角色的系统提示词。
 
-```bash
-roles/
-├── frieren.md    # 芙莉莲角色
-├── nahida.md     # 纳西妲角色
-└── ...
-```
+ **角色文件位置：**
+ - 项目目录 `roles/` （优先）
+- 全局目录 `~/.ask-agent/roles/` （备选）
 
-**创建步骤：**
+ ```bash
+ # 项目目录（优先）
+ roles/
+ ├── frieren.md    # 芙莉莲角色
+ ├── nahida.md     # 纳西妲角色
+ └── ...
 
-1. 在 `roles/` 目录下创建 `<角色名>.md` 文件
-2. 文件首行定义角色身份，后续内容定义角色特点
-3. 使用 `/role` 命令进入角色扮演模式，选择角色开始对话
+ # 或全局目录（备选）
+ ~/.ask-agent/roles/
+ ├── frieren.md
+ └── 纳西妲.md
+ ```
+
+ **创建步骤：**
+
+ 1. 在 `roles/` 或 `~/.ask-agent/roles/` 目录下创建 `<角色名>.md` 文件
+ 2. 文件首行定义角色身份，后续内容定义角色特点
+ 3. 使用 `/role` 命令进入角色扮演模式，选择角色开始对话
 
 **角色提示词示例（`roles/frieren.md`）：**
 
@@ -542,9 +580,9 @@ roles/
 - 偶尔流露出对平凡事物的好奇
 ```
 
-### 高级配置（可选）
+ ### 高级配置（可选）
 
-如需自定义角色显示名称或描述，可在项目根目录创建 `roles.json` 配置文件：
+ 如需自定义角色显示名称或描述，可在 `~/.ask-agent/` 目录创建 `roles.json` 配置文件：
 
 ```json
 {
@@ -566,9 +604,9 @@ roles/
 - `description`: 角色描述，列出角色时显示
 - `default_role`: 默认角色，进入角色扮演模式时自动选用
 
-### 角色对话历史
+  ### 角色对话历史
 
-每个角色的对话历史独立存储在 `cache/role/` 目录下。
+  每个角色的对话历史独立存储在 `~/.ask-agent/cache/role/<角色id>/` 目录下。
 
 ## 运行示例
 ```bash
@@ -796,7 +834,127 @@ ag 支持通过 `skills/` 目录加载可扩展的技能模块。每个技能是
 - **references/**（可选）- 参考文档
 - **assets/**（可选）- 模板和输出文件
 
-智能体会自动识别并加载这些技能，在任务匹配时使用相应的领域知识。
+ 智能体会自动识别并加载这些技能，在任务匹配时使用相应的领域知识。
+
+## 配置管理
+
+Ask Agent 使用统一的配置管理系统，支持全局配置和项目本地配置。
+
+### 全局配置目录
+
+全局配置存储在 `~/.ask-agent/` 目录，适用于所有项目：
+
+ ```bash
+ ~/.ask-agent/
+ ├── config.json       # 全局配置（模式、设置）
+ ├── providers.json    # AI Provider 配置
+ ├── roles.json        # 角色配置
+ ├── roles/            # 全局角色文件
+ │   ├── frieren.md
+ │   └── 纳西妲.md
+ ├── cache/            # 全局缓存目录
+ │   ├── ask/          # 问答模式会话
+ │   ├── agent/        # 智能体模式会话
+ │   ├── translate/     # 翻译模式会话
+ │   └── role/         # 角色扮演模式会话
+ │       └── <角色id>/
+ └── command.json      # 自定义命令（可选）
+ ```
+
+### 项目本地配置
+
+项目特定配置可放在项目根目录：
+
+```bash
+/your-project/
+├── .ask-agent/       # 项目配置（可选）
+│   └── roles.json    # 项目角色配置
+├── roles/            # 项目角色文件（可选）
+│   └── custom.md
+├── command.json      # 项目自定义命令（可选）
+└── command/          # 项目命令文件（可选）
+    └── custom.md
+```
+
+### 配置文件优先级
+
+不同配置文件的优先级规则：
+
+| 配置文件 | 查找顺序 |
+|----------|---------|
+| `config.json` | 固定使用 `~/.ask-agent/config.json` |
+| `roles.json` | 固定使用 `~/.ask-agent/roles.json` |
+| `providers.json` | 1. `~/.ask-agent/providers.json`<br>2. 项目目录 `providers.json` |
+| `command.json` | 1. 项目目录 `command.json`<br>2. `~/.ask-agent/command.json` |
+ | `roles/` 目录 | 1. 项目目录 `roles/`（有文件）<br>2. `~/.ask-agent/roles/` |
+
+ ### 缓存目录
+
+ 所有会话数据统一存储在 `~/.ask-agent/cache/` 目录，独立于项目目录：
+
+ ```bash
+ ~/.ask-agent/cache/
+ ├── ask/            # 问答模式会话
+ ├── agent/          # 智能体模式会话
+ ├── translate/       # 翻译模式会话
+ ├── role/           # 角色扮演模式会话根目录
+ │   └── <角色id>/  # 每个角色的独立会话
+ ```
+
+ 缓存目录特点：
+ - 所有模式的会话自动分类存储
+ - 角色扮演模式下每个角色有独立的会话历史
+ - 缓存目录固定在 `~/.ask-agent/cache/`，不依赖项目目录
+
+  ### 配置文件说明
+
+**config.json** - 全局配置
+```json
+{
+  "mode": 0,
+  "role_id": "frieren"
+}
+```
+- `mode`: 当前模式（0=问答，1=智能体，2=翻译，3=角色扮演）
+- `role_id`: 当前角色 ID
+
+**providers.json** - AI Provider 配置
+- 见 "Provider 配置系统" 章节
+
+**roles.json** - 角色配置
+```json
+{
+  "default_role": "frieren",
+  "roles": {
+    "frieren": {
+      "name": "芙莉莲",
+      "description": "《葬送的芙莉莲》中的精灵魔法使"
+    }
+  }
+}
+```
+
+**command.json** - 自定义命令配置
+- 见 "自定义命令" 章节
+
+### 自动创建目录
+
+首次使用时，程序会自动创建 `~/.ask-agent/` 目录和必要的子目录。
+
+### 配置迁移
+
+如果有旧版本的项目配置，可以迁移到全局配置：
+
+```bash
+# 迁移 providers.json
+cp project/providers.json ~/.ask-agent/
+
+# 迁移 roles.json
+cp project/roles.json ~/.ask-agent/
+
+# 迁移角色文件
+cp -r project/roles/* ~/.ask-agent/roles/
+```
 
 ## 子智能体（Subagents）
 

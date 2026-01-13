@@ -212,6 +212,10 @@ _CONFIG_PATH_MANAGER = ConfigPathManager("config.json")
 CONFIG_FILE = _CONFIG_PATH_MANAGER.user_dir_path
 CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
+# Global cache directory - always use user directory
+CACHE_DIR = Path.home() / ".ask-agent" / "cache"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 # Global session manager instance - will be initialized with the current mode
 SESSION_MANAGER: Optional[SessionManager] = None
 
@@ -232,7 +236,7 @@ def init_role_manager() -> RoleManager:
     """初始化角色管理器"""
     global ROLE_MANAGER
     if not ROLE_MANAGER:
-        ROLE_MANAGER = RoleManager()
+        ROLE_MANAGER = RoleManager(cache_dir=CACHE_DIR)
     return ROLE_MANAGER
 
 
@@ -588,11 +592,11 @@ def init_session_manager(mode: int = ASK, role_id: Optional[str] = None):
 
     if mode == TRANSLATE:
         session_type = "translate"
-        cache_dir = None
+        cache_dir = CACHE_DIR
         use_subdir = True
     elif mode == AGENT:
         session_type = "agent"
-        cache_dir = None
+        cache_dir = CACHE_DIR
         use_subdir = True
     elif mode == ROLE and role_id:
         init_role_manager()
@@ -602,7 +606,7 @@ def init_session_manager(mode: int = ASK, role_id: Optional[str] = None):
         use_subdir = False
     else:
         session_type = "ask"
-        cache_dir = None
+        cache_dir = CACHE_DIR
         use_subdir = True
 
     SESSION_MANAGER = SessionManager(
@@ -1249,7 +1253,7 @@ def save_current_session():
         )
         if result:
             logger.info(
-                f"💾 会话已保存到 cache/{SESSION_MANAGER.session_type}/, id = {session_id}"
+                f"💾 会话已保存到 ~/.ask-agent/cache/{SESSION_MANAGER.session_type}/, id = {session_id}"
             )
     except Exception as e:
         print(f"❌ 保存会话失败: {e}")
@@ -1334,7 +1338,7 @@ def list_sessions():
 
     sessions = SESSION_MANAGER.list_sessions(limit=5)
     if not sessions:
-        print(f"📭 cache/{SESSION_MANAGER.session_type}/ 目录下暂无会话")
+        print(f"📭 ~/.ask-agent/cache/{SESSION_MANAGER.session_type}/ 目录下暂无会话")
         return
 
     print(f"\n📋 最近会话 ({SESSION_MANAGER.session_type}):\n")
@@ -1543,9 +1547,9 @@ def show_help():
     - 每个角色拥有独立的对话历史
     - 角色配置存放在 roles.json，提示词存放在 roles/ 目录
 
-  🔹 会话管理：
-    - 会话按模式自动分类保存到 cache/ask/、cache/agent/、cache/translate/、cache/role_<角色id>/
-    - 切换模式或退出时自动保存当前会话
+   🔹 会话管理：
+     - 会话按模式自动分类保存到 ~/.ask-agent/cache/ask/、~/.ask-agent/cache/agent/、~/.ask-agent/cache/translate/、~/.ask-agent/cache/role/、~/.ask-agent/cache/role_<角色id>/
+     - 切换模式或退出时自动保存当前会话
  """
     print(help_text)
 

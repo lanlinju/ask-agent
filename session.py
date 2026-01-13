@@ -26,11 +26,11 @@ class SessionManager:
         初始化会话管理器
 
         Args:
-            cache_dir: 缓存目录路径，默认为 ./cache
+            cache_dir: 缓存目录路径，默认为 ~/.ask-agent/cache
             session_type: 会话类型（ask/agent/translate等），用于创建子目录
             use_subdir: 是否在 cache_dir 后添加 session_type 子目录
         """
-        base_dir = cache_dir or Path("cache")
+        base_dir = cache_dir or (Path.home() / ".ask-agent" / "cache")
         if use_subdir:
             self.cache_dir = base_dir / session_type
         else:

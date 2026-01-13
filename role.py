@@ -68,8 +68,8 @@ class RoleManager:
 
         Args:
             roles_dir: 角色目录，默认为 ./roles 或 ~/.ask-agent/roles
-            cache_dir: 缓存目录，默认为 ./cache
-            config_file: 配置文件路径，默认为根目录的 roles.json 或 ~/.ask-agent/roles.json
+            cache_dir: 缓存目录，默认为 ~/.ask-agent/cache
+            config_file: 配置文件路径，默认为 ~/.ask-agent/roles.json
         """
         base_dir = Path.cwd()
         self.cache_dir = cache_dir or (base_dir / "cache")
