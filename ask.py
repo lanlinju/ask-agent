@@ -1620,7 +1620,7 @@ async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("注意不要执行交互式命令!")
     else:
         command(cmd)
-        await update.message.reply_text(f"实现命令: {cmd}")
+        await update.message.reply_text(f"执行命令: {cmd}")
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
