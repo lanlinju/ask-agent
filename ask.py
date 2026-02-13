@@ -21,6 +21,8 @@ from role import RoleManager
 from command import CommandManager
 from typing import Optional
 from config import ConfigPathManager, get_config_path
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 load_dotenv(override=True)
 
@@ -36,6 +38,7 @@ if sys.platform != "win32":
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WORKDIR = Path.cwd()
 
 # 系统问答工具助手提示词
@@ -1436,6 +1439,17 @@ def command(command: str):
         print("✅ 已创建新会话\n")
         return
 
+    # 启动 Telegram Bot
+    if command == "/bot":
+        if not BOT_TOKEN:
+            print("❌ 错误: TELEGRAM_BOT_TOKEN 环境变量未设置")
+            print("💡 提示: 请设置 TELEGRAM_BOT_TOKEN 环境变量")
+            print("   例如: export TELEGRAM_BOT_TOKEN='your_bot_token_here' \n")
+            return
+        print("🤖 启动 Telegram Bot...")
+        run_bot()
+        return
+    
     # 显示帮助
     if command == "/help":
         show_help()
@@ -1583,7 +1597,37 @@ def shell(cmd: str):
     messages.append({"role": "user", "content": f"Shell命令执行结果:\n{output}"})
 
 
-def agent(prompt: str):
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理 /start 命令"""
+    await update.message.reply_text("你好！我是消息记录机器人。发送任何消息我都会打印到控制台。")
+
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理所有文本消息并打印到控制台"""
+    user = update.effective_user
+    message_text = update.message.text
+    
+    # 打印到控制台
+    logger.info(f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
+    
+    # 回复用户确认收到
+    await update.message.reply_text(f"{agent(message_text)}")
+
+def run_bot():
+    # 创建应用
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # 添加处理器
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    
+    print("机器人已启动！按 Ctrl+C 停止")
+    
+    # 运行机器人
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+def agent(prompt: str) -> str:
     """处理问题，添加到历史并获取回答"""
 
     # 将用户新消息添加到消息列表
@@ -1610,7 +1654,7 @@ def agent(prompt: str):
         if not tool_calls:
             if reasoning_content:
                 cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
-            break
+            return content
 
         for tool_call in tool_calls:
             name = tool_call["function"]["name"]
