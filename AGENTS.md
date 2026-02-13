@@ -30,19 +30,20 @@ Group imports: stdlib → third-party → local modules. Prefer specific imports
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from mcp import MCPManager
 from provider import ProviderConfig
 ```
 
 ### Type Annotations
-Use type hints for all function parameters and return values. Import from `typing`: `List`, `Dict`, `Optional`, `Any`, `Tuple`, `Union`, `Generator`. Modern Python 3.10+ union syntax: `str | None` (not `Optional[str]`). Annotate module-level globals: `messages: List[Dict[str, str | List]] = []`
+Use type hints for all function parameters and return values. Use modern Python 3.10+ union syntax: `str | None` (not `Optional[str]`). Import from `typing`: `List`, `Dict`, `Optional`, `Any`, `Tuple`, `Union`, `Generator`. Annotate module-level globals: `messages: List[Dict[str, str | List]] = []`
 
 ### Naming Conventions
-- **Classes**: PascalCase (`SessionManager`, `StdioClient`)
+- **Classes**: PascalCase (`SessionManager`, `StdioClient`, `MCPError`)
 - **Functions/variables**: snake_case (`get_streaming_response`, `current_messages`)
 - **Constants**: UPPER_SNAKE_CASE (`DEEPSEEK_API_KEY`, `SYSTEM_PROMPT_ASK`)
 - **Private methods**: underscore prefix (`_send_request`, `_normalize_type`)
+- **Module-level logger**: `logger = logging.getLogger(__name__)`
 
 ### Error Handling
 Create custom exception hierarchies with base exceptions. Use `raise ... from e` to preserve exception chains. Return boolean/None for failures, log errors appropriately.
@@ -72,6 +73,16 @@ def save_session(messages: List[Dict]) -> Optional[Tuple[str, Path]]:
 
 ### Dataclasses
 Use `@dataclass` for configuration and data structures. Provide `from_dict` classmethods for parsing from dictionaries.
+```python
+@dataclass
+class ProviderOptions:
+    base_url: str
+    api_key: str
+    
+    @classmethod
+    def from_dict(cls, options: Dict[str, Any]) -> "ProviderOptions":
+        return cls(...)
+```
 
 ### Context Managers
 Implement `__enter__` and `__exit__` for resource management.
@@ -103,3 +114,6 @@ Use `subprocess.Popen` for long-running processes. Set `stdin=subprocess.PIPE, s
 
 ### Configuration
 Use JSON files for configuration (`providers.json`, `mcp.json`). Provide `create_sample_config()` functions. Validate on load.
+
+### Environment Variables
+Use `python-dotenv` for loading `.env` files. Call `load_dotenv(override=True)` at module level. Use `os.getenv()` with defaults.
