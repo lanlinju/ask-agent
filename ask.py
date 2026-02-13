@@ -1611,10 +1611,16 @@ async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_parts = command_text.split()
     cmd = command_parts[0]  # "/start"
     args = command_parts[1:]  # ["arg1", "arg2"]
-    
+
     # 根据命令名分发处理
     if cmd == "/start":
-        await update.message.reply_text("欢迎！")
+        await update.message.reply_text("欢迎！使用/exit命令退出Telegram Bot,/save命令保存聊天会话")
+    if cmd == "/exit" or cmd == "/save":
+        save_current_session()
+        save_config(current_mode)
+        await update.message.reply_text("会话已保存")
+        if cmd == "/exit":
+            sys.exit(0)    
     elif cmd == "/help":
         await update.message.reply_text(f"{show_help()}")
         await update.message.reply_text("注意不要执行交互式命令!")
@@ -1629,12 +1635,13 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text
 
     # 打印到控制台
-    logger.info(
+    print(
         f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}"
     )
 
     # 回复用户确认收到
     await update.message.reply_text(f"{agent(message_text)}")
+    print()
 
 
 def run_bot():
