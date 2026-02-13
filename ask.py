@@ -1575,6 +1575,7 @@ def show_help():
      - 切换模式或退出时自动保存当前会话
  """
     print(help_text)
+    return help_text
 
 
 def execute_cmd(cmd: str) -> str:
@@ -1604,15 +1605,26 @@ def shell(cmd: str):
     messages.append({"role": "user", "content": f"Shell命令执行结果:\n{output}"})
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理 /start 命令"""
-    await update.message.reply_text(
-        "你好！我是消息记录机器人。发送任何消息我都会打印到控制台。"
-    )
+async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理所有命令"""
+    command_text = update.message.text  # 例如: "/start arg1 arg2"
+    command_parts = command_text.split()
+    cmd = command_parts[0]  # "/start"
+    args = command_parts[1:]  # ["arg1", "arg2"]
+    
+    # 根据命令名分发处理
+    if cmd == "/start":
+        await update.message.reply_text("欢迎！")
+    elif cmd == "/help":
+        await update.message.reply_text(f"{show_help()}")
+        await update.message.reply_text("注意不要执行交互式命令!")
+    else:
+        command(cmd)
+        await update.message.reply_text(f"实现命令: {cmd}")
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理所有文本消息并打印到控制台"""
+    """处理接收到的文本消息"""
     user = update.effective_user
     message_text = update.message.text
 
@@ -1629,8 +1641,8 @@ def run_bot():
     # 创建应用
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # 添加处理器
-    application.add_handler(CommandHandler("start", start))
+    # 添加处理器 - 捕获所有以 / 开头的命令
+    application.add_handler(MessageHandler(filters.COMMAND, bot_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
     print("机器人已启动！按 Ctrl+C 停止")
