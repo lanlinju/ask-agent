@@ -22,7 +22,13 @@ from command import CommandManager
 from typing import Optional
 from config import ConfigPathManager, get_config_path
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 
 load_dotenv(override=True)
 
@@ -1449,7 +1455,7 @@ def command(command: str):
         print("🤖 启动 Telegram Bot...")
         run_bot()
         return
-    
+
     # 显示帮助
     if command == "/help":
         show_help()
@@ -1541,6 +1547,7 @@ def show_help():
     /summarize    - 压缩对话历史，将前3/4的消息压缩为摘要
     /models       - 交互式选择模型
     /commands     - 列出所有自定义命令
+    /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
     /help         - 显示此帮助信息
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
     exit          - 退出程序（自动保存会话）
@@ -1597,35 +1604,40 @@ def shell(cmd: str):
     messages.append({"role": "user", "content": f"Shell命令执行结果:\n{output}"})
 
 
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
-    await update.message.reply_text("你好！我是消息记录机器人。发送任何消息我都会打印到控制台。")
+    await update.message.reply_text(
+        "你好！我是消息记录机器人。发送任何消息我都会打印到控制台。"
+    )
+
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理所有文本消息并打印到控制台"""
     user = update.effective_user
     message_text = update.message.text
-    
+
     # 打印到控制台
-    logger.info(f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
-    
+    logger.info(
+        f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}"
+    )
+
     # 回复用户确认收到
     await update.message.reply_text(f"{agent(message_text)}")
+
 
 def run_bot():
     # 创建应用
     application = Application.builder().token(BOT_TOKEN).build()
-    
+
     # 添加处理器
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
-    
+
     print("机器人已启动！按 Ctrl+C 停止")
-    
+
     # 运行机器人
     application.run_polling(allowed_updates=Update.ALL_TYPES)
+
 
 def agent(prompt: str) -> str:
     """处理问题，添加到历史并获取回答"""

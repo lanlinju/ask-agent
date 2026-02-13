@@ -416,6 +416,40 @@ ag --agent
 帮我读取 /tmp 目录下的文件列表
 ```
 
+## Telegram Bot 集成
+
+Ask Agent 支持通过 Telegram Bot 远程控制，让你可以从手机发送任务给智能体处理。
+
+### 设置步骤
+
+**1. 获取 Bot Token**
+
+- 打开 Telegram，搜索 @BotFather
+- 发送 `/newbot` 并按照提示创建机器人
+- 复制 HTTP API Token（格式：`123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`）
+
+**2. 配置环境变量**
+
+在 `.env` 文件或系统环境变量中添加：
+
+```bash
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
+```
+
+**3. 启动 Bot**
+
+```bash
+# 在交互模式中启动
+ag
+/bot
+```
+
+### 使用 Bot
+
+- 向 Bot 发送消息，智能体会自动处理你的任务
+- 支持所有智能体模式的功能（代码编辑、文件操作等）
+- 处理结果会通过 Telegram 返回
+
 ## MCP 服务器管理
 
 Ask Agent 支持 Model Context Protocol (MCP)，可以连接外部工具服务器扩展功能。
@@ -662,6 +696,7 @@ UEFI = Unified Extensible Firmware Interface（统一可扩展固件接口）
 
 - `DEEPSEEK_API_KEY` - DeepSeek API 密钥（如果在 providers.json 中使用 `env:DEEPSEEK_API_KEY`）
 - `OPENAI_API_KEY` - OpenAI API 密钥（如果在 providers.json 中使用 `env:OPENAI_API_KEY`）
+- `TELEGRAM_BOT_TOKEN` - Telegram Bot Token，用于远程控制（格式：`123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`）
 - `LOG_LEVEL` - 可选，日志级别（默认：ERROR，可选：DEBUG, INFO, WARNING, ERROR, CRITICAL）
 
 **配置优先级**：
@@ -682,6 +717,9 @@ DEEPSEEK_API_KEY=sk-your-deepseek-api-key-here
 
 # OpenAI API 配置
 OPENAI_API_KEY=sk-openai-api-key-here
+
+# Telegram Bot Token（用于远程控制）
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
 
 # 日志配置
 LOG_LEVEL=ERROR
