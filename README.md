@@ -12,6 +12,7 @@
 - 🤖 **智能体模式** - 支持代码编辑、文件操作等高级功能
 - 🧩 **可扩展技能** - 通过 Skills 加载领域知识
 - 🔌 **MCP 支持** - 集成 Model Context Protocol，支持外部工具
+- 📱 **Telegram Bot 集成** - 支持通过 Telegram Bot 远程控制智能体
 - 🎭 **角色扮演模式** - 支持角色扮演对话，每个角色独立对话历史
 - 🎯 **多 Provider 支持** - 支持多个 AI Provider（OpenAI、DeepSeek 等）
 - 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
@@ -21,6 +22,12 @@
 ## 角色扮演模式截图
 
 ![角色扮演模式示例](image/role.png)
+
+## Telegram Bot示例截图
+
+<div align="center">
+  <img src="./image/bot.jpg" width="400" alt="Telegram Bot示例">
+</div>
 
 ## 安装
 
