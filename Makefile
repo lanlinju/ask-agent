@@ -17,6 +17,9 @@ mcpserver:
 pipreqs:
 	pipreqs . --force --encoding=utf-8
 
+nvidia_nim_models:
+	curl "https://integrate.api.nvidia.com/v1/models" > nvidia_nim_models.json
+	
 clean:
 	rm -rf ./cache
 	rm -f config.json roles.json

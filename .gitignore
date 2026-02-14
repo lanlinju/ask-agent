@@ -9,3 +9,4 @@ providers.json
 roles.json
 command.json
 config.json
+nvidia_nim_models.json
