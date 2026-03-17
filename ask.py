@@ -1134,7 +1134,7 @@ def get_streaming_response(
         "stream": True,
     }
 
-    if useTools and current_mode == AGENT:
+    if useTools and current_mode in (AGENT, ROLE):
         data["tools"] = tools
         data["tool_choice"] = "auto"
 
