@@ -1861,11 +1861,14 @@ def chat_loop():
             continue
 
         _print_prompt()
-        agent(user_input)
-
-        sanitize_memory()
-        generate_title()
-        _print_newline()
+        try:
+            agent(user_input)
+            sanitize_memory()
+            generate_title()
+            _print_newline()
+        except Exception as e:
+            logger.error(f"Agent error: {e}")
+            print(f"\n❌ 发生错误: {e}\n")
 
 
 def restore_tty():
@@ -2033,9 +2036,11 @@ def main():
     except (KeyboardInterrupt, EOFError):
         save_current_session()
         save_config(current_mode)
-        sys.exit(1)
+        sys.exit(0)
     except Exception as e:
+        logger.error(f"Unexpected error: {e}")
         print(f"\n❌ 发生错误: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
