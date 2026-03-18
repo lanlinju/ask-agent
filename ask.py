@@ -29,6 +29,9 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit.formatted_text import ANSI
+from prompt_toolkit.history import InMemoryHistory
 
 load_dotenv(override=True)
 
@@ -1842,12 +1845,13 @@ def generate_title():
     thread = threading.Thread(target=_generate, daemon=True)
     thread.start()
 
+_INPUT_HISTORY = InMemoryHistory()
 
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
     while True:
-        user_input = input(f"{get_mode_prompt()}").strip()
+        user_input = pt_prompt(ANSI(f"{get_mode_prompt()}"), history=_INPUT_HISTORY).strip()
         if not user_input:
             continue
 

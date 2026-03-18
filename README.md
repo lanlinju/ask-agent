@@ -50,7 +50,7 @@ cd ask-agent
 pip install -r requirements.txt
 
 # 方式二：单独安装依赖
-pip install python-dotenv requests python-telegram-bot
+pip install python-dotenv requests python-telegram-bot prompt-toolkit
 ```
 
 3. 创建软链接（可选，简化使用）
