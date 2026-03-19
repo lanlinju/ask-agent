@@ -668,7 +668,11 @@ TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "The shell command to execute (bash/zsh/PowerShell)",
-                    }
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "timeout in seconds (default: 10)",
+                    },
                 },
                 "required": ["command"],
             },
@@ -813,12 +817,12 @@ TOOLS = [
 ]
 
 
-def run_bash(command: str) -> str:
+def run_bash(command: str, timeout: Optional[int] = None) -> str:
     """执行 bash 命令并返回 stdout/stderr"""
     if any(d in command for d in ["rm -rf /", "shutdown"]):
         return "Error: Dangerous command blocked"
     print(f"  \033[34m$ {command}\033[0m")
-    return execute_cmd(command)
+    return execute_cmd(command, timeout)
 
 
 def safe_path(p: str) -> Path:
@@ -1025,7 +1029,7 @@ Complete the task and return a clear, concise summary."""
 
 def execute_tool(name: str, args: dict) -> str:
     if name == "bash":
-        return run_bash(args["command"])
+        return run_bash(args["command"], timeout=args.get("timeout"))
     if name == "read_file":
         return run_read(args["path"], args.get("limit") or 0)
     if name == "write_file":
@@ -1582,11 +1586,16 @@ def show_help():
     return help_text
 
 
-def execute_cmd(cmd: str) -> str:
+def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
     """执行shell命令并返回输出"""
     try:
         result = subprocess.run(
-            cmd, shell=True, cwd=WORKDIR, capture_output=True, text=True, timeout=10
+            cmd,
+            shell=True,
+            cwd=WORKDIR,
+            capture_output=True,
+            text=True,
+            timeout=timeout or 10,
         )
         output = result.stdout + result.stderr
         return output.strip() if output else "(no output)"
@@ -1618,13 +1627,15 @@ async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 根据命令名分发处理
     if cmd == "/start":
-        await update.message.reply_text("欢迎！使用/exit命令退出Telegram Bot,/save命令保存聊天会话")
+        await update.message.reply_text(
+            "欢迎！使用/exit命令退出Telegram Bot,/save命令保存聊天会话"
+        )
     if cmd == "/exit" or cmd == "/save":
         save_current_session()
         save_config(current_mode)
         await update.message.reply_text("会话已保存")
         if cmd == "/exit":
-            sys.exit(0)    
+            sys.exit(0)
     elif cmd == "/help":
         await update.message.reply_text(f"{show_help()}")
         await update.message.reply_text("注意不要执行交互式命令!")
@@ -1846,13 +1857,17 @@ def generate_title():
     thread = threading.Thread(target=_generate, daemon=True)
     thread.start()
 
+
 _INPUT_HISTORY = InMemoryHistory()
+
 
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
     while True:
-        user_input = pt_prompt(ANSI(f"{get_mode_prompt()}"), history=_INPUT_HISTORY).strip()
+        user_input = pt_prompt(
+            ANSI(f"{get_mode_prompt()}"), history=_INPUT_HISTORY
+        ).strip()
         if not user_input:
             continue
 
