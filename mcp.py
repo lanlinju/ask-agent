@@ -7,6 +7,7 @@ import uuid
 import subprocess
 from pathlib import Path
 from MCPConfig import MCPConfig, ServerConfig
+from config import ConfigPathManager
 
 logger = logging.getLogger(__name__)
 
@@ -469,7 +470,10 @@ class MCPManager:
     """MCP 服务器管理器"""
 
     def __init__(self):
-        self.config = MCPConfig(Path.cwd() / "mcp.json")
+        # 使用 ConfigPathManager 搜索 mcp.json: 当前目录 -> 用户目录
+        self._config_path_manager = ConfigPathManager("mcp.json")
+        config_path = self._config_path_manager.find_config()
+        self.config = MCPConfig(config_path if config_path else Path.cwd() / "mcp.json")
         # name -> (client, tools)
         self.active_clients: Dict[str, Tuple[Any, List[Dict]]] = {}
         self.loaded = False
