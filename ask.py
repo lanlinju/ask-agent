@@ -1040,7 +1040,7 @@ def execute_tool(name: str, args: dict) -> str:
     if name.startswith("mcp_"):
         import re
 
-        match = re.match(r"^mcp_(.+)_(.+)$", name)
+        match = re.match(r"^mcp_(.+?)_(.+)$", name)
         if match:
             server_name = match.group(1)
             tool_name = match.group(2)
