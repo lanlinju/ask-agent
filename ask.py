@@ -832,10 +832,11 @@ def safe_path(p: str) -> Path:
 def run_read(path: str, limit: int = None) -> str:
     """Read file contents."""
     try:
+        print(f"Read {path}")
         lines = safe_path(path).read_text().splitlines()
         if limit:
             lines = lines[:limit]
-        return "\n".join(lines)[:50000]
+        return "\n".join(lines)
     except Exception as e:
         return f"Error: {e}"
 
@@ -1588,7 +1589,7 @@ def execute_cmd(cmd: str) -> str:
             cmd, shell=True, cwd=WORKDIR, capture_output=True, text=True, timeout=10
         )
         output = result.stdout + result.stderr
-        return (output.strip() if output else "(no output)")[:50000]
+        return output.strip() if output else "(no output)"
     except Exception as e:
         return f"Error: {e}"
 
