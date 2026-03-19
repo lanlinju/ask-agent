@@ -815,7 +815,7 @@ TOOLS = [
 
 def run_bash(command: str) -> str:
     """执行 bash 命令并返回 stdout/stderr"""
-    if any(d in command for d in ["rm -rf /", "sudo", "shutdown"]):
+    if any(d in command for d in ["rm -rf /", "shutdown"]):
         return "Error: Dangerous command blocked"
     print(f"  \033[34m$ {command}\033[0m")
     return execute_cmd(command)
