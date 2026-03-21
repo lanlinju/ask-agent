@@ -212,6 +212,41 @@ class AgentManager:
         self.save_config()
         return True
 
+    def switch_to(self, agent_id: str) -> bool:
+        """切换到指定智能体（builtin 是特殊值）
+
+        Args:
+            agent_id: 智能体ID
+
+        Returns:
+            是否成功切换
+        """
+        if agent_id == "builtin":
+            self.current_agent = None
+            self.set_default_agent("builtin")
+            return True
+
+        if self.get_agent(agent_id):
+            self.set_current_agent(agent_id)
+            self.set_default_agent(agent_id)
+            return True
+
+        return False
+
+    def get_current_or_default(self) -> str:
+        """获取当前或默认智能体ID
+
+        Returns:
+            智能体ID（可能是 builtin 或具体智能体ID）
+        """
+        if self.current_agent:
+            return self.current_agent.agent_id
+        return self.default_agent or "builtin"
+
+    def is_builtin(self, agent_id: str | None) -> bool:
+        """判断是否为内置智能体"""
+        return not agent_id or agent_id == "builtin"
+
     def reload(self):
         """重新加载配置和智能体"""
         self.agents.clear()

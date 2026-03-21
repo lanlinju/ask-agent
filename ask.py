@@ -520,6 +520,65 @@ def _select_agent_interactive(agents: List[Dict], save_session: bool = True) -> 
     return False
 
 
+def _apply_agent(agent_id: str):
+    """应用智能体设置（内部函数）"""
+    global current_mode
+    current_mode = AGENT
+    if AGENT_MANAGER.is_builtin(agent_id):
+        init_system_prompt(current_mode)
+        print("✅ 已进入智能体模式 (builtin)\n")
+    else:
+        init_system_prompt(current_mode, agent_id)
+        print(f"✅ 已进入智能体模式: {get_agent_name(agent_id)}\n")
+
+
+def switch_agent(agent_id: str, save_session: bool = True) -> bool:
+    """切换到指定智能体"""
+    init_agent_manager()
+    assert AGENT_MANAGER is not None
+
+    if save_session:
+        save_current_session()
+
+    if not AGENT_MANAGER.switch_to(agent_id):
+        print(f"❌ 未找到智能体: {agent_id}\n")
+        return False
+
+    _apply_agent(agent_id)
+    return True
+
+
+def enter_agent_mode():
+    """进入智能体模式，使用默认智能体"""
+    save_current_session()
+    init_agent_manager()
+    assert AGENT_MANAGER is not None
+
+    default_agent = AGENT_MANAGER.get_current_or_default()
+
+    # 默认智能体不存在，让用户选择
+    if not AGENT_MANAGER.is_builtin(default_agent) and not AGENT_MANAGER.get_agent(
+        default_agent
+    ):
+        agents = list_agents()
+        _display_agents(agents, show_current_marker=False)
+        _select_agent_interactive(agents, save_session=False)
+        return
+
+    _apply_agent(default_agent)
+
+
+def list_agents_interactive():
+    """交互式列出并选择智能体"""
+    if current_mode != AGENT:
+        print("❌ 请先进入智能体模式: /agent\n")
+        return
+
+    agents = list_agents()
+    _display_agents(agents, show_current_marker=True)
+    _select_agent_interactive(agents, save_session=True)
+
+
 def _print_prompt():
     """打印当前提示符"""
     current_role_id_val = get_current_role_id()
@@ -1656,33 +1715,27 @@ def command(command: str):
         print("✅ 已进入问答模式\n")
         return
 
-    # 进入智能体模式
-    if command == "/agent":
-        save_current_session()
-        current_mode = AGENT
-        init_agent_manager()
-        assert AGENT_MANAGER is not None
+    # 智能体命令: /agent, /agent -l, /agent name
+    if command == "/agent" or command.startswith("/agent "):
+        # 解析参数
+        parts = command.split(maxsplit=1)
+        arg = parts[1].strip() if len(parts) > 1 else ""
 
-        default_agent = AGENT_MANAGER.default_agent
+        if arg == "-l":
+            # /agent -l: 列出可用智能体
+            agents = list_agents()
+            _display_agents(agents, show_current_marker=True)
+        elif arg:
+            # /agent name: 进入特定智能体
+            switch_agent(arg)
+        else:
+            # /agent: 进入智能体模式，使用默认智能体
+            enter_agent_mode()
+        return
 
-        # builtin 或没有默认智能体时使用内置提示词
-        if not default_agent or default_agent == "builtin":
-            AGENT_MANAGER.current_agent = None  # builtin 无对应 AgentConfig，设为 None
-            init_system_prompt(current_mode)
-            print("✅ 已进入智能体模式 (builtin)\n")
-            return
-
-        # 使用指定的智能体
-        if AGENT_MANAGER.get_agent(default_agent):
-            AGENT_MANAGER.set_current_agent(default_agent)
-            init_system_prompt(current_mode, default_agent)
-            print(f"✅ 已进入智能体模式: {get_agent_name(default_agent)}\n")
-            return
-
-        # 默认智能体不存在，让用户选择
-        agents = list_agents()
-        _display_agents(agents, show_current_marker=False)
-        _select_agent_interactive(agents, save_session=False)
+    # 交互式选择智能体
+    if command == "/agents":
+        list_agents_interactive()
         return
 
     # 进入角色扮演模式
@@ -1726,21 +1779,6 @@ def command(command: str):
 
         _display_roles(roles, show_current_marker=True)
         _select_role_interactive(roles, save_session=True)
-        return
-
-    # 列出智能体
-    if command == "/agents":
-        if current_mode != AGENT:
-            print("❌ 请先进入智能体模式: /agent\n")
-            return
-
-        agents = list_agents()
-        if not agents:
-            print("📭 暂无可用智能体\n")
-            return
-
-        _display_agents(agents, show_current_marker=True)
-        _select_agent_interactive(agents, save_session=True)
         return
 
     # 创建新会话
@@ -1789,33 +1827,6 @@ def command(command: str):
             load_session(session_id)
         else:
             print("❌ 请提供会话 ID，例如: /load 20250109_120000_abc123")
-        return
-
-    # 加载指定智能体
-    if command.startswith("/agent "):
-        agent_id = command[7:].strip()
-        if agent_id:
-            save_current_session()
-            init_agent_manager()
-            assert AGENT_MANAGER is not None
-
-            # 处理 builtin 特殊值
-            if agent_id == "builtin":
-                AGENT_MANAGER.current_agent = None
-                AGENT_MANAGER.set_default_agent("builtin")
-                current_mode = AGENT
-                init_system_prompt(current_mode)
-                print("✅ 已加载内置智能体\n")
-            elif AGENT_MANAGER.get_agent(agent_id):
-                AGENT_MANAGER.set_current_agent(agent_id)
-                AGENT_MANAGER.set_default_agent(agent_id)
-                current_mode = AGENT
-                init_system_prompt(current_mode, agent_id)
-                print(f"✅ 已加载智能体: {get_agent_name(agent_id)}\n")
-            else:
-                print(f"❌ 未找到智能体: {agent_id}\n")
-        else:
-            print("❌ 请提供智能体 ID，例如: /agent coding-agent 或 /agent builtin")
         return
 
     # 列出所有可用的 MCP 服务器
@@ -1876,8 +1887,9 @@ def show_help():
   🔹 交互模式命令：
     /ask          - 进入问答模式
     /agent        - 进入智能体模式
-    /agent <name> - 加载指定智能体并进入智能体模式
-    /agents       - 列出所有可用智能体
+    /agent <name> - 进入指定智能体
+    /agent -l     - 列出所有可用智能体
+    /agents       - 交互式选择智能体
     /e            - 进入翻译模式
     /role         - 进入角色扮演模式
     /roles        - 列出所有可用角色
