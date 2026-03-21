@@ -1796,7 +1796,7 @@ def command(command: str):
     """处理命令"""
     global current_mode
 
-    if command == "exit":
+    if command == "exit" or command == "/exit":
         save_current_session()
         save_config(current_mode)
         sys.exit(0)
@@ -2006,6 +2006,7 @@ def show_help():
     /skills       - 列出所有可用的 Skills
     /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
     /help         - 显示此帮助信息
+    /exit         - 退出程序（自动保存会话）
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
     exit          - 退出程序（自动保存会话）
 
