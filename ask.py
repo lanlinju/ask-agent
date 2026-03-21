@@ -1058,6 +1058,10 @@ TOOLS = [
                         "type": "string",
                         "description": "Relative path to the file",
                     },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Start reading from line number (0-indexed, default: 0)",
+                    },
                     "limit": {
                         "type": "integer",
                         "description": "Max lines to read (default: all)",
@@ -1218,11 +1222,14 @@ def safe_path(p: str) -> Path:
     return path
 
 
-def run_read(path: str, limit: int = None) -> str:
+def run_read(path: str, offset: int = 0, limit: int = None) -> str:
     """Read file contents."""
     try:
-        print(f"\033[34m→ Read {path}\033[0m")
+        range_info = f"[offset={offset}, limit={limit}]" if offset or limit else ""
+        print(f"\033[34m→ Read {path} {range_info}\033[0m")
         lines = safe_path(path).read_text().splitlines()
+        if offset:
+            lines = lines[offset:]
         if limit:
             lines = lines[:limit]
         return "\n".join(lines)
@@ -1452,7 +1459,11 @@ def execute_tool(name: str, args: dict) -> str:
     if name == "bash":
         return run_bash(args["command"], timeout=args.get("timeout"))
     if name == "read_file":
-        return run_read(args["path"], args.get("limit") or 0)
+        return run_read(
+            args["path"],
+            offset=args.get("offset", 0),
+            limit=args.get("limit"),
+        )
     if name == "write_file":
         return run_write(args["path"], args["content"])
     if name == "edit_file":
