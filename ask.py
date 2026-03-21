@@ -18,6 +18,7 @@ from mcp import MCPManager
 from provider import ProviderConfig
 from session import SessionManager
 from role import RoleManager
+from agent import AgentManager
 from command import CommandManager
 from typing import Optional
 from config import ConfigPathManager, get_config_path
@@ -277,6 +278,9 @@ SESSION_MANAGER: Optional[SessionManager] = None
 # Global role manager instance
 ROLE_MANAGER: Optional[RoleManager] = None
 
+# Global agent manager instance
+AGENT_MANAGER: Optional[AgentManager] = None
+
 # Command manager globals
 COMMAND_DIR = WORKDIR / "command"
 COMMAND_CONFIG = _COMMAND_PATH_MANAGER.find_config() or (WORKDIR / "command.json")
@@ -295,11 +299,26 @@ def init_role_manager() -> RoleManager:
     return ROLE_MANAGER
 
 
+def init_agent_manager() -> AgentManager:
+    """初始化智能体管理器"""
+    global AGENT_MANAGER
+    if not AGENT_MANAGER:
+        AGENT_MANAGER = AgentManager()
+    return AGENT_MANAGER
+
+
 def get_current_role_id() -> Optional[str]:
     """获取当前角色 ID"""
     if not ROLE_MANAGER:
         return None
     return ROLE_MANAGER.current_role.role_id if ROLE_MANAGER.current_role else None
+
+
+def get_current_agent_id() -> Optional[str]:
+    """获取当前智能体 ID"""
+    if not AGENT_MANAGER:
+        return None
+    return AGENT_MANAGER.current_agent.agent_id if AGENT_MANAGER.current_agent else None
 
 
 def get_role_name(role_id: str) -> str:
@@ -310,6 +329,20 @@ def get_role_name(role_id: str) -> str:
     role = ROLE_MANAGER.get_role(role_id)
     name = role.name if role else role_id
     result = name if name else role_id
+    # 仅对英文名称首字母大写
+    if result and result[0].isalpha() and result[0].isascii():
+        result = result.capitalize()
+    return f"{GREEN}{result}{RESET}"
+
+
+def get_agent_name(agent_id: str) -> str:
+    """获取智能体名称"""
+    if not AGENT_MANAGER:
+        return agent_id
+
+    agent = AGENT_MANAGER.get_agent(agent_id)
+    name = agent.name if agent else agent_id
+    result = name if name else agent_id
     # 仅对英文名称首字母大写
     if result and result[0].isalpha() and result[0].isascii():
         result = result.capitalize()
@@ -378,6 +411,80 @@ def _select_role_interactive(roles: List[Dict], save_session: bool = True) -> bo
             ROLE_MANAGER.set_default_role(role_id)
             init_system_prompt(current_mode, role_id)
             print(f"✅ 已切换到角色: {get_role_name(role_id)}\n")
+            return True
+        else:
+            print("❌ 无效的编号\n")
+    except ValueError:
+        print("❌ 请输入有效的数字\n")
+    except KeyboardInterrupt:
+        print("\n已取消\n")
+    return False
+
+
+def list_agents() -> List[Dict]:
+    """列出所有可用智能体"""
+    init_agent_manager()
+    assert AGENT_MANAGER is not None
+
+    agents_list = []
+    for agent in AGENT_MANAGER.list_agents():
+        agents_list.append(
+            {
+                "id": agent.agent_id,
+                "name": agent.name,
+                "description": agent.description,
+            }
+        )
+    return agents_list
+
+
+def _display_agents(agents: List[Dict], show_current_marker: bool = False):
+    """显示智能体列表
+
+    Args:
+        agents: 智能体列表
+        show_current_marker: 是否显示当前智能体标记
+    """
+    current_agent_id_val = get_current_agent_id()
+    print("\n📋 可用智能体:\n")
+    for i, agent in enumerate(agents, 1):
+        if show_current_marker:
+            marker = "→ " if agent["id"] == current_agent_id_val else "  "
+            print(f"{marker}[{i}] {agent['name']} ({agent['id']})")
+            print(f"     {agent['description']}\n")
+        else:
+            print(f"  [{i}] {agent['name']} ({agent['id']})")
+            print(f"      {agent['description']}\n")
+
+
+def _select_agent_interactive(agents: List[Dict], save_session: bool = True) -> bool:
+    """交互式选择智能体
+
+    Args:
+        agents: 智能体列表
+        save_session: 是否保存当前会话
+
+    Returns:
+        是否成功选择了智能体
+    """
+    init_agent_manager()
+    assert AGENT_MANAGER is not None
+
+    try:
+        choice = input("请选择智能体 (编号 或 0/Enter 取消): ").strip()
+        if choice == "0" or choice == "":
+            print("已取消\n")
+            return False
+
+        index = int(choice) - 1
+        if 0 <= index < len(agents):
+            agent_id = agents[index]["id"]
+            if save_session:
+                save_current_session()
+            AGENT_MANAGER.set_current_agent(agent_id)
+            AGENT_MANAGER.set_default_agent(agent_id)
+            init_system_prompt(AGENT, agent_id)
+            print(f"✅ 已切换到智能体: {get_agent_name(agent_id)}\n")
             return True
         else:
             print("❌ 无效的编号\n")
@@ -674,7 +781,9 @@ def init_session_manager(mode: int = ASK, role_id: Optional[str] = None):
     )
 
 
-def init_system_prompt(mode: int = ASK, role_id: Optional[str] = None):
+def init_system_prompt(
+    mode: int = ASK, role_id: Optional[str] = None, agent_id: Optional[str] = None
+):
     """初始化系统提示词"""
     global title_generated
     messages.clear()
@@ -682,7 +791,28 @@ def init_system_prompt(mode: int = ASK, role_id: Optional[str] = None):
     if mode == TRANSLATE:
         system_prompt = SYSTEM_PROMPT_TRANSLATE
     elif mode == AGENT:
-        system_prompt = SYSTEM_PROMPT_AGENT
+        if agent_id:
+            init_agent_manager()
+            assert AGENT_MANAGER is not None
+            agent_prompt = AGENT_MANAGER.get_agent_prompt(agent_id)
+            if agent_prompt:
+                system_prompt = agent_prompt
+            else:
+                print(f"❌ 未找到智能体: {agent_id}")
+                system_prompt = SYSTEM_PROMPT_AGENT
+        else:
+            # 使用默认智能体
+            init_agent_manager()
+            assert AGENT_MANAGER is not None
+            default_agent = AGENT_MANAGER.default_agent
+            if default_agent:
+                agent_prompt = AGENT_MANAGER.get_agent_prompt(default_agent)
+                if agent_prompt:
+                    system_prompt = agent_prompt
+                else:
+                    system_prompt = SYSTEM_PROMPT_AGENT
+            else:
+                system_prompt = SYSTEM_PROMPT_AGENT
     elif mode == ROLE and role_id:
         init_role_manager()
         assert ROLE_MANAGER is not None
@@ -1506,8 +1636,28 @@ def command(command: str):
     if command == "/agent":
         save_current_session()
         current_mode = AGENT
-        init_system_prompt(current_mode)
-        print("✅ 已进入智能体模式\n")
+        init_agent_manager()
+        assert AGENT_MANAGER is not None
+
+        default_agent = AGENT_MANAGER.default_agent
+
+        if default_agent and AGENT_MANAGER.get_agent(default_agent):
+            AGENT_MANAGER.set_current_agent(default_agent)
+            init_system_prompt(current_mode, default_agent)
+            print(f"✅ 已进入智能体模式: {get_agent_name(default_agent)}\n")
+            return
+
+        # 没有默认智能体，让用户选择
+        agents = list_agents()
+        if not agents:
+            print("📭 暂无可用智能体\n")
+            print(
+                "💡 提示: 在 agents/ 目录或 ~/.ask-agent/agents/ 下创建 .md 文件即可添加智能体\n"
+            )
+            return
+
+        _display_agents(agents, show_current_marker=False)
+        _select_agent_interactive(agents, save_session=False)
         return
 
     # 进入角色扮演模式
@@ -1551,6 +1701,21 @@ def command(command: str):
 
         _display_roles(roles, show_current_marker=True)
         _select_role_interactive(roles, save_session=True)
+        return
+
+    # 列出智能体
+    if command == "/agents":
+        if current_mode != AGENT:
+            print("❌ 请先进入智能体模式: /agent\n")
+            return
+
+        agents = list_agents()
+        if not agents:
+            print("📭 暂无可用智能体\n")
+            return
+
+        _display_agents(agents, show_current_marker=True)
+        _select_agent_interactive(agents, save_session=True)
         return
 
     # 创建新会话
@@ -1599,6 +1764,26 @@ def command(command: str):
             load_session(session_id)
         else:
             print("❌ 请提供会话 ID，例如: /load 20250109_120000_abc123")
+        return
+
+    # 加载指定智能体
+    if command.startswith("/agent "):
+        agent_id = command[7:].strip()
+        if agent_id:
+            save_current_session()
+            init_agent_manager()
+            assert AGENT_MANAGER is not None
+
+            if AGENT_MANAGER.get_agent(agent_id):
+                AGENT_MANAGER.set_current_agent(agent_id)
+                AGENT_MANAGER.set_default_agent(agent_id)
+                current_mode = AGENT
+                init_system_prompt(current_mode, agent_id)
+                print(f"✅ 已加载智能体: {get_agent_name(agent_id)}\n")
+            else:
+                print(f"❌ 未找到智能体: {agent_id}\n")
+        else:
+            print("❌ 请提供智能体 ID，例如: /agent coding-agent")
         return
 
     # 列出所有可用的 MCP 服务器
@@ -1659,6 +1844,8 @@ def show_help():
   🔹 交互模式命令：
     /ask          - 进入问答模式
     /agent        - 进入智能体模式
+    /agent <name> - 加载指定智能体并进入智能体模式
+    /agents       - 列出所有可用智能体
     /e            - 进入翻译模式
     /role         - 进入角色扮演模式
     /roles        - 列出所有可用角色
@@ -1686,6 +1873,7 @@ def show_help():
     - 支持通过 Task 工具启动子智能体
     - 支持通过 TodoWrite 工具管理任务列表
     - 支持连接和使用 MCP 服务器提供的工具
+    - 智能体配置存放在 agents.json，提示词存放在 agents/ 目录
 
   🔹 角色扮演模式功能：
     - 使用角色扮演系统提示词与角色对话
