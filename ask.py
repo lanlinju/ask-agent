@@ -422,11 +422,20 @@ def _select_role_interactive(roles: List[Dict], save_session: bool = True) -> bo
 
 
 def list_agents() -> List[Dict]:
-    """列出所有可用智能体"""
+    """列出所有可用智能体（包含builtin）"""
     init_agent_manager()
     assert AGENT_MANAGER is not None
 
-    agents_list = []
+    # 先添加 builtin 选项
+    agents_list = [
+        {
+            "id": "builtin",
+            "name": "builtin",
+            "description": "内置智能体，使用系统默认提示词",
+        }
+    ]
+
+    # 添加其他智能体
     for agent in AGENT_MANAGER.list_agents():
         agents_list.append(
             {
@@ -446,6 +455,14 @@ def _display_agents(agents: List[Dict], show_current_marker: bool = False):
         show_current_marker: 是否显示当前智能体标记
     """
     current_agent_id_val = get_current_agent_id()
+    if not current_agent_id_val:
+        # 如果没有当前智能体，检查默认智能体
+        init_agent_manager()
+        if AGENT_MANAGER and AGENT_MANAGER.default_agent:
+            current_agent_id_val = AGENT_MANAGER.default_agent
+        else:
+            current_agent_id_val = "builtin"
+
     print("\n📋 可用智能体:\n")
     for i, agent in enumerate(agents, 1):
         if show_current_marker:
@@ -481,10 +498,18 @@ def _select_agent_interactive(agents: List[Dict], save_session: bool = True) -> 
             agent_id = agents[index]["id"]
             if save_session:
                 save_current_session()
-            AGENT_MANAGER.set_current_agent(agent_id)
-            AGENT_MANAGER.set_default_agent(agent_id)
-            init_system_prompt(AGENT, agent_id)
-            print(f"✅ 已切换到智能体: {get_agent_name(agent_id)}\n")
+
+            # builtin 是特殊值，使用内置提示词
+            if agent_id == "builtin":
+                AGENT_MANAGER.current_agent = None
+                AGENT_MANAGER.set_default_agent("builtin")
+                init_system_prompt(AGENT)
+                print("✅ 已切换到内置智能体\n")
+            else:
+                AGENT_MANAGER.set_current_agent(agent_id)
+                AGENT_MANAGER.set_default_agent(agent_id)
+                init_system_prompt(AGENT, agent_id)
+                print(f"✅ 已切换到智能体: {get_agent_name(agent_id)}\n")
             return True
         else:
             print("❌ 无效的编号\n")
@@ -791,27 +816,26 @@ def init_system_prompt(
     if mode == TRANSLATE:
         system_prompt = SYSTEM_PROMPT_TRANSLATE
     elif mode == AGENT:
-        if agent_id:
-            init_agent_manager()
-            assert AGENT_MANAGER is not None
-            agent_prompt = AGENT_MANAGER.get_agent_prompt(agent_id)
-            if agent_prompt:
-                system_prompt = agent_prompt
-            else:
-                print(f"❌ 未找到智能体: {agent_id}")
-                system_prompt = SYSTEM_PROMPT_AGENT
-        else:
+        # 获取要使用的智能体ID
+        actual_agent_id = agent_id
+        if not actual_agent_id:
             # 使用默认智能体
             init_agent_manager()
             assert AGENT_MANAGER is not None
-            default_agent = AGENT_MANAGER.default_agent
-            if default_agent:
-                agent_prompt = AGENT_MANAGER.get_agent_prompt(default_agent)
-                if agent_prompt:
-                    system_prompt = agent_prompt
-                else:
-                    system_prompt = SYSTEM_PROMPT_AGENT
+            actual_agent_id = AGENT_MANAGER.default_agent
+
+        # builtin 或 None 使用内置提示词
+        if not actual_agent_id or actual_agent_id == "builtin":
+            system_prompt = SYSTEM_PROMPT_AGENT
+        else:
+            # 使用智能体的markdown文件内容
+            init_agent_manager()
+            assert AGENT_MANAGER is not None
+            agent_prompt = AGENT_MANAGER.get_agent_prompt(actual_agent_id)
+            if agent_prompt:
+                system_prompt = agent_prompt
             else:
+                print(f"❌ 未找到智能体: {actual_agent_id}")
                 system_prompt = SYSTEM_PROMPT_AGENT
     elif mode == ROLE and role_id:
         init_role_manager()
@@ -1641,21 +1665,22 @@ def command(command: str):
 
         default_agent = AGENT_MANAGER.default_agent
 
-        if default_agent and AGENT_MANAGER.get_agent(default_agent):
+        # builtin 或没有默认智能体时使用内置提示词
+        if not default_agent or default_agent == "builtin":
+            AGENT_MANAGER.current_agent = None  # builtin 无对应 AgentConfig，设为 None
+            init_system_prompt(current_mode)
+            print("✅ 已进入智能体模式 (builtin)\n")
+            return
+
+        # 使用指定的智能体
+        if AGENT_MANAGER.get_agent(default_agent):
             AGENT_MANAGER.set_current_agent(default_agent)
             init_system_prompt(current_mode, default_agent)
             print(f"✅ 已进入智能体模式: {get_agent_name(default_agent)}\n")
             return
 
-        # 没有默认智能体，让用户选择
+        # 默认智能体不存在，让用户选择
         agents = list_agents()
-        if not agents:
-            print("📭 暂无可用智能体\n")
-            print(
-                "💡 提示: 在 agents/ 目录或 ~/.ask-agent/agents/ 下创建 .md 文件即可添加智能体\n"
-            )
-            return
-
         _display_agents(agents, show_current_marker=False)
         _select_agent_interactive(agents, save_session=False)
         return
@@ -1774,7 +1799,14 @@ def command(command: str):
             init_agent_manager()
             assert AGENT_MANAGER is not None
 
-            if AGENT_MANAGER.get_agent(agent_id):
+            # 处理 builtin 特殊值
+            if agent_id == "builtin":
+                AGENT_MANAGER.current_agent = None
+                AGENT_MANAGER.set_default_agent("builtin")
+                current_mode = AGENT
+                init_system_prompt(current_mode)
+                print("✅ 已加载内置智能体\n")
+            elif AGENT_MANAGER.get_agent(agent_id):
                 AGENT_MANAGER.set_current_agent(agent_id)
                 AGENT_MANAGER.set_default_agent(agent_id)
                 current_mode = AGENT
@@ -1783,7 +1815,7 @@ def command(command: str):
             else:
                 print(f"❌ 未找到智能体: {agent_id}\n")
         else:
-            print("❌ 请提供智能体 ID，例如: /agent coding-agent")
+            print("❌ 请提供智能体 ID，例如: /agent coding-agent 或 /agent builtin")
         return
 
     # 列出所有可用的 MCP 服务器

@@ -59,11 +59,15 @@ class AgentManager:
         """
         base_dir = Path.cwd()
 
-        # 使用 ConfigPathManager 查找配置文件 - 固定使用用户目录
+        # 使用 ConfigPathManager 查找配置文件 - 优先使用当前目录，否则使用用户目录
         if config_file is None:
             config_manager = ConfigPathManager("agents.json")
-            self.config_file = config_manager.user_dir_path
-            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            found_config = config_manager.find_config()
+            if found_config:
+                self.config_file = found_config
+            else:
+                self.config_file = config_manager.user_dir_path
+                self.config_file.parent.mkdir(parents=True, exist_ok=True)
         else:
             self.config_file = Path(config_file)
 
@@ -199,8 +203,8 @@ class AgentManager:
             return None
 
     def set_default_agent(self, agent_id: str) -> bool:
-        """设置默认智能体"""
-        if agent_id not in self.agents:
+        """设置默认智能体（builtin 是特殊值，表示使用内置提示词）"""
+        if agent_id != "builtin" and agent_id not in self.agents:
             logger.warning(f"智能体不存在: {agent_id}")
             return False
 
