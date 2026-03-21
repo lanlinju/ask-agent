@@ -714,7 +714,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Run a shell command.\nLinux/macOS: use bash/zsh, forward slashes.\nWindows: use PowerShell, backslashes.",
+            "description": "Run a shell command (bash/zsh on Linux/macOS, PowerShell on Windows).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1711,7 +1711,7 @@ def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
             timeout=timeout or 10,
         )
         output = result.stdout + result.stderr
-        return output.strip() if output else "(no output)"
+        return output.strip()
     except Exception as e:
         return f"Error: {e}"
 
