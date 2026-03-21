@@ -121,7 +121,7 @@ n. 计算机，电脑
 AGENT_TYPES = {
     "explore": {
         "description": "Read-only agent for exploring code, finding files, searching",
-        "tools": ["bash", "read_file", "glob"],  # No write access
+        "tools": ["bash", "read_file", "glob", "grep"],  # No write access
         "prompt": "You are an exploration agent. Search and analyze, but never modify files. Return a concise summary.",
     },
     "code": {
@@ -131,7 +131,7 @@ AGENT_TYPES = {
     },
     "plan": {
         "description": "Planning agent for designing implementation strategies",
-        "tools": ["bash", "read_file", "glob"],  # Read-only
+        "tools": ["bash", "read_file", "glob", "grep"],  # Read-only
         "prompt": "You are a planning agent. Analyze the codebase and output a numbered implementation plan. Do NOT make changes.",
     },
 }
@@ -1135,6 +1135,31 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "grep",
+            "description": "Search file contents using a regex pattern. Returns file:line_number matches.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Regex pattern to search for",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory to search in (default: workspace root)",
+                    },
+                    "include": {
+                        "type": "string",
+                        "description": "File extension filter, e.g. '*.py', '*.js'",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "TodoWrite",
             "description": "Update the task list.",
             "parameters": {
@@ -1302,6 +1327,44 @@ def run_glob(pattern: str, path: str | None = None) -> str:
             return "(no matches)"
         print("\n".join(matches))
         return f"{len(matches)} files found\n" + "\n".join(matches)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def run_grep(pattern: str, path: str | None = None, include: str | None = None) -> str:
+    """Search file contents using a regex pattern."""
+    try:
+        base = safe_path(path) if path else WORKDIR
+        print(
+            f'\033[34m→ Grep "{pattern}" in {base.relative_to(WORKDIR) or "."}\033[0m'
+        )
+        regex = re.compile(pattern)
+        results = []
+
+        if base.is_file():
+            files = [base]
+        elif include:
+            files = sorted(base.rglob(include))
+        else:
+            files = sorted(p for p in base.rglob("*") if p.is_file())
+
+        for fp in files:
+            if not fp.is_file():
+                continue
+            try:
+                for i, line in enumerate(
+                    fp.read_text(errors="replace").splitlines(), 1
+                ):
+                    if regex.search(line):
+                        rel = fp.relative_to(WORKDIR)
+                        results.append(f"{rel}:{i}: {line.rstrip()}")
+            except (UnicodeDecodeError, PermissionError):
+                continue
+
+        if not results:
+            return "(no matches)"
+        print("\n".join(results))
+        return f"{len(results)} matches found\n" + "\n".join(results)
     except Exception as e:
         return f"Error: {e}"
 
@@ -1507,6 +1570,10 @@ def execute_tool(name: str, args: dict) -> str:
         return run_edit(args["path"], args["old_text"], args["new_text"])
     if name == "glob":
         return run_glob(args["pattern"], path=args.get("path"))
+    if name == "grep":
+        return run_grep(
+            args["pattern"], path=args.get("path"), include=args.get("include")
+        )
     if name == "TodoWrite":
         return run_todo(args["todos"])
     if name == "Task":
