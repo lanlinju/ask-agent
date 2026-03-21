@@ -1234,80 +1234,80 @@ def get_streaming_response(
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ("", "", [])
         for chunk in response.iter_lines():
+            if not chunk:
+                continue
             # ESC interrupt check
             if _interrupted:
                 break
-            if chunk:
-                decoded = chunk.decode("utf-8")
-                if not decoded.startswith("data:"):
+            decoded = chunk.decode("utf-8")
+            if not decoded.startswith("data:"):
+                continue
+            if decoded == "data: [DONE]":
+                logger.debug("data: [DONE]")
+                break
+            try:
+                data = json.loads(decoded[6:])  # 去掉 "data: " 前缀
+                # logger.debug("data: %s", data)
+                if len(data["choices"]) == 0:
+                    logger.debug("\nchoices length is 0")
                     continue
-                if decoded == "data: [DONE]":
-                    logger.debug("data: [DONE]")
+                if data["choices"][0]["finish_reason"] != None:
+                    finish_reason = data["choices"][0]["finish_reason"]
+                    logger.info("\nfinish_reason: %s", finish_reason)
+                    # 打印 token 使用情况
+                    stat_token(data)
+                    # 在角色模式下，如果因长度限制而停止，自动压缩上下文
+                    if finish_reason == "length" and current_mode == ROLE:
+                        print("\n📝 上下文即将达到限制，自动压缩对话历史...\n")
+                        summarizer()
                     break
-                try:
-                    data = json.loads(decoded[6:])  # 去掉 "data: " 前缀
-                    # logger.debug("data: %s", data)
-                    if len(data["choices"]) == 0:
-                        logger.debug("\nchoices length is 0")
-                        continue
-                    if data["choices"][0]["finish_reason"] != None:
-                        finish_reason = data["choices"][0]["finish_reason"]
-                        logger.info("\nfinish_reason: %s", finish_reason)
-                        # 打印 token 使用情况
-                        stat_token(data)
-                        # 在角色模式下，如果因长度限制而停止，自动压缩上下文
-                        if finish_reason == "length" and current_mode == ROLE:
-                            print("\n📝 上下文即将达到限制，自动压缩对话历史...\n")
-                            summarizer()
-                        break
-                    if "choices" in data and data["choices"][0]["delta"]:
-                        delta = data["choices"][0]["delta"]
-                        # 推理内容
-                        if delta.get("reasoning_content"):
-                            start_thinking()
-                            reasoning_content += delta["reasoning_content"]
+                if "choices" in data and data["choices"][0]["delta"]:
+                    delta = data["choices"][0]["delta"]
+                    # 推理内容
+                    if delta.get("reasoning_content"):
+                        start_thinking()
+                        reasoning_content += delta["reasoning_content"]
+                        if should_display:
+                            print(
+                                f"\033[90m{delta['reasoning_content']}\033[0m",
+                                end="",
+                                flush=True,
+                            )
+                    # 文本内容
+                    elif delta.get("content"):
+                        stop_thinking()
+                        content = delta["content"]
+                        if "<think>" in content:
+                            in_think_tag = True
                             if should_display:
                                 print(
-                                    f"\033[90m{delta['reasoning_content']}\033[0m",
-                                    end="",
-                                    flush=True,
+                                    "\033[34mThinking: \033[0m", end="", flush=True
                                 )
-                        # 文本内容
-                        elif delta.get("content"):
-                            stop_thinking()
-                            content = delta["content"]
-                            if "<think>" in content:
-                                in_think_tag = True
-                                if should_display:
-                                    print(
-                                        "\033[34mThinking: \033[0m", end="", flush=True
-                                    )
-                                content = content.replace("<think>", "")
-                            if "</think>" in content:
-                                in_think_tag = False
-                                continue
-                            if in_think_tag:
-                                # 在 think 标签内，作为推理内容
-                                reasoning_content += content
-                                if should_display:
-                                    print(
-                                        f"\033[90m{content}\033[0m", end="", flush=True
-                                    )
-                                continue
-                            collected_content += content
-                            if not silent:
-                                print(content, end="", flush=True)
-                        # 工具调用
-                        elif delta.get("tool_calls"):
-                            tool_calls = delta["tool_calls"]
-                            logger.debug("tool delta: %s", tool_calls)
-                            for tool_call in tool_calls:
-                                tool_calls_collected.append(tool_call)
-                except json.JSONDecodeError:
-                    continue
+                            content = content.replace("<think>", "")
+                        if "</think>" in content:
+                            in_think_tag = False
+                            continue
+                        if in_think_tag:
+                            # 在 think 标签内，作为推理内容
+                            reasoning_content += content
+                            if should_display:
+                                print(
+                                    f"\033[90m{content}\033[0m", end="", flush=True
+                                )
+                            continue
+                        collected_content += content
+                        if not silent:
+                            print(content, end="", flush=True)
+                    # 工具调用
+                    elif delta.get("tool_calls"):
+                        tool_calls = delta["tool_calls"]
+                        logger.debug("tool delta: %s", tool_calls)
+                        for tool_call in tool_calls:
+                            tool_calls_collected.append(tool_call)
+            except json.JSONDecodeError:
+                continue
 
     # logger.info("完整回答: %s", tool_calls_collected)
-
     return (collected_content, reasoning_content, merge_arguments(tool_calls_collected))
 
 
@@ -1831,7 +1831,7 @@ def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round:
     """
     if tool_call_round == 1:
         logger.debug("本轮问题没有工具调用，不需要清理")
-        messages[start_index].pop("reasoning_content", None) # 清理可能被中断的工具调用的推理内容
+        messages[start_index].pop("reasoning_content", None) # 清理可能被esc键中断的工具调用的推理内容
         return
 
     logger.info("清理推理内容，共清理%d轮", tool_call_round)
