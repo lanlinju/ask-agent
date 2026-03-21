@@ -836,7 +836,7 @@ def safe_path(p: str) -> Path:
 def run_read(path: str, limit: int = None) -> str:
     """Read file contents."""
     try:
-        print(f"Read {path}")
+        print(f"\033[34m→ Read {path}\033[0m")
         lines = safe_path(path).read_text().splitlines()
         if limit:
             lines = lines[:limit]
@@ -848,9 +848,14 @@ def run_read(path: str, limit: int = None) -> str:
 def run_write(path: str, content: str) -> str:
     """Write content to file."""
     try:
+        print(f"\033[34m→ Wrote {path}\033[0m")
         fp = safe_path(path)
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(content)
+        # 打印部分内容（最大800字符）
+        preview = content[:800]
+        suffix = "..." if len(content) > 800 else ""
+        print(f"{preview}{suffix}")
         return f"Wrote {len(content)} bytes to {path}"
     except Exception as e:
         return f"Error: {e}"
@@ -859,12 +864,13 @@ def run_write(path: str, content: str) -> str:
 def run_edit(path: str, old_text: str, new_text: str) -> str:
     """Replace exact text in file."""
     try:
+        print(f"\033[34m→ Edited {path}\033[0m")
         fp = safe_path(path)
         text = fp.read_text()
         if old_text not in text:
             return f"Error: Text not found in {path}"
         fp.write_text(text.replace(old_text, new_text, 1))
-        return f"Edited {path}"
+        return f"Edited {path}: replaced {len(old_text)} chars with {len(new_text)} chars"
     except Exception as e:
         return f"Error: {e}"
 
