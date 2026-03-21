@@ -252,6 +252,24 @@ class SkillLoader:
 SKILLS_DIR = WORKDIR / "skills"
 SKILLS = SkillLoader(SKILLS_DIR)
 
+
+def list_skills():
+    """列出所有可用的 Skills"""
+    skills = SKILLS.list_skills()
+    if not skills:
+        print("\n📭 暂无可用 Skills")
+        print("💡 提示: 在 skills/ 目录下创建包含 SKILL.md 的文件夹即可添加 Skill\n")
+        return
+
+    print("\n📋 可用 Skills:\n")
+    for name, skill in SKILLS.skills.items():
+        desc = skill.get("description", "")
+        print(f"  • {name}")
+        if desc:
+            print(f"    {desc}")
+    print()
+
+
 # Global MCP manager instance
 MCP_MANAGER = MCPManager()
 
@@ -1920,6 +1938,11 @@ def command(command: str):
         list_custom_commands()
         return
 
+    # 列出可用的 Skills
+    if command == "/skills":
+        list_skills()
+        return
+
     # 新增: 处理自定义命令
     if command.startswith("/"):
         cmd_name = command[1:].split()[0]
@@ -1980,6 +2003,7 @@ def show_help():
     /session      - 列出当前模式的所有会话
     /load <id>    - 加载指定会话（使用 /session 查看 ID）
     /commands     - 列出所有自定义命令
+    /skills       - 列出所有可用的 Skills
     /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
     /help         - 显示此帮助信息
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
