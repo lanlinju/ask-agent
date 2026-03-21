@@ -1880,7 +1880,7 @@ def command(command: str):
         return
 
     # 压缩对话
-    if command == "/summarize":
+    if command == "/compact":
         summarizer()
         return
 
@@ -1976,9 +1976,9 @@ def show_help():
     /model -l     - 列出所有可用模型
     /new          - 创建新会话
     /clear        - 清除当前对话历史
+    /compact      - 压缩对话历史，将前3/4的消息压缩为摘要
     /session      - 列出当前模式的所有会话
     /load <id>    - 加载指定会话（使用 /session 查看 ID）
-    /summarize    - 压缩对话历史，将前3/4的消息压缩为摘要
     /commands     - 列出所有自定义命令
     /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
     /help         - 显示此帮助信息
