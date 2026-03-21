@@ -656,6 +656,13 @@ def init_system_prompt(mode: int = ASK, role_id: Optional[str] = None):
         load_role_session(role_id)
 
 
+def clear_history():
+    """清除对话历史，保留系统提示词"""
+    global title_generated
+    messages[:] = messages[:1]
+    title_generated = False
+
+
 TOOLS = [
     {
         "type": "function",
@@ -1459,6 +1466,12 @@ def command(command: str):
         print("✅ 已创建新会话\n")
         return
 
+    # 清除对话历史
+    if command == "/clear":
+        clear_history()
+        print("✅ 已清除对话历史\n")
+        return
+
     # 启动 Telegram Bot
     if command == "/bot":
         if not BOT_TOKEN:
@@ -1556,6 +1569,7 @@ def show_help():
     /role         - 进入角色扮演模式
     /roles        - 列出所有可用角色
     /new          - 创建新会话
+    /clear        - 清除当前对话历史
     /session      - 列出当前模式的所有会话
     /load <id>    - 加载指定会话（使用 /session 查看 ID）
     /summarize    - 压缩对话历史，将前3/4的消息压缩为摘要
