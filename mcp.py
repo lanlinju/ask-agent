@@ -14,16 +14,19 @@ logger = logging.getLogger(__name__)
 
 class MCPError(Exception):
     """MCP protocol error"""
+
     pass
 
 
 class ConnectionError(MCPError):
     """Connection error"""
+
     pass
 
 
 class ToolCallError(MCPError):
     """Tool call error"""
+
     pass
 
 
@@ -39,7 +42,7 @@ class StdioClient:
         self,
         command: List[str],
         env: Optional[Dict[str, str]] = None,
-        cwd: Optional[Union[str, Path]] = None
+        cwd: Optional[Union[str, Path]] = None,
     ):
         """
         Initialize stdio client
@@ -68,6 +71,7 @@ class StdioClient:
         try:
             # Prepare environment variables
             import os
+
             process_env = None
             if self.env:
                 process_env = os.environ.copy()
@@ -77,9 +81,13 @@ class StdioClient:
             # Validate working directory
             if self.cwd:
                 if not self.cwd.exists():
-                    raise ConnectionError(f"Working directory does not exist: {self.cwd}")
+                    raise ConnectionError(
+                        f"Working directory does not exist: {self.cwd}"
+                    )
                 if not self.cwd.is_dir():
-                    raise ConnectionError(f"Working directory is not a directory: {self.cwd}")
+                    raise ConnectionError(
+                        f"Working directory is not a directory: {self.cwd}"
+                    )
                 logger.debug(f"Using working directory: {self.cwd}")
 
             # Start subprocess
@@ -91,10 +99,12 @@ class StdioClient:
                 text=True,
                 bufsize=0,
                 env=process_env,
-                cwd=str(self.cwd) if self.cwd else None
+                cwd=str(self.cwd) if self.cwd else None,
             )
 
-            logger.info(f"Process started: PID={self.process.pid}, command={' '.join(self.command)}")
+            logger.info(
+                f"Process started: PID={self.process.pid}, command={' '.join(self.command)}"
+            )
             if self.cwd:
                 logger.info(f"Working directory: {self.cwd}")
 
@@ -102,10 +112,7 @@ class StdioClient:
             init_params = {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {
-                    "name": "Ask Agent MCP Client",
-                    "version": "1.0.0"
-                }
+                "clientInfo": {"name": "Ask Agent MCP Client", "version": "1.0.0"},
             }
 
             response = self._send_request("initialize", init_params)
@@ -117,7 +124,9 @@ class StdioClient:
             self.close()
             raise ConnectionError(f"Connection failed: {e}") from e
 
-    def _send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _send_request(
+        self, method: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Send JSON-RPC request
 
@@ -138,7 +147,7 @@ class StdioClient:
             "jsonrpc": "2.0",
             "method": method,
             "params": params or {},
-            "id": generate_request_id()
+            "id": generate_request_id(),
         }
 
         try:
@@ -151,9 +160,12 @@ class StdioClient:
             # Read response
             response_line = self.process.stdout.readline()
             if not response_line.strip():
-                stderr_output = self.process.stderr.read() if self.process.stderr else ""
+                stderr_output = (
+                    self.process.stderr.read() if self.process.stderr else ""
+                )
                 raise MCPError(
-                    f"Received empty response. Error output: {stderr_output}")
+                    f"Received empty response. Error output: {stderr_output}"
+                )
 
             logger.debug(f"Received response: {response_line.strip()}")
             response = json.loads(response_line.strip())
@@ -162,7 +174,8 @@ class StdioClient:
             if "error" in response:
                 error = response["error"]
                 raise MCPError(
-                    f"Server error [{error.get('code')}]: {error.get('message')}")
+                    f"Server error [{error.get('code')}]: {error.get('message')}"
+                )
 
             return response.get("result", {})
 
@@ -179,8 +192,7 @@ class StdioClient:
             List of tools
         """
         if not self._initialized:
-            raise MCPError(
-                "Client not initialized, please call connect() first")
+            raise MCPError("Client not initialized, please call connect() first")
 
         result = self._send_request("tools/list")
         tools = result.get("tools", [])
@@ -202,14 +214,10 @@ class StdioClient:
             ToolCallError: Raised when tool call fails
         """
         if not self._initialized:
-            raise MCPError(
-                "Client not initialized, please call connect() first")
+            raise MCPError("Client not initialized, please call connect() first")
 
         try:
-            params = {
-                "name": name,
-                "arguments": arguments
-            }
+            params = {"name": name, "arguments": arguments}
             result = self._send_request("tools/call", params)
             logger.info(f"Tool '{name}' call successful")
             return result
@@ -235,7 +243,12 @@ class StdioClient:
 class StreambleHttpClient:
     """HTTP-based MCP client (supports streaming responses)"""
 
-    def __init__(self, server_url: str, timeout: int = 30, headers: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        server_url: str,
+        timeout: int = 30,
+        headers: Optional[Dict[str, str]] = None,
+    ):
         """
         Initialize HTTP client
 
@@ -244,7 +257,7 @@ class StreambleHttpClient:
             timeout: Request timeout in seconds
             headers: Additional headers to include in requests
         """
-        self.server_url = server_url.rstrip('/')
+        self.server_url = server_url.rstrip("/")
         self.timeout = timeout
         self.headers = headers or {}
         self.session = requests.Session()
@@ -276,20 +289,20 @@ class StreambleHttpClient:
                 "capabilities": {},
                 "clientInfo": {
                     "name": "Ask Agent Streamable HTTP MCP Client",
-                    "version": "1.0.0"
-                }
+                    "version": "1.0.0",
+                },
             }
 
             # Get session_id during initialization
             results = list(self._send_request("initialize", init_params))
             if not results:
-                raise ConnectionError(
-                    "Initialization failed: No response received")
+                raise ConnectionError("Initialization failed: No response received")
 
             result = results[0]
             self._initialized = True
             logger.info(
-                f"Connection successful. Session ID: {self.session_id}, Server: {result.get('serverInfo')}")
+                f"Connection successful. Session ID: {self.session_id}, Server: {result.get('serverInfo')}"
+            )
             return result
 
         except Exception as e:
@@ -299,7 +312,7 @@ class StreambleHttpClient:
         """Prepare request headers"""
         headers = {
             "Accept": "application/json, text/event-stream",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         if self.session_id:
             headers["mcp-session-id"] = self.session_id
@@ -307,10 +320,7 @@ class StreambleHttpClient:
         return headers
 
     def _send_request(
-        self,
-        method: str,
-        params: Optional[Dict[str, Any]] = None,
-        stream: bool = False
+        self, method: str, params: Optional[Dict[str, Any]] = None, stream: bool = False
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Send HTTP request (supports streaming responses)
@@ -330,12 +340,12 @@ class StreambleHttpClient:
             "jsonrpc": "2.0",
             "method": method,
             "params": params or {},
-            "id": generate_request_id()
+            "id": generate_request_id(),
         }
 
         logger.debug(f"Sending request: {request}")
         headers = self._prepare_headers()
-        is_initialization = (method == "initialize")
+        is_initialization = method == "initialize"
 
         try:
             with self.session.post(
@@ -343,7 +353,7 @@ class StreambleHttpClient:
                 json=request,
                 headers=headers,
                 stream=stream,
-                timeout=self.timeout
+                timeout=self.timeout,
             ) as response:
                 response.raise_for_status()
 
@@ -361,7 +371,8 @@ class StreambleHttpClient:
                     if "error" in data:
                         error = data["error"]
                         raise MCPError(
-                            f"Server error [{error.get('code')}]: {error.get('message')}")
+                            f"Server error [{error.get('code')}]: {error.get('message')}"
+                        )
 
                     if "result" in data:
                         yield data["result"]
@@ -371,15 +382,16 @@ class StreambleHttpClient:
                     for line in response.iter_lines():
                         if line and line.startswith(b"data: "):
                             try:
-                                event_data = json.loads(
-                                    line[6:].decode("utf-8"))
+                                event_data = json.loads(line[6:].decode("utf-8"))
                                 logger.debug(
-                                    f"Processing SSE stream response: {event_data}")
+                                    f"Processing SSE stream response: {event_data}"
+                                )
 
                                 if "error" in event_data:
                                     error = event_data["error"]
                                     raise MCPError(
-                                        f"Stream error [{error.get('code')}]: {error.get('message')}")
+                                        f"Stream error [{error.get('code')}]: {error.get('message')}"
+                                    )
 
                                 # Return result or notification
                                 if "result" in event_data:
@@ -388,8 +400,7 @@ class StreambleHttpClient:
                                     yield event_data  # Notification event
 
                             except json.JSONDecodeError:
-                                logger.warning(
-                                    f"Failed to parse SSE data: {line}")
+                                logger.warning(f"Failed to parse SSE data: {line}")
                                 continue
                 else:
                     logger.warning(f"Unknown content-type: {content_type}")
@@ -405,8 +416,7 @@ class StreambleHttpClient:
             List of tools
         """
         if not self._initialized:
-            raise MCPError(
-                "Client not initialized, please call connect() first")
+            raise MCPError("Client not initialized, please call connect() first")
 
         results = list(self._send_request("tools/list"))
         if not results:
@@ -417,10 +427,7 @@ class StreambleHttpClient:
         return tools
 
     def call_tool(
-        self,
-        name: str,
-        arguments: Dict[str, Any],
-        stream: bool = False
+        self, name: str, arguments: Dict[str, Any], stream: bool = False
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Call specified tool
@@ -437,14 +444,10 @@ class StreambleHttpClient:
             ToolCallError: Raised when tool call fails
         """
         if not self._initialized:
-            raise MCPError(
-                "Client not initialized, please call connect() first")
+            raise MCPError("Client not initialized, please call connect() first")
 
         try:
-            params = {
-                "name": name,
-                "arguments": arguments
-            }
+            params = {"name": name, "arguments": arguments}
 
             if stream:
                 params["stream"] = True
@@ -526,11 +529,7 @@ class MCPManager:
                     logger.error(f"服务器 '{name}' 命令无效")
                     return False
 
-                client = StdioClient(
-                    cmd,
-                    env=server.env,
-                    cwd=server.cwd
-                )
+                client = StdioClient(cmd, env=server.env, cwd=server.cwd)
                 client.connect()
                 logger.info(f"✓ 已连接 stdio 服务器: {name}")
 
@@ -539,9 +538,8 @@ class MCPManager:
                     logger.error(f"服务器 '{name}' 缺少 URL")
                     return False
                 client = StreambleHttpClient(
-                    server.url,
-                    timeout=server.timeout or 30,
-                    headers=server.headers)
+                    server.url, timeout=server.timeout or 30, headers=server.headers
+                )
                 client.connect()
                 logger.info(f"✓ 已连接 HTTP 服务器: {name}")
 
@@ -557,7 +555,8 @@ class MCPManager:
             # 保存客户端和工具
             self.active_clients[name] = (client, openai_tools)
             logger.info(
-                f"加载了 {len(openai_tools)} 个工具: {[t['function']['name'] for t in openai_tools]}")
+                f"加载了 {len(openai_tools)} 个工具: {[t['function']['name'] for t in openai_tools]}"
+            )
 
             return True
 
@@ -613,7 +612,9 @@ class MCPManager:
                         if isinstance(item, dict) and item.get("type") == "text":
                             text_parts.append(item.get("text", ""))
 
-                    logger.debug(f"MCP {server_name}:{tool_name} Tool Result: {content}")        
+                    logger.debug(
+                        f"MCP {server_name}:{tool_name} Tool Result: {content}"
+                    )
                     return "\n".join(text_parts) if text_parts else str(result)
                 return str(result)
 
@@ -640,7 +641,7 @@ class MCPManager:
                     "properties": input_schema.get("properties", {}),
                     "required": input_schema.get("required", []),
                 },
-            }
+            },
         }
 
     def interactive_select_server(self) -> List[str]:
@@ -679,7 +680,9 @@ class MCPManager:
 
         while True:
             try:
-                user_input = input("\n请输入要连接的服务器编号 (支持多个，用空格分隔，按 Enter 退出): ").strip()
+                user_input = input(
+                    "\n请输入要连接的服务器编号 (支持多个，用空格分隔，按 Enter 退出): "
+                ).strip()
 
                 if not user_input:
                     print("取消操作")
@@ -763,9 +766,29 @@ class MCPManager:
             if is_connected:
                 _, tools = self.active_clients[name]
                 if tools:
-                    tool_names = [tool['function']['name'].replace(f"mcp_{name}_", "") for tool in tools]
+                    tool_names = [
+                        tool["function"]["name"].replace(f"mcp_{name}_", "")
+                        for tool in tools
+                    ]
                     print(f"    工具: {', '.join(tool_names)}")
             print()
+
+    def get_descriptions(self) -> str:
+        """Generate MCP server descriptions for system prompt."""
+        if not self.loaded:
+            self.load_config()
+
+        enabled_servers = self.config.list_enabled_servers()
+        if not enabled_servers:
+            return "(no MCP servers available)"
+
+        lines = []
+        for name in enabled_servers:
+            server = self.config.get_server(name)
+            desc = server.description if server and server.description else ""
+            lines.append(f"- {name}: {desc}")
+
+        return "\n".join(lines)
 
     def cleanup(self):
         """清理所有连接"""

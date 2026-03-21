@@ -43,6 +43,7 @@ if sys.platform != "win32":
 
 _interrupted = False
 
+
 def _start_esc_listener(stop_event: threading.Event):
     """监听 ESC 键。用 cbreak 模式：逐字符读取，保留输出处理(换行正常)。"""
     global _interrupted
@@ -553,6 +554,9 @@ Loop: plan -> act with tools -> report.
 **Skills available** (invoke with Skill tool when task matches):
 {SKILLS.get_descriptions()}
 
+**MCP servers available** (invoke with MCP tool to connect):
+{MCP_MANAGER.get_descriptions()}
+
 **Subagents available** (invoke with Task tool for focused subtasks):
 {get_agent_descriptions()}
 
@@ -863,6 +867,23 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "MCP",
+            "description": f"""Connect to an MCP server to use its tools.\n\nAvailable servers:\n{MCP_MANAGER.get_descriptions()}""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "server": {
+                        "type": "string",
+                        "description": "Name of the MCP server to connect",
+                    }
+                },
+                "required": ["server"],
+            },
+        },
+    },
 ]
 
 
@@ -948,6 +969,33 @@ def run_skill(skill_name: str) -> str:
 </skill-loaded>
 
 Follow the instructions in the skill above to complete the user's task."""
+
+
+def run_mcp(server_name: str) -> str:
+    """Connect to an MCP server and inject its tools."""
+    print(f"\033[34m→ Connecting to {server_name}\033[0m")
+
+    if not MCP_MANAGER.loaded:
+        MCP_MANAGER.load_config()
+
+    server = MCP_MANAGER.get_server_info(server_name)
+    if not server:
+        available = ", ".join(MCP_MANAGER.config.list_enabled_servers()) or "none"
+        return f"Error: Unknown MCP server '{server_name}'. Available: {available}"
+
+    if not server.enabled:
+        return f"Error: MCP server '{server_name}' is disabled"
+
+    if MCP_MANAGER.is_server_connected(server_name):
+        return f"MCP server '{server_name}' already connected"
+
+    if not MCP_MANAGER.connect_server(server_name):
+        return f"Error: Failed to connect to MCP server '{server_name}'"
+
+    _, tools = MCP_MANAGER.active_clients[server_name]
+    TOOLS.extend(tools)
+
+    return f"Connected to MCP server: {server_name} ({len(tools)} tools)"
 
 
 def merge_arguments(tool_calls_collected: List) -> List:
@@ -1099,6 +1147,8 @@ def execute_tool(name: str, args: dict) -> str:
         return run_task(args["description"], args["prompt"], args["agent_type"])
     if name == "Skill":
         return run_skill(args["skill"])
+    if name == "MCP":
+        return run_mcp(args["server"])
     if name.startswith("mcp_"):
         import re
 
@@ -1280,9 +1330,7 @@ def get_streaming_response(
                         if "<think>" in content:
                             in_think_tag = True
                             if should_display:
-                                print(
-                                    "\033[34mThinking: \033[0m", end="", flush=True
-                                )
+                                print("\033[34mThinking: \033[0m", end="", flush=True)
                             content = content.replace("<think>", "")
                         if "</think>" in content:
                             in_think_tag = False
@@ -1291,9 +1339,7 @@ def get_streaming_response(
                             # 在 think 标签内，作为推理内容
                             reasoning_content += content
                             if should_display:
-                                print(
-                                    f"\033[90m{content}\033[0m", end="", flush=True
-                                )
+                                print(f"\033[90m{content}\033[0m", end="", flush=True)
                             continue
                         collected_content += content
                         if not silent:
@@ -1770,7 +1816,7 @@ def agent(prompt: str) -> str:
             _esc_stop.set()
             if t is not None:
                 t.join(timeout=0.5)
-            
+
         # 构建助手消息并添加到历史
         assistant_msg = {"role": "assistant", "content": content}
         if tool_calls:
@@ -1831,7 +1877,9 @@ def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round:
     """
     if tool_call_round == 1:
         logger.debug("本轮问题没有工具调用，不需要清理")
-        messages[start_index].pop("reasoning_content", None) # 清理可能被esc键中断的工具调用的推理内容
+        messages[start_index].pop(
+            "reasoning_content", None
+        )  # 清理可能被esc键中断的工具调用的推理内容
         return
 
     logger.info("清理推理内容，共清理%d轮", tool_call_round)
