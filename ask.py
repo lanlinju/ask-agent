@@ -121,7 +121,7 @@ n. 计算机，电脑
 AGENT_TYPES = {
     "explore": {
         "description": "Read-only agent for exploring code, finding files, searching",
-        "tools": ["bash", "read_file"],  # No write access
+        "tools": ["bash", "read_file", "glob"],  # No write access
         "prompt": "You are an exploration agent. Search and analyze, but never modify files. Return a concise summary.",
     },
     "code": {
@@ -131,7 +131,7 @@ AGENT_TYPES = {
     },
     "plan": {
         "description": "Planning agent for designing implementation strategies",
-        "tools": ["bash", "read_file"],  # Read-only
+        "tools": ["bash", "read_file", "glob"],  # Read-only
         "prompt": "You are a planning agent. Analyze the codebase and output a numbered implementation plan. Do NOT make changes.",
     },
 }
@@ -1114,6 +1114,27 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "glob",
+            "description": "Find files matching a glob pattern (e.g. '**/*.py', 'src/**/*.ts').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to match files",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Base directory to search from (default: workspace root)",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "TodoWrite",
             "description": "Update the task list.",
             "parameters": {
@@ -1265,6 +1286,22 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
         return (
             f"Edited {path}: replaced {len(old_text)} chars with {len(new_text)} chars"
         )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def run_glob(pattern: str, path: str | None = None) -> str:
+    """Find files matching a glob pattern."""
+    try:
+        base = safe_path(path) if path else WORKDIR
+        print(f"\033[34m→ Glob {pattern} in {base.relative_to(WORKDIR) or '.'}\033[0m")
+        matches = sorted(
+            str(p.relative_to(WORKDIR)) for p in base.glob(pattern) if p.is_file()
+        )
+        if not matches:
+            return "(no matches)"
+        print("\n".join(matches))
+        return f"{len(matches)} files found\n" + "\n".join(matches)
     except Exception as e:
         return f"Error: {e}"
 
@@ -1468,6 +1505,8 @@ def execute_tool(name: str, args: dict) -> str:
         return run_write(args["path"], args["content"])
     if name == "edit_file":
         return run_edit(args["path"], args["old_text"], args["new_text"])
+    if name == "glob":
+        return run_glob(args["pattern"], path=args.get("path"))
     if name == "TodoWrite":
         return run_todo(args["todos"])
     if name == "Task":
