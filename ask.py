@@ -1010,6 +1010,7 @@ def merge_arguments(tool_calls_collected: List) -> List:
         if index not in tool_calls_by_index:
             tool_calls_by_index[index] = {
                 "id": "",
+                "index": index,
                 "type": "function",
                 "function": {"name": "", "arguments": ""},
             }
