@@ -1,6 +1,6 @@
 # Ask Agent (ag)
 
- 一个基于 DeepSeek API 的高效终端问答工具，支持智能体模式
+一个基于 DeepSeek API 的高效终端问答工具，支持智能体模式
 
 ## 特性
 
@@ -82,7 +82,7 @@ export PATH="$HOME/.local/bin:$PATH"
       "enabled": true,
       "options": {
         "baseURL": "https://api.deepseek.com/v1",
-        "apiKey": "env:DEEPSEEK_API_KEY",
+        "apiKey": "env:DEEPSEEK_API_KEY"
       },
       "models": {
         "deepseek-chat": {
@@ -98,13 +98,14 @@ export PATH="$HOME/.local/bin:$PATH"
       "enabled": true,
       "options": {
         "baseURL": "https://api.openai.com/v1",
-        "apiKey": "env:OPENAI_API_KEY",
+        "apiKey": "env:OPENAI_API_KEY"
       },
       "models": {
         "gpt-4o": {
           "name": "GPT-4o"
         },
         "gpt-4-turbo": {
+          "name": "GPT-4 Turbo"
         }
       }
     }
@@ -169,9 +170,11 @@ LOG_LEVEL=ERROR
  |----------|---------|---------|
  | `config.json` | `~/.ask-agent/config.json` | 固定存储在用户目录 |
  | `roles.json` | `~/.ask-agent/roles.json` | 固定存储在用户目录 |
+ | `agents.json` | `./agents.json` | 优先项目目录，备选用户目录 |
  | `providers.json` | `~/.ask-agent/providers.json` | 优先用户目录，备选项目目录 |
  | `command.json` | 当前目录 `command.json` | 优先项目目录，备选用户目录 |
- | `roles/` 目录 | `~/.ask-agent/roles/` | 优先项目目录（有文件），备选用户目录 |
+ | `roles/` 目录 | `./roles/` | 优先项目目录（有文件），备选用户目录 |
+ | `agents/` 目录 | `./agents/` | 优先项目目录（有文件），备选用户目录 |
 
  **配置目录结构：**
  ```
@@ -179,9 +182,25 @@ LOG_LEVEL=ERROR
  ├── config.json       # 全局配置文件（模式、设置等）
  ├── providers.json    # 全局 AI Provider 配置
  ├── roles.json        # 全局角色配置
- └── roles/            # 全局角色文件
-     ├── frieren.md
-     └── 纳西妲.md
+ ├── roles/            # 全局角色文件
+ │   ├── frieren.md
+ │   └── 纳西妲.md
+ ├── agents/           # 全局智能体文件
+ │   ├── coding-agent.md
+ │   └── command-line-agent.md
+ ├── skills/           # 技能目录
+ │   ├── pdf/
+ │   │   └── SKILL.md
+ │   └── mcp-builder/
+ │       └── SKILL.md
+ ├── command/          # 自定义命令目录
+ │   ├── review.md
+ │   └── explain.md
+ └── cache/            # 缓存目录
+     ├── ask/
+     ├── agent/
+     ├── translate/
+     └── role/
  ```
 
  **首次使用：**
@@ -215,48 +234,91 @@ python ag
 输入问题后，ag 会保持对话历史，支持多轮交互。
 
 **支持的命令：**
-- `exit` - 退出程序
-- `/ask` - 进入问答模式（清空对话历史）
-- `/agent` - 进入智能体模式（清空对话历史）
-- `/e` - 进入翻译模式（清空对话历史）
-- `/role` - 进入角色扮演模式
-- `/roles` - 列出所有可用角色（需在角色扮演模式下使用）
-- `/new` - 创建新会话（清空对话历史）
-- `/clear` - 清除当前对话历史（保留系统提示词）
-- `/session` - 列出当前模式的所有会话
-- `/load <id>` - 加载指定会话（使用 `/session` 查看 ID）
-- `/summarize` - 压缩对话历史，将前 3/4 的消息压缩为摘要
-- `/models` - 交互式选择和切换模型
-- `/help` - 显示帮助信息
- - `/mcp` - 交互式选择并连接 MCP 服务器
- - `/mcp -l` - 列出所有可用的 MCP 服务器
- - `/commands` - 列出所有自定义命令
- - `!command` - 执行shell命令（如 `!ls`, `!pwd`, `!cat file.txt`），命令和输出会自动添加到消息历史
+
+| 命令 | 说明 |
+|------|------|
+| `exit` | 退出程序 |
+| `/ask` | 进入问答模式 |
+| `/agent` | 进入智能体模式 |
+| `/agent <name>` | 进入指定智能体 |
+| `/agent -l` | 列出所有可用智能体 |
+| `/agents` | 交互式选择智能体 |
+| `/e` | 进入翻译模式 |
+| `/role` | 进入角色扮演模式 |
+| `/role <name>` | 进入指定角色 |
+| `/role -l` | 列出所有可用角色 |
+| `/roles` | 交互式选择角色 |
+| `/model` | 交互式选择模型 |
+| `/model <id>` | 切换到指定ID的模型 |
+| `/model -l` | 列出所有可用模型 |
+| `/new` | 创建新会话（清空对话历史） |
+| `/clear` | 清除当前对话历史（保留系统提示词） |
+| `/compact` | 压缩对话历史，将前 3/4 的消息压缩为摘要 |
+| `/session` | 列出当前模式的所有会话 |
+| `/load <id>` | 加载指定会话（使用 `/session` 查看 ID） |
+| `/skills` | 列出所有可用的 Skills |
+| `/commands` | 列出所有自定义命令 |
+| `/mcp` | 交互式选择并连接 MCP 服务器 |
+| `/mcp -l` | 列出所有可用的 MCP 服务器 |
+| `/bot` | 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN） |
+| `/help` | 显示帮助信息 |
+| `!command` | 执行shell命令（如 `!ls`, `!pwd`） |
 
 ### 模型切换
 
 ag 支持在多个 AI Provider 之间切换模型：
 
 ```bash
-# 交互式选择模型
-ag /models
+# 列出所有可用模型
+ag
+/model -l
 
-# 示例输出：
-# 📋 可用模型:
-#
-#   DeepSeek:
-#   → [1] deepseek/deepseek-chat: DeepSeek Chat
-#     [2] deepseek/deepseek-reasoner: DeepSeek Reasoner
-#
-#   OpenAI:
-#     [3] openai/gpt-4o: GPT-4o
-#     [4] openai/gpt-4-turbo: GPT-4 Turbo
-#
-# 请输入模型编号 (0 or 直接Enter 取消): 3
-# ✅ 已切换到模型: GPT-4o (openai)
+# 切换到指定模型
+/model deepseek/deepseek-chat
+/model openai/gpt-4o
+
+# 交互式选择模型
+/model
 ```
 
 选择的模型会自动保存为默认模型，下次启动时自动使用。
+
+### 智能体切换
+
+ag 支持多个智能体配置，可以快速切换：
+
+```bash
+# 列出所有可用智能体
+ag
+/agent -l
+
+# 切换到指定智能体
+/agent coding-agent
+/agent command-line-agent
+/agent builtin  # 使用内置智能体
+
+# 交互式选择智能体
+/agents
+```
+
+智能体配置存放在 `agents/` 目录下的 `.md` 文件中，每个文件定义一个智能体的系统提示词。
+
+### 角色切换
+
+ag 支持多个角色配置，可以快速切换：
+
+```bash
+# 列出所有可用角色
+ag
+/role -l
+
+# 切换到指定角色
+/role frieren
+/role 纳西妲
+
+# 交互式选择角色
+/roles
+```
 
 ### 2. 一问一答模式
 
@@ -299,7 +361,7 @@ echo "解释一下这个命令" | ag
 cat file.py | ag "这段代码有什么问题？"
 ```
 
-### 5. 无上下文模式
+### 6. 无上下文模式
 
 不记忆对话历史，每次问答后清空历史：
 
@@ -398,8 +460,8 @@ ag
 ag
 /role
 
-# 或使用 --role 选项直接指定角色
-ag --role frieren
+# 或使用 /role <name> 直接指定角色
+/role frieren
 
 # 进入角色扮演模式后，使用 /roles 切换角色
 /roles
@@ -532,6 +594,15 @@ ag
 
 Ask Agent 支持自定义命令功能，可以将常用的提示词模板保存为命令，通过 `/命令名` 快速调用。
 
+### 目录结构
+
+```bash
+command/
+├── review.md      # 对应 /review 命令
+├── explain.md     # 对应 /explain 命令
+└── debug.md       # 对应 /debug 命令
+```
+
 ### 创建命令
 
 **方式一：Markdown 文件**
@@ -650,6 +721,77 @@ Ask Agent 支持角色扮演模式，可以与预设角色进行对话。
 
   每个角色的对话历史独立存储在 `~/.ask-agent/cache/role/<角色id>/` 目录下。
 
+## 智能体模式配置
+
+Ask Agent 支持多个智能体配置，可以快速切换不同的智能体。
+
+ ### 创建智能体
+
+ 创建智能体只需在 `agents/` 目录下创建以智能体命名的 `.md` 文件，文件内容即为智能体的系统提示词。
+
+ **智能体文件位置：**
+ - 项目目录 `agents/` （优先）
+- 全局目录 `~/.ask-agent/agents/` （备选）
+
+ ```bash
+ # 项目目录（优先）
+ agents/
+ ├── coding-agent.md           # 编程智能体
+ ├── command-line-agent.md     # 命令行智能体
+ └── ...
+
+ # 或全局目录（备选）
+ ~/.ask-agent/agents/
+ ├── coding-agent.md
+ └── command-line-agent.md
+ ```
+
+ **创建步骤：**
+
+ 1. 在 `agents/` 或 `~/.ask-agent/agents/` 目录下创建 `<智能体名>.md` 文件
+ 2. 文件内容定义智能体的系统提示词
+ 3. 使用 `/agent` 命令进入智能体模式，选择智能体开始对话
+
+**智能体提示词示例（`agents/coding-agent.md`）：**
+
+```markdown
+# Coding Agent
+
+You are a specialized coding assistant with expertise in software development.
+
+## Core Responsibilities
+- Writing clean, efficient, and well-documented code
+- Debugging and troubleshooting code issues
+- Code refactoring and optimization
+```
+
+ ### 高级配置（可选）
+
+ 如需自定义智能体显示名称或描述，可在项目目录创建 `agents.json` 配置文件：
+
+```json
+{
+  "default_agent": "builtin",
+  "agents": {
+    "coding-agent": {
+      "name": "coding-agent",
+      "description": "专业编程助手，专注于代码开发、调试和优化",
+      "prompt_file": "coding-agent.md"
+    },
+    "command-line-agent": {
+      "name": "command-line-agent",
+      "description": "命令行操作专家，专注于终端命令、脚本和系统管理",
+      "prompt_file": "command-line-agent.md"
+    }
+  }
+}
+```
+
+- `name`: 智能体显示名称（默认使用文件名）
+- `description`: 智能体描述，列出智能体时显示
+- `prompt_file`: 提示词文件名（默认 `<智能体名>.md`）
+- `default_agent`: 默认智能体，`"builtin"` 表示使用内置提示词
+
 ## 运行示例
 ```bash
 ➜  ask-agent git:(main) ✗ ./ag
@@ -747,7 +889,7 @@ LOG_LEVEL=ERROR
 
 - **记忆模式（默认）** - 保持完整的对话历史，支持多轮追问
 - **无上下文模式** - 使用 `-n` 选项，每次问答后清空历史，适合独立问题
-- **对话压缩** - 使用 `/summarize` 命令，压缩历史对话
+- **对话压缩** - 使用 `/compact` 命令，压缩历史对话
 
 ### 多模式支持
 
@@ -841,6 +983,7 @@ ag 支持任何兼容 OpenAI API 格式的 Provider：
 - **技能系统** - 可扩展的技能加载机制，支持领域知识注入
 - **子智能体** - 支持派生子智能体处理特定任务
 - **角色扮演系统** - 支持多角色管理，每个角色独立对话历史
+- **智能体系统** - 支持多智能体配置，可快速切换不同智能体
 - **MCP 集成** - 支持 Model Context Protocol，可连接外部工具服务器
 
 ## 系统提示词
@@ -865,6 +1008,7 @@ ag 根据不同模式使用不同的系统提示词：
 - 任务列表管理
 - 工具优先于解释
 - 支持调用已连接的 MCP 服务器工具
+- 支持加载自定义智能体提示词
 
 ### 角色扮演模式
 - 加载角色自定义提示词
@@ -880,7 +1024,45 @@ ag 支持通过 `skills/` 目录加载可扩展的技能模块。每个技能是
 - **references/**（可选）- 参考文档
 - **assets/**（可选）- 模板和输出文件
 
+### 目录结构
+
+```bash
+skills/
+├── pdf/
+│   ├── SKILL.md          # 技能描述和指令
+│   ├── scripts/          # 可执行脚本（可选）
+│   │   └── merge.py
+│   ├── references/       # 参考文档（可选）
+│   │   └── api-docs.md
+│   └── assets/           # 模板和输出文件（可选）
+│       └── template.html
+├── mcp-builder/
+│   └── SKILL.md
+└── code-review/
+    └── SKILL.md
+```
+
+### SKILL.md 格式
+
+```markdown
+---
+name: pdf
+description: Process PDF files - extract text, create PDFs, merge documents.
+---
+
+# PDF Processing Skill
+
+Your instructions here...
+```
+
  智能体会自动识别并加载这些技能，在任务匹配时使用相应的领域知识。
+
+### 查看可用技能
+
+```bash
+ag
+/skills       # 列出所有可用的 Skills
+```
 
 ## 配置管理
 
@@ -898,13 +1080,24 @@ Ask Agent 使用统一的配置管理系统，支持全局配置和项目本地�
  ├── roles/            # 全局角色文件
  │   ├── frieren.md
  │   └── 纳西妲.md
- ├── cache/            # 全局缓存目录
- │   ├── ask/          # 问答模式会话
- │   ├── agent/        # 智能体模式会话
- │   ├── translate/     # 翻译模式会话
- │   └── role/         # 角色扮演模式会话
- │       └── <角色id>/
- └── command.json      # 自定义命令（可选）
+ ├── agents/           # 全局智能体文件
+ │   ├── coding-agent.md
+ │   └── command-line-agent.md
+ ├── skills/           # 技能目录
+ │   ├── pdf/
+ │   │   └── SKILL.md
+ │   └── mcp-builder/
+ │       └── SKILL.md
+ ├── command/          # 自定义命令目录
+ │   ├── review.md
+ │   └── explain.md
+ ├── command.json      # 自定义命令配置（可选）
+ └── cache/            # 全局缓存目录
+     ├── ask/          # 问答模式会话
+     ├── agent/        # 智能体模式会话
+     ├── translate/    # 翻译模式会话
+     └── role/         # 角色扮演模式会话
+         └── <角色id>/
  ```
 
 ### 项目本地配置
@@ -917,9 +1110,19 @@ Ask Agent 使用统一的配置管理系统，支持全局配置和项目本地�
 │   └── roles.json    # 项目角色配置
 ├── roles/            # 项目角色文件（可选）
 │   └── custom.md
-├── command.json      # 项目自定义命令（可选）
-└── command/          # 项目命令文件（可选）
-    └── custom.md
+├── agents/           # 项目智能体文件（可选）
+│   └── custom.md
+├── agents.json       # 项目智能体配置（可选）
+├── skills/           # 项目技能目录（可选）
+│   └── custom-skill/
+│       ├── SKILL.md
+│       ├── scripts/
+│       ├── references/
+│       └── assets/
+├── command/          # 项目命令目录（可选）
+│   └── review.md
+├── command.json      # 项目自定义命令配置（可选）
+└── providers.json    # 项目 Provider 配置（可选）
 ```
 
 ### 配置文件优先级
@@ -930,9 +1133,13 @@ Ask Agent 使用统一的配置管理系统，支持全局配置和项目本地�
 |----------|---------|
 | `config.json` | 固定使用 `~/.ask-agent/config.json` |
 | `roles.json` | 固定使用 `~/.ask-agent/roles.json` |
+| `agents.json` | 1. 项目目录 `agents.json`<br>2. `~/.ask-agent/agents.json` |
 | `providers.json` | 1. `~/.ask-agent/providers.json`<br>2. 项目目录 `providers.json` |
 | `command.json` | 1. 项目目录 `command.json`<br>2. `~/.ask-agent/command.json` |
- | `roles/` 目录 | 1. 项目目录 `roles/`（有文件）<br>2. `~/.ask-agent/roles/` |
+| `roles/` 目录 | 1. 项目目录 `roles/`（有文件）<br>2. `~/.ask-agent/roles/` |
+| `agents/` 目录 | 1. 项目目录 `agents/`（有文件）<br>2. `~/.ask-agent/agents/` |
+| `skills/` 目录 | 1. 项目目录 `skills/`<br>2. `~/.ask-agent/skills/` |
+| `command/` 目录 | 1. 项目目录 `command/`<br>2. `~/.ask-agent/command/` |
 
  ### 缓存目录
 
@@ -942,9 +1149,10 @@ Ask Agent 使用统一的配置管理系统，支持全局配置和项目本地�
  ~/.ask-agent/cache/
  ├── ask/            # 问答模式会话
  ├── agent/          # 智能体模式会话
- ├── translate/       # 翻译模式会话
+ ├── translate/      # 翻译模式会话
  ├── role/           # 角色扮演模式会话根目录
- │   └── <角色id>/  # 每个角色的独立会话
+ │   └── <角色id>/   # 每个角色的独立会话
+ └── role_<角色id>/  # 角色扮演模式会话（旧格式兼容）
  ```
 
  缓存目录特点：
@@ -961,7 +1169,7 @@ Ask Agent 使用统一的配置管理系统，支持全局配置和项目本地�
   "role_id": "frieren"
 }
 ```
-- `mode`: 当前模式（0=问答，1=智能体，2=翻译，3=角色扮演）
+- `mode`: 当前模式（0=问答，1=翻译，2=智能体，3=角色扮演）
 - `role_id`: 当前角色 ID
 
 **providers.json** - AI Provider 配置
@@ -975,6 +1183,19 @@ Ask Agent 使用统一的配置管理系统，支持全局配置和项目本地�
     "frieren": {
       "name": "芙莉莲",
       "description": "《葬送的芙莉莲》中的精灵魔法使"
+    }
+  }
+}
+```
+
+**agents.json** - 智能体配置
+```json
+{
+  "default_agent": "builtin",
+  "agents": {
+    "coding-agent": {
+      "name": "coding-agent",
+      "description": "专业编程助手"
     }
   }
 }
@@ -1000,6 +1221,9 @@ cp project/roles.json ~/.ask-agent/
 
 # 迁移角色文件
 cp -r project/roles/* ~/.ask-agent/roles/
+
+# 迁移智能体文件
+cp -r project/agents/* ~/.ask-agent/agents/
 ```
 
 ## 子智能体（Subagents）
