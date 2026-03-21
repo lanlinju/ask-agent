@@ -747,30 +747,56 @@ def switch_model(model_id: str):
     update_model_prompt()
 
 
-def list_available_models() -> list:
-    """列出可用模型并返回模型ID列表"""
+def list_models() -> list:
+    """列出可用模型并返回模型ID列表（不打印）"""
+    model_list = []
+    for provider in PROVIDER_CONFIG.list_enabled_providers():
+        for model in provider.list_models():
+            full_id = f"{provider.id}/{model.id}"
+            model_list.append(full_id)
+    return model_list
+
+
+def display_models():
+    """显示可用模型列表"""
     print("\n📋 可用模型:\n")
 
-    model_list = []
     index = 1
+    current_index = PROVIDER_CONFIG.get_current_model_index()
 
     for provider in PROVIDER_CONFIG.list_enabled_providers():
         print(f"  {provider.name}:")
         for model in provider.list_models():
             full_id = f"{provider.id}/{model.id}"
-            marker = "→" if full_id == PROVIDER_CONFIG.default_model else " "
+            marker = "→" if index == current_index else " "
             print(f"  {marker} [{index}] {full_id}: {model.name}")
-            model_list.append(full_id)
             index += 1
         print()
 
-    return model_list
+
+def switch_model_by_index(index: int) -> bool:
+    """根据编号切换模型
+
+    Args:
+        index: 模型编号（从1开始）
+
+    Returns:
+        是否成功切换
+    """
+    model_id = PROVIDER_CONFIG.get_model_by_index(index)
+    if not model_id:
+        print(f"❌ 无效的模型编号: {index}\n")
+        return False
+
+    switch_model(model_id)
+    return True
 
 
 def interactive_select_model():
     """交互式选择模型"""
-    model_list = list_available_models()
+    display_models()
 
+    model_list = list_models()
     if not model_list:
         print("❌ 没有可用的模型\n")
         return
@@ -781,13 +807,7 @@ def interactive_select_model():
             print("已取消\n")
             return
 
-        index = int(choice) - 1
-        if 0 <= index < len(model_list):
-            model_id = model_list[index]
-            logger.debug(f"Selected model: {model_id}")
-            switch_model(model_id)
-        else:
-            print("❌ 无效的编号\n")
+        switch_model_by_index(int(choice))
     except ValueError:
         print("❌ 请输入有效的数字\n")
     except KeyboardInterrupt:
@@ -1878,9 +1898,21 @@ def command(command: str):
         handle_mcp_command(command)
         return
 
-    # 列出可用模型
-    if command == "/models":
-        interactive_select_model()
+    # 模型命令: /model, /model -l, /model number
+    if command == "/model" or command.startswith("/model "):
+        # 解析参数
+        parts = command.split(maxsplit=1)
+        arg = parts[1].strip() if len(parts) > 1 else ""
+
+        if arg == "-l":
+            # /model -l: 列出可用模型
+            display_models()
+        elif arg:
+            # /model id: 切换到指定ID的模型
+            switch_model(arg)
+        else:
+            # /model: 交互式选择模型
+            interactive_select_model()
         return
 
     # 列出自定义命令
@@ -1939,12 +1971,14 @@ def show_help():
     /role <name>  - 进入指定角色
     /role -l      - 列出所有可用角色
     /roles        - 交互式选择角色
+    /model        - 交互式选择模型
+    /model <id>   - 切换到指定ID的模型
+    /model -l     - 列出所有可用模型
     /new          - 创建新会话
     /clear        - 清除当前对话历史
     /session      - 列出当前模式的所有会话
     /load <id>    - 加载指定会话（使用 /session 查看 ID）
     /summarize    - 压缩对话历史，将前3/4的消息压缩为摘要
-    /models       - 交互式选择模型
     /commands     - 列出所有自定义命令
     /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
     /help         - 显示此帮助信息
@@ -2280,7 +2314,7 @@ def chat_loop():
 
         # 处理特殊命令
         if is_command(user_input):
-            command(user_input.lower())
+            command(user_input)
             continue
 
         _print_prompt()
