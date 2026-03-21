@@ -261,6 +261,26 @@ class RoleManager:
         self.save_config()
         return True
 
+    def switch_to(self, role_id: str) -> bool:
+        """切换到指定角色
+
+        Args:
+            role_id: 角色ID
+
+        Returns:
+            是否成功切换
+        """
+        if self.set_current_role(role_id):
+            self.set_default_role(role_id)
+            return True
+        return False
+
+    def get_current_or_default(self) -> Optional[str]:
+        """获取当前或默认角色ID"""
+        if self.current_role:
+            return self.current_role.role_id
+        return self.default_role
+
     def reload(self):
         """重新加载配置和角色"""
         self.roles.clear()

@@ -421,6 +421,70 @@ def _select_role_interactive(roles: List[Dict], save_session: bool = True) -> bo
     return False
 
 
+def _apply_role(role_id: str):
+    """应用角色设置（内部函数）"""
+    global current_mode
+    current_mode = ROLE
+    init_system_prompt(current_mode, role_id)
+    print(f"✅ 已进入角色扮演模式: {get_role_name(role_id)}\n")
+
+
+def switch_role(role_id: str, save_session: bool = True) -> bool:
+    """切换到指定角色"""
+    init_role_manager()
+    assert ROLE_MANAGER is not None
+
+    if save_session:
+        save_current_session()
+
+    if not ROLE_MANAGER.switch_to(role_id):
+        print(f"❌ 未找到角色: {role_id}\n")
+        return False
+
+    _apply_role(role_id)
+    return True
+
+
+def enter_role_mode():
+    """进入角色模式，使用默认角色"""
+    save_current_session()
+    init_role_manager()
+    assert ROLE_MANAGER is not None
+
+    default_role = ROLE_MANAGER.get_current_or_default()
+
+    # 默认角色存在，直接进入
+    if default_role and ROLE_MANAGER.get_role(default_role):
+        ROLE_MANAGER.set_current_role(default_role)
+        _apply_role(default_role)
+        return
+
+    # 默认角色不存在，让用户选择
+    roles = list_roles()
+    if not roles:
+        print("📭 暂无可用角色\n")
+        print(
+            "💡 提示: 在 roles/ 目录或 ~/.ask-agent/roles/ 下创建 .md 文件即可添加角色\n"
+        )
+        return
+    _display_roles(roles, show_current_marker=False)
+    _select_role_interactive(roles, save_session=False)
+
+
+def list_roles_interactive():
+    """交互式列出并选择角色"""
+    if current_mode != ROLE:
+        print("❌ 请先进入角色扮演模式: /role\n")
+        return
+
+    roles = list_roles()
+    if not roles:
+        print("📭 暂无可用角色\n")
+        return
+    _display_roles(roles, show_current_marker=True)
+    _select_role_interactive(roles, save_session=True)
+
+
 def list_agents() -> List[Dict]:
     """列出所有可用智能体（包含builtin）"""
     init_agent_manager()
@@ -1738,47 +1802,27 @@ def command(command: str):
         list_agents_interactive()
         return
 
-    # 进入角色扮演模式
-    if command == "/role":
-        save_current_session()
-        current_mode = ROLE
-        init_role_manager()
-        assert ROLE_MANAGER is not None
+    # 角色命令: /role, /role -l, /role name
+    if command == "/role" or command.startswith("/role "):
+        # 解析参数
+        parts = command.split(maxsplit=1)
+        arg = parts[1].strip() if len(parts) > 1 else ""
 
-        default_role = ROLE_MANAGER.default_role
-
-        if default_role and ROLE_MANAGER.get_role(default_role):
-            ROLE_MANAGER.set_current_role(default_role)
-            init_system_prompt(current_mode, default_role)
-            print(f"✅ 已进入角色扮演模式: {get_role_name(default_role)}\n")
-            return
-
-        # 没有默认角色，让用户选择
-        roles = list_roles()
-        if not roles:
-            print("📭 暂无可用角色\n")
-            print(
-                "💡 提示: 在 roles/ 目录或 ~/.ask-agent/roles/ 下创建 .md 文件即可添加角色\n"
-            )
-            return
-
-        _display_roles(roles, show_current_marker=False)
-        _select_role_interactive(roles, save_session=False)
+        if arg == "-l":
+            # /role -l: 列出可用角色
+            roles = list_roles()
+            _display_roles(roles, show_current_marker=True)
+        elif arg:
+            # /role name: 进入指定角色
+            switch_role(arg)
+        else:
+            # /role: 进入角色模式，使用默认角色
+            enter_role_mode()
         return
 
-    # 列出角色
+    # 交互式选择角色
     if command == "/roles":
-        if current_mode != ROLE:
-            print("❌ 请先进入角色扮演模式: /role\n")
-            return
-
-        roles = list_roles()
-        if not roles:
-            print("📭 暂无可用角色\n")
-            return
-
-        _display_roles(roles, show_current_marker=True)
-        _select_role_interactive(roles, save_session=True)
+        list_roles_interactive()
         return
 
     # 创建新会话
@@ -1892,7 +1936,9 @@ def show_help():
     /agents       - 交互式选择智能体
     /e            - 进入翻译模式
     /role         - 进入角色扮演模式
-    /roles        - 列出所有可用角色
+    /role <name>  - 进入指定角色
+    /role -l      - 列出所有可用角色
+    /roles        - 交互式选择角色
     /new          - 创建新会话
     /clear        - 清除当前对话历史
     /session      - 列出当前模式的所有会话
