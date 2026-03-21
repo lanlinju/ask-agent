@@ -29,7 +29,7 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
-from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import InMemoryHistory
 
@@ -40,6 +40,48 @@ logger = logging.getLogger(__name__)
 
 if sys.platform != "win32":
     import readline
+
+_interrupted = False
+
+def _start_esc_listener(stop_event: threading.Event):
+    """监听 ESC 键。用 cbreak 模式：逐字符读取，保留输出处理(换行正常)。"""
+    global _interrupted
+    if sys.platform == "win32":
+        import msvcrt
+
+        while not stop_event.is_set():
+            if msvcrt.kbhit():
+                if msvcrt.getwch() == "\x1b":
+                    _interrupted = True
+                    break
+            time.sleep(0.05)
+    else:
+        import tty
+        import termios
+        import select
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        new = termios.tcgetattr(fd)
+        # cbreak: 禁用 ICANON(逐字符读取) + ECHO(不回显)
+        # 保留 ISIG(Ctrl+C 生效) + 所有输出处理(ONLCR 换行正常)
+        new[3] &= ~(termios.ICANON | termios.ECHO)
+        try:
+            termios.tcsetattr(fd, termios.TCSANOW, new)
+            while not stop_event.is_set():
+                r, _, _ = select.select([fd], [], [], 0.1)
+                if r:
+                    ch = os.read(fd, 1)
+                    if ch == b"\x1b":
+                        _interrupted = True
+                        break
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+_INPUT_HISTORY = InMemoryHistory()
+_PROMPT_SESSION = PromptSession(history=_INPUT_HISTORY)
+
 
 # Ask Agent
 
@@ -877,7 +919,9 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
         if old_text not in text:
             return f"Error: Text not found in {path}"
         fp.write_text(text.replace(old_text, new_text, 1))
-        return f"Edited {path}: replaced {len(old_text)} chars with {len(new_text)} chars"
+        return (
+            f"Edited {path}: replaced {len(old_text)} chars with {len(new_text)} chars"
+        )
     except Exception as e:
         return f"Error: {e}"
 
@@ -1190,6 +1234,9 @@ def get_streaming_response(
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ("", "", [])
         for chunk in response.iter_lines():
+            # ESC interrupt check
+            if _interrupted:
+                break
             if chunk:
                 decoded = chunk.decode("utf-8")
                 if not decoded.startswith("data:"):
@@ -1704,9 +1751,26 @@ def agent(prompt: str) -> str:
     # 记录本轮推理开始时的消息索引
     reasoning_start_index = len(messages)
     while True:
-        # 调用API获取流式响应
-        content, reasoning_content, tool_calls = get_streaming_response(messages, TOOLS)
+        global _interrupted
+        _interrupted = False
+        _esc_stop = threading.Event()
+        t = None
 
+        if sys.stdin.isatty():
+            t = threading.Thread(
+                target=_start_esc_listener, args=(_esc_stop,), daemon=True
+            )
+            t.start()
+
+        try:
+            content, reasoning_content, tool_calls = get_streaming_response(
+                messages, TOOLS
+            )
+        finally:
+            _esc_stop.set()
+            if t is not None:
+                t.join(timeout=0.5)
+            
         # 构建助手消息并添加到历史
         assistant_msg = {"role": "assistant", "content": content}
         if tool_calls:
@@ -1716,10 +1780,10 @@ def agent(prompt: str) -> str:
         messages.append(assistant_msg)
         logger.debug("添加助手回复: %s", assistant_msg)
 
-        # 如果没有工具调用，结束循环
-        if not tool_calls:
-            if reasoning_content:
-                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
+        # 如果没有工具调用或者esc中断，结束循环
+        if not tool_calls or _interrupted:
+            _interrupted = False
+            cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
             return content
 
         for tool_call in tool_calls:
@@ -1767,6 +1831,7 @@ def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round:
     """
     if tool_call_round == 1:
         logger.debug("本轮问题没有工具调用，不需要清理")
+        messages[start_index].pop("reasoning_content", None) # 清理可能被中断的工具调用的推理内容
         return
 
     logger.info("清理推理内容，共清理%d轮", tool_call_round)
@@ -1878,16 +1943,11 @@ def generate_title():
     thread.start()
 
 
-_INPUT_HISTORY = InMemoryHistory()
-
-
 def chat_loop():
     """主聊天循环，支持完整的对话上下文和对话命令"""
 
     while True:
-        user_input = pt_prompt(
-            ANSI(f"{get_mode_prompt()}"), history=_INPUT_HISTORY
-        ).strip()
+        user_input = _PROMPT_SESSION.prompt(ANSI(f"{get_mode_prompt()}")).strip()
         if not user_input:
             continue
 
