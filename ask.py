@@ -2334,6 +2334,9 @@ def agent(prompt: str) -> str:
             content, reasoning_content, tool_calls = get_streaming_response(
                 messages, TOOLS
             )
+        except Exception:
+            cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
+            raise
         finally:
             _esc_stop.set()
             if t is not None:
