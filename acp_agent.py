@@ -318,6 +318,92 @@ class AskAgentACP(Agent):
 
     # ── Tool Execution ──────────────────────────────────────────────
 
+    async def _stream_response(
+        self, messages: list, tools: list, use_tools: bool = True
+    ):
+        """Async generator: yields (kind, payload) tuples as tokens arrive."""
+        import ask as _ask
+        from ask import merge_arguments
+        import requests as _requests
+
+        headers = {
+            "Authorization": f"Bearer {_ask.DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        data = {
+            "model": _ask.DEEPSEEK_MODEL,
+            "messages": messages,
+            "stream": True,
+        }
+        if use_tools:
+            data["tools"] = tools
+            data["tool_choice"] = "auto"
+
+        collected = ""
+        tool_calls_collected = []
+        reasoning = ""
+        in_think = False
+
+        with _requests.post(
+            f"{_ask.DEEPSEEK_API_URL}/v1/chat/completions",
+            headers=headers,
+            json=data,
+            stream=True,
+            timeout=(10, 30),
+        ) as response:
+            _ask._streaming_response = response
+            if response.status_code != 200:
+                yield ("text", f"Error: {response.status_code}")
+                yield ("done", ("", "", []))
+                return
+
+            for chunk in response.iter_lines(decode_unicode=True):
+                if not chunk:
+                    continue
+                if _ask._interrupted:
+                    break
+                if not chunk.startswith("data:"):
+                    continue
+                if chunk == "data: [DONE]":
+                    break
+                try:
+                    obj = json.loads(chunk[6:])
+                    if not obj["choices"]:
+                        continue
+                    if obj["choices"][0]["finish_reason"] is not None:
+                        break
+                    delta = obj["choices"][0].get("delta")
+                    if not delta:
+                        continue
+
+                    if delta.get("reasoning_content"):
+                        reasoning += delta["reasoning_content"]
+                        yield ("thought", delta["reasoning_content"])
+                    elif delta.get("content"):
+                        content = delta["content"]
+                        if "<think>" in content:
+                            in_think = True
+                            content = content.replace("<think>", "")
+                        if "</think>" in content:
+                            in_think = False
+                            continue
+                        if in_think:
+                            reasoning += content
+                            yield ("thought", content)
+                            continue
+                        collected += content
+                        yield ("text", content)
+                    elif delta.get("tool_calls"):
+                        for tc in delta["tool_calls"]:
+                            tool_calls_collected.append(tc)
+                except json.JSONDecodeError:
+                    continue
+
+        _ask._streaming_response = None
+        tool_calls = merge_arguments(tool_calls_collected)
+        yield ("done", (collected, reasoning, tool_calls))
+
     async def _execute_tool(self, name: str, args: dict, session_id: str) -> str:
         """Execute a tool, preferring client fs when available."""
         from ask import execute_tool
@@ -361,20 +447,17 @@ class AskAgentACP(Agent):
         session_id: str,
         **kwargs: Any,
     ) -> PromptResponse:
-        from ask import SYSTEM_PROMPT_AGENT, TOOLS, get_streaming_response, AGENT
+        from ask import SYSTEM_PROMPT_AGENT, TOOLS, AGENT
         import ask as _ask
 
         sess_msgs = self._sessions.setdefault(session_id, [])
 
-        # Initialize system prompt on first turn
         if not sess_msgs:
             sess_msgs.append({"role": "system", "content": SYSTEM_PROMPT_AGENT})
 
-        # Extract user text from prompt content blocks
         user_text = "\n".join(block.text for block in prompt if hasattr(block, "text"))
         sess_msgs.append({"role": "user", "content": user_text})
 
-        # Save and apply session-specific config
         orig_url, orig_key, orig_model = (
             _ask.DEEPSEEK_API_URL,
             _ask.DEEPSEEK_API_KEY,
@@ -396,62 +479,34 @@ class AskAgentACP(Agent):
                     self._cancelled.discard(session_id)
                     return PromptResponse(stop_reason="cancelled")
 
-                # Force AGENT mode for system prompt selection
                 _ask.current_mode = AGENT
-
-                # Streaming callback: send each token to client immediately
-                loop = asyncio.get_running_loop()
-                self._token_queue = asyncio.Queue()
-
-                def _on_token(kind: str, text: str) -> None:
-                    loop.call_soon_threadsafe(
-                        self._token_queue.put_nowait, (kind, text)
-                    )
-
                 try:
-                    # Run LLM in thread with streaming callback
-                    import functools
+                    content = ""
+                    reasoning_content = ""
+                    tool_calls: list = []
 
-                    call = functools.partial(
-                        get_streaming_response,
-                        sess_msgs,
-                        TOOLS,
-                        True,
-                        use_tools,
-                        _on_token,
-                    )
-                    llm_task = asyncio.create_task(asyncio.to_thread(call))
+                    async for event in self._stream_response(
+                        sess_msgs, TOOLS, use_tools
+                    ):
+                        kind, payload = event
 
-                    # Stream tokens to client while LLM runs
-                    while not llm_task.done():
-                        try:
-                            kind, text = await asyncio.wait_for(
-                                self._token_queue.get(), timeout=0.1
-                            )
-                            if kind == "text":
-                                await self._conn.session_update(
-                                    session_id, update_agent_message(text_block(text))
-                                )
-                            elif kind == "thought":
-                                await self._conn.session_update(
-                                    session_id, update_agent_thought(text_block(text))
-                                )
-                        except asyncio.TimeoutError:
-                            pass
+                        if session_id in self._cancelled:
+                            self._cancelled.discard(session_id)
+                            return PromptResponse(stop_reason="cancelled")
 
-                    # Drain remaining tokens
-                    while not self._token_queue.empty():
-                        kind, text = self._token_queue.get_nowait()
-                        if kind == "text":
+                        if kind == "done":
+                            content, reasoning_content, tool_calls = payload  # type: ignore
+                        elif kind == "text":
                             await self._conn.session_update(
-                                session_id, update_agent_message(text_block(text))
+                                session_id,
+                                update_agent_message(text_block(str(payload))),
                             )
                         elif kind == "thought":
                             await self._conn.session_update(
-                                session_id, update_agent_thought(text_block(text))
+                                session_id,
+                                update_agent_thought(text_block(str(payload))),
                             )
 
-                    content, reasoning_content, tool_calls = llm_task.result()
                 finally:
                     _ask.current_mode = orig_mode
 
@@ -459,7 +514,6 @@ class AskAgentACP(Agent):
                     self._cancelled.discard(session_id)
                     return PromptResponse(stop_reason="cancelled")
 
-                # Record assistant message
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": content,
@@ -473,7 +527,6 @@ class AskAgentACP(Agent):
                 if not tool_calls:
                     return PromptResponse(stop_reason="end_turn")
 
-                # Execute tool calls
                 for tc in tool_calls:
                     if session_id in self._cancelled:
                         self._cancelled.discard(session_id)
@@ -493,7 +546,6 @@ class AskAgentACP(Agent):
                     except json.JSONDecodeError:
                         args = {}
 
-                    # Notify: tool start
                     await self._conn.session_update(
                         session_id,
                         start_tool_call(
@@ -505,13 +557,11 @@ class AskAgentACP(Agent):
                         ),
                     )
 
-                    # Execute
                     try:
                         output = await self._execute_tool(name, args, session_id)
                     except Exception as e:
                         output = f"Error: {e}"
 
-                    # Notify: tool completed
                     display = output[:2000] + "..." if len(output) > 2000 else output
                     await self._conn.session_update(
                         session_id,
