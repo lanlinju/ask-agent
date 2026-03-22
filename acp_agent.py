@@ -327,6 +327,9 @@ class AskAgentACP(Agent):
             while True:
                 turn += 1
 
+                # Reset interrupt flag before each LLM call
+                _ask._interrupted = False
+
                 # Check cancellation
                 if session_id in self._cancelled:
                     self._cancelled.discard(session_id)
@@ -465,8 +468,11 @@ class AskAgentACP(Agent):
     # ── Cancellation ────────────────────────────────────────────────
 
     async def cancel(self, session_id: str, **kwargs: Any) -> None:
+        import ask as _ask
+
         logger.info("ACP cancel: session=%s", session_id)
         self._cancelled.add(session_id)
+        _ask._interrupted = True
 
     # ── Extensions (unused) ─────────────────────────────────────────
 
