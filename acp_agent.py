@@ -482,9 +482,9 @@ class AskAgentACP(Agent):
                         ),
                     )
 
-                    # Execute tool (in thread to avoid blocking)
+                    # Execute tool (prefer client fs, fallback to local)
                     try:
-                        output = await asyncio.to_thread(execute_tool, name, args)
+                        output = await self._execute_tool(name, args, session_id)
                     except Exception as e:
                         output = f"Error: {e}"
 
@@ -519,6 +519,44 @@ class AskAgentACP(Agent):
             _ask.DEEPSEEK_MODEL = orig_model
 
     # ── Cancellation ────────────────────────────────────────────────
+
+    async def _execute_tool(self, name: str, args: dict, session_id: str) -> str:
+        """Execute a tool, preferring client fs for read/write when available."""
+        from ask import execute_tool, safe_path
+
+        # Try client fs for read_file
+        if name == "read_file":
+            try:
+                path = args.get("path", "")
+                resp = await self._conn.read_text_file(
+                    path=path,
+                    session_id=session_id,
+                    line=args.get("offset"),
+                    limit=args.get("limit"),
+                )
+                if resp.text is not None:
+                    return resp.text
+            except Exception:
+                pass
+            # fallback to local
+
+        # Try client fs for write_file
+        if name == "write_file":
+            try:
+                path = args.get("path", "")
+                content = args.get("content", "")
+                await self._conn.write_text_file(
+                    content=content,
+                    path=path,
+                    session_id=session_id,
+                )
+                return f"Wrote {len(content)} bytes to {path}"
+            except Exception:
+                pass
+            # fallback to local
+
+        # Default: local execution
+        return await asyncio.to_thread(execute_tool, name, args)
 
     async def cancel(self, session_id: str, **kwargs: Any) -> None:
         import ask as _ask
