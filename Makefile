@@ -19,7 +19,13 @@ pipreqs:
 
 nvidia_nim_models:
 	curl "https://integrate.api.nvidia.com/v1/models" > nvidia_nim_models.json
-	
+
+cp-config:
+	cp -R ./agents ~/.ask-agent/agents
+	cp -R ./roles ~/.ask-agent/roles
+	cp -R ./skills ~/.ask-agent/skills
+	cp -R ./command ~/.ask-agent/command
+
 clean:
 	rm -rf ./cache
 	rm -f config.json roles.json
