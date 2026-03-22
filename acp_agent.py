@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import uuid
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from acp import (
@@ -25,6 +26,7 @@ from acp import (
     text_block,
     tool_content,
     update_agent_message,
+    update_agent_thought,
     update_tool_call,
 )
 from acp.interfaces import Client
@@ -34,7 +36,6 @@ from acp.schema import (
     ForkSessionResponse,
     Implementation,
     ListSessionsResponse,
-    McpCapabilities,
     ModelInfo,
     PromptCapabilities,
     ResumeSessionResponse,
@@ -42,37 +43,51 @@ from acp.schema import (
     SessionMode,
     SessionModeState,
     SessionModelState,
-    TextContentBlock,
 )
 
 logger = logging.getLogger(__name__)
 
+TOOL_KIND = Literal[
+    "read",
+    "edit",
+    "delete",
+    "move",
+    "search",
+    "execute",
+    "think",
+    "fetch",
+    "switch_mode",
+    "other",
+]
+
+_TOOL_KIND_MAP: dict[str, str] = {
+    "bash": "execute",
+    "read_file": "read",
+    "glob": "read",
+    "grep": "read",
+    "write_file": "edit",
+    "edit_file": "edit",
+    "webfetch": "fetch",
+    "Task": "think",
+    "Skill": "other",
+    "MCP": "other",
+    "TodoWrite": "other",
+}
+
+_TOOL_TITLE_MAP: dict[str, str] = {
+    "TodoWrite": "Update todos",
+}
+
 
 def _get_tool_kind(name: str) -> str:
-    """Map tool name to ACP ToolKind."""
-    kind_map = {
-        "bash": "execute",
-        "read_file": "read",
-        "glob": "read",
-        "grep": "read",
-        "write_file": "edit",
-        "edit_file": "edit",
-        "webfetch": "fetch",
-        "Task": "think",
-        "Skill": "other",
-        "MCP": "other",
-        "TodoWrite": "other",
-    }
     if name.startswith("mcp_"):
         return "execute"
-    return kind_map.get(name, "other")
+    return _TOOL_KIND_MAP.get(name, "other")
 
 
 def _tool_title(name: str, args: dict) -> str:
-    """Generate a human-readable title for a tool call."""
     if name == "bash":
-        cmd = args.get("command", "")
-        return f"$ {cmd[:60]}"
+        return f"$ {args.get('command', '')[:60]}"
     if name == "read_file":
         return f"Read {args.get('path', '')}"
     if name == "write_file":
@@ -85,15 +100,13 @@ def _tool_title(name: str, args: dict) -> str:
         return f'Grep "{args.get("pattern", "")}"'
     if name == "webfetch":
         return f"Fetch {args.get('url', '')[:50]}"
-    if name == "TodoWrite":
-        return "Update todos"
     if name == "Task":
         return f"Task: {args.get('description', '')}"
     if name == "Skill":
         return f"Load skill: {args.get('skill', '')}"
     if name == "MCP":
         return f"Connect MCP: {args.get('server', '')}"
-    return name
+    return _TOOL_TITLE_MAP.get(name, name)
 
 
 PLAN_MODE = SessionMode(
@@ -106,50 +119,38 @@ BUILD_MODE = SessionMode(
     name="Build",
     description="Full build mode. Execute commands, read/write files, all tools available.",
 )
-MODES = SessionModeState(
-    available_modes=[PLAN_MODE, BUILD_MODE],
-    current_mode_id="build",
-)
 
 
 class AskAgentACP(Agent):
     """ACP agent wrapping ask-agent's core capabilities."""
 
-    _conn: Client
-    _sessions: dict[str, list[dict]]
-    _session_models: dict[str, str]
-    _session_modes: dict[str, str]
-    _cancelled: set[str]
-    _next_session_num: int
-
     def __init__(self) -> None:
-        self._sessions = {}
-        self._session_models = {}
-        self._session_modes = {}
-        self._cancelled = set()
-        self._next_session_num = 0
+        self._conn: Client  # set by on_connect
+        self._sessions: dict[str, list[dict]] = {}
+        self._session_models: dict[str, str] = {}
+        self._session_modes: dict[str, str] = {}
+        self._client_caps: dict[str, bool] = {}
+        self._cancelled: set[str] = set()
+
+    # ── Helpers ──────────────────────────────────────────────────────
 
     def _get_available_models(self) -> tuple[list[ModelInfo], str]:
-        """Get available models and current default model ID."""
-        from ask import list_models, PROVIDER_CONFIG
+        from ask import PROVIDER_CONFIG, list_models
 
         models = list_models()
-        model_infos = []
-        for mid in models:
-            info = PROVIDER_CONFIG.get_model_info(mid)
-            name = info.name if info else mid
-            provider = info.provider_id if info else ""
-            model_infos.append(
-                ModelInfo(
-                    model_id=mid,
-                    name=f"{name} ({provider})" if provider else name,
-                )
+        model_infos = [
+            ModelInfo(
+                model_id=mid,
+                name=f"{info.name} ({info.provider_id})"
+                if (info := PROVIDER_CONFIG.get_model_info(mid))
+                else mid,
             )
+            for mid in models
+        ]
         default = PROVIDER_CONFIG.default_model or (models[0] if models else "")
         return model_infos, default
 
     def _apply_model(self, model_id: str) -> None:
-        """Set global LLM config to use the given model."""
         import ask as _ask
 
         api_config = _ask.PROVIDER_CONFIG.get_api_config(model_id)
@@ -157,6 +158,12 @@ class AskAgentACP(Agent):
             _ask.DEEPSEEK_API_URL = api_config["base_url"].rstrip("/v1")
             _ask.DEEPSEEK_API_KEY = api_config["api_key"]
             _ask.DEEPSEEK_MODEL = api_config["model"]
+
+    def _set_cwd(self, cwd: str) -> None:
+        if cwd:
+            import ask as _ask
+
+            _ask.WORKDIR = Path(cwd)
 
     def on_connect(self, conn: Client) -> None:
         self._conn = conn
@@ -170,10 +177,26 @@ class AskAgentACP(Agent):
         client_info: Implementation | None = None,
         **kwargs: Any,
     ) -> InitializeResponse:
+        # Store client capabilities for tool routing
+        self._client_caps = {}
+        if client_capabilities:
+            self._client_caps["terminal"] = bool(
+                getattr(client_capabilities, "terminal", False)
+            )
+            fs = getattr(client_capabilities, "fs", None)
+            if fs:
+                self._client_caps["fs_read"] = bool(
+                    getattr(fs, "read_text_file", False)
+                )
+                self._client_caps["fs_write"] = bool(
+                    getattr(fs, "write_text_file", False)
+                )
+
         logger.info(
-            "ACP initialize: client=%s, protocol=%d",
+            "ACP initialize: client=%s, protocol=%d, caps=%s",
             getattr(client_info, "name", "unknown"),
             protocol_version,
+            self._client_caps,
         )
         return InitializeResponse(
             protocol_version=PROTOCOL_VERSION,
@@ -182,9 +205,7 @@ class AskAgentACP(Agent):
                 prompt_capabilities=PromptCapabilities(embedded_context=True),
             ),
             agent_info=Implementation(
-                name="ask-agent",
-                title="Ask Agent",
-                version="1.0.0",
+                name="ask-agent", title="Ask Agent", version="1.0.0"
             ),
         )
 
@@ -199,18 +220,12 @@ class AskAgentACP(Agent):
         mcp_servers: list[Any] | None = None,
         **kwargs: Any,
     ) -> NewSessionResponse:
-        import ask as _ask
-        from pathlib import Path
-
         session_id = f"sess_{uuid.uuid4().hex[:12]}"
         self._sessions[session_id] = []
         model_infos, default_model = self._get_available_models()
         self._session_models[session_id] = default_model
         self._session_modes[session_id] = "build"
-
-        # Set working directory from client's cwd
-        if cwd:
-            _ask.WORKDIR = Path(cwd)
+        self._set_cwd(cwd)
 
         logger.info(
             "ACP new_session: %s (cwd=%s, model=%s)", session_id, cwd, default_model
@@ -234,34 +249,21 @@ class AskAgentACP(Agent):
         mcp_servers: list[Any] | None = None,
         **kwargs: Any,
     ) -> LoadSessionResponse | None:
-        import ask as _ask
-        from pathlib import Path
-
         logger.info("ACP load_session: %s", session_id)
-        if session_id not in self._sessions:
-            self._sessions[session_id] = []
-        model_infos, default_model = self._get_available_models()
-        if session_id not in self._session_models:
-            self._session_models[session_id] = default_model
-        if session_id not in self._session_modes:
-            self._session_modes[session_id] = "build"
-
-        # Set working directory from client's cwd
-        if cwd:
-            _ask.WORKDIR = Path(cwd)
-
+        self._sessions.setdefault(session_id, [])
+        self._session_models.setdefault(session_id, self._get_available_models()[1])
+        self._session_modes.setdefault(session_id, "build")
+        self._set_cwd(cwd)
         return LoadSessionResponse()
 
     async def list_sessions(
-        self,
-        cursor: str | None = None,
-        cwd: str | None = None,
-        **kwargs: Any,
+        self, cursor: str | None = None, cwd: str | None = None, **kwargs: Any
     ) -> ListSessionsResponse:
-        sessions = []
-        for sid in self._sessions:
-            sessions.append(SessionInfo(session_id=sid, cwd=cwd or ""))
-        return ListSessionsResponse(sessions=sessions)
+        return ListSessionsResponse(
+            sessions=[
+                SessionInfo(session_id=sid, cwd=cwd or "") for sid in self._sessions
+            ]
+        )
 
     async def set_session_mode(
         self, mode_id: str, session_id: str, **kwargs: Any
@@ -271,8 +273,7 @@ class AskAgentACP(Agent):
             return None
         old_mode = self._session_modes.get(session_id, "build")
         self._session_modes[session_id] = mode_id
-        # Reset messages on mode switch so new system prompt takes effect
-        if old_mode != mode_id and session_id in self._sessions:
+        if old_mode != mode_id:
             self._sessions[session_id] = []
         logger.info("ACP set_session_mode: session=%s mode=%s", session_id, mode_id)
         return SetSessionModeResponse()
@@ -282,12 +283,9 @@ class AskAgentACP(Agent):
     ) -> SetSessionModelResponse | None:
         from ask import PROVIDER_CONFIG
 
-        # Validate model exists
-        api_config = PROVIDER_CONFIG.get_api_config(model_id)
-        if not api_config:
+        if not PROVIDER_CONFIG.get_api_config(model_id):
             logger.warning("ACP set_session_model: unknown model %s", model_id)
             return None
-
         self._session_models[session_id] = model_id
         logger.info("ACP set_session_model: session=%s model=%s", session_id, model_id)
         return SetSessionModelResponse()
@@ -303,14 +301,9 @@ class AskAgentACP(Agent):
         session_id: str,
         mcp_servers: list[Any] | None = None,
         **kwargs: Any,
-    ) -> Any:
+    ) -> ForkSessionResponse:
         new_id = f"sess_{uuid.uuid4().hex[:12]}"
-        if session_id in self._sessions:
-            self._sessions[new_id] = list(self._sessions[session_id])
-        else:
-            self._sessions[new_id] = []
-        from acp.schema import ForkSessionResponse
-
+        self._sessions[new_id] = list(self._sessions.get(session_id, []))
         return ForkSessionResponse(session_id=new_id)
 
     async def resume_session(
@@ -319,12 +312,46 @@ class AskAgentACP(Agent):
         session_id: str,
         mcp_servers: list[Any] | None = None,
         **kwargs: Any,
-    ) -> Any:
-        from acp.schema import ResumeSessionResponse
-
-        if session_id not in self._sessions:
-            self._sessions[session_id] = []
+    ) -> ResumeSessionResponse:
+        self._sessions.setdefault(session_id, [])
         return ResumeSessionResponse()
+
+    # ── Tool Execution ──────────────────────────────────────────────
+
+    async def _execute_tool(self, name: str, args: dict, session_id: str) -> str:
+        """Execute a tool, preferring client fs when available."""
+        from ask import execute_tool
+
+        # Try client fs for read_file (only if client supports it)
+        if name == "read_file" and self._client_caps.get("fs_read"):
+            try:
+                resp = await self._conn.read_text_file(
+                    path=args.get("path", ""),
+                    session_id=session_id,
+                    line=args.get("offset"),
+                    limit=args.get("limit"),
+                )
+                if resp.text is not None:
+                    return resp.text
+            except Exception:
+                pass
+
+        # Try client fs for write_file (only if client supports it)
+        if name == "write_file" and self._client_caps.get("fs_write"):
+            try:
+                path = args.get("path", "")
+                content = args.get("content", "")
+                await self._conn.write_text_file(
+                    content=content,
+                    path=path,
+                    session_id=session_id,
+                )
+                return f"Wrote {len(content)} bytes to {path}"
+            except Exception:
+                pass
+
+        # Default: local execution (bash always local, fs fallback)
+        return await asyncio.to_thread(execute_tool, name, args)
 
     # ── Prompt Turn ─────────────────────────────────────────────────
 
@@ -334,63 +361,43 @@ class AskAgentACP(Agent):
         session_id: str,
         **kwargs: Any,
     ) -> PromptResponse:
-        from ask import (
-            SYSTEM_PROMPT_AGENT,
-            TOOLS,
-            DEEPSEEK_API_KEY,
-            DEEPSEEK_API_URL,
-            DEEPSEEK_MODEL,
-            execute_tool,
-            get_streaming_response,
-            AGENT,
-        )
+        from ask import SYSTEM_PROMPT_AGENT, TOOLS, get_streaming_response, AGENT
         import ask as _ask
 
-        # Ensure session exists
-        if session_id not in self._sessions:
-            self._sessions[session_id] = []
-
-        sess_msgs = self._sessions[session_id]
+        sess_msgs = self._sessions.setdefault(session_id, [])
 
         # Initialize system prompt on first turn
         if not sess_msgs:
             sess_msgs.append({"role": "system", "content": SYSTEM_PROMPT_AGENT})
 
-        # Extract text from prompt content blocks
+        # Extract user text from prompt content blocks
         user_text = "\n".join(block.text for block in prompt if hasattr(block, "text"))
         sess_msgs.append({"role": "user", "content": user_text})
 
-        # Save original global model config
-        orig_url = _ask.DEEPSEEK_API_URL
-        orig_key = _ask.DEEPSEEK_API_KEY
-        orig_model = _ask.DEEPSEEK_MODEL
+        # Save and apply session-specific config
+        orig_url, orig_key, orig_model = (
+            _ask.DEEPSEEK_API_URL,
+            _ask.DEEPSEEK_API_KEY,
+            _ask.DEEPSEEK_MODEL,
+        )
         orig_mode = _ask.current_mode
 
-        # Apply session-specific model
         session_model = self._session_models.get(session_id)
         if session_model:
             self._apply_model(session_model)
 
-        # Determine tool usage based on session mode
-        session_mode = self._session_modes.get(session_id, "build")
-        use_tools = session_mode == "build"
+        use_tools = self._session_modes.get(session_id, "build") == "build"
 
-        turn = 0
         try:
             while True:
-                turn += 1
-
-                # Reset interrupt flag before each LLM call
                 _ask._interrupted = False
 
-                # Check cancellation
                 if session_id in self._cancelled:
                     self._cancelled.discard(session_id)
                     return PromptResponse(stop_reason="cancelled")
 
                 # Force AGENT mode for system prompt selection
                 _ask.current_mode = AGENT
-
                 try:
                     content, reasoning_content, tool_calls = await asyncio.to_thread(
                         get_streaming_response, sess_msgs, TOOLS, True, use_tools
@@ -398,26 +405,21 @@ class AskAgentACP(Agent):
                 finally:
                     _ask.current_mode = orig_mode
 
-                # Check cancellation after LLM call
                 if session_id in self._cancelled:
                     self._cancelled.discard(session_id)
                     return PromptResponse(stop_reason="cancelled")
 
-                # Stream agent text to client
+                # Stream updates to client
                 if content:
                     await self._conn.session_update(
                         session_id, update_agent_message(text_block(content))
                     )
-
-                # Stream reasoning/thought if present
                 if reasoning_content:
-                    from acp import update_agent_thought
-
                     await self._conn.session_update(
                         session_id, update_agent_thought(text_block(reasoning_content))
                     )
 
-                # Build assistant message for history
+                # Record assistant message
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": content,
@@ -428,13 +430,11 @@ class AskAgentACP(Agent):
                         assistant_msg["reasoning_content"] = reasoning_content
                 sess_msgs.append(assistant_msg)
 
-                # No tool calls → turn complete
                 if not tool_calls:
                     return PromptResponse(stop_reason="end_turn")
 
-                # Execute each tool call
+                # Execute tool calls
                 for tc in tool_calls:
-                    # Check cancellation between tools
                     if session_id in self._cancelled:
                         self._cancelled.discard(session_id)
                         return PromptResponse(stop_reason="cancelled")
@@ -453,58 +453,36 @@ class AskAgentACP(Agent):
                     except json.JSONDecodeError:
                         args = {}
 
-                    title = _tool_title(name, args)
-                    kind = _get_tool_kind(name)
-
                     # Notify: tool start
                     await self._conn.session_update(
                         session_id,
                         start_tool_call(
                             tool_call_id=tc_id,
-                            title=title,
-                            kind=cast(
-                                Literal[
-                                    "read",
-                                    "edit",
-                                    "delete",
-                                    "move",
-                                    "search",
-                                    "execute",
-                                    "think",
-                                    "fetch",
-                                    "switch_mode",
-                                    "other",
-                                ],
-                                kind,
-                            ),
+                            title=_tool_title(name, args),
+                            kind=cast(TOOL_KIND, _get_tool_kind(name)),
                             status="in_progress",
                             raw_input=args,
                         ),
                     )
 
-                    # Execute tool (prefer client fs, fallback to local)
+                    # Execute
                     try:
                         output = await self._execute_tool(name, args, session_id)
                     except Exception as e:
                         output = f"Error: {e}"
 
-                    # Truncate output for display
-                    display_output = (
-                        output[:2000] + "..." if len(output) > 2000 else output
-                    )
-
                     # Notify: tool completed
+                    display = output[:2000] + "..." if len(output) > 2000 else output
                     await self._conn.session_update(
                         session_id,
                         update_tool_call(
                             tool_call_id=tc_id,
                             status="completed",
-                            content=[tool_content(text_block(display_output))],
+                            content=[tool_content(text_block(display))],
                             raw_output=output[:5000],
                         ),
                     )
 
-                    # Add tool result to message history
                     sess_msgs.append(
                         {
                             "role": "tool",
@@ -513,50 +491,11 @@ class AskAgentACP(Agent):
                         }
                     )
         finally:
-            # Restore original global model config
             _ask.DEEPSEEK_API_URL = orig_url
             _ask.DEEPSEEK_API_KEY = orig_key
             _ask.DEEPSEEK_MODEL = orig_model
 
     # ── Cancellation ────────────────────────────────────────────────
-
-    async def _execute_tool(self, name: str, args: dict, session_id: str) -> str:
-        """Execute a tool, preferring client fs for read/write when available."""
-        from ask import execute_tool, safe_path
-
-        # Try client fs for read_file
-        if name == "read_file":
-            try:
-                path = args.get("path", "")
-                resp = await self._conn.read_text_file(
-                    path=path,
-                    session_id=session_id,
-                    line=args.get("offset"),
-                    limit=args.get("limit"),
-                )
-                if resp.text is not None:
-                    return resp.text
-            except Exception:
-                pass
-            # fallback to local
-
-        # Try client fs for write_file
-        if name == "write_file":
-            try:
-                path = args.get("path", "")
-                content = args.get("content", "")
-                await self._conn.write_text_file(
-                    content=content,
-                    path=path,
-                    session_id=session_id,
-                )
-                return f"Wrote {len(content)} bytes to {path}"
-            except Exception:
-                pass
-            # fallback to local
-
-        # Default: local execution
-        return await asyncio.to_thread(execute_tool, name, args)
 
     async def cancel(self, session_id: str, **kwargs: Any) -> None:
         import ask as _ask
@@ -565,7 +504,7 @@ class AskAgentACP(Agent):
         self._cancelled.add(session_id)
         _ask._interrupted = True
 
-    # ── Extensions (unused) ─────────────────────────────────────────
+    # ── Extensions ──────────────────────────────────────────────────
 
     async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {}
@@ -574,11 +513,11 @@ class AskAgentACP(Agent):
         pass
 
 
-async def run_acp_agent() -> None:
-    """Entry point: run ask-agent as an ACP agent over stdio."""
-    from acp import run_agent
+# ── Entry Point ─────────────────────────────────────────────────────
 
-    # Initialize ask-agent providers before starting ACP
+
+async def run_acp_agent() -> None:
+    from acp import run_agent
     from ask import init_providers, init_command_manager
 
     init_providers()
