@@ -2233,8 +2233,12 @@ def show_help():
     - 角色配置存放在 roles.json，提示词存放在 roles/ 目录
 
    🔹 会话管理：
-     - 会话按模式自动分类保存到 ~/.ask-agent/cache/ask/、~/.ask-agent/cache/agent/、~/.ask-agent/cache/translate/、~/.ask-agent/cache/role/、~/.ask-agent/cache/role_<角色id>/
+     - 会话按模式自动分类保存到 ~/.ask-agent/cache/ 下各模式子目录
      - 切换模式或退出时自动保存当前会话
+
+   🔹 IDE 集成 (ACP):
+     ag --acp            - 以 ACP Agent 模式运行，支持 Zed/JetBrains 等 IDE
+     支持流式响应、工具调用、模型切换、Plan/Build 模式
  """
     print(help_text)
     return help_text

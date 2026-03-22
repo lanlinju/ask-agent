@@ -18,6 +18,7 @@
 - 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
 - 📦 **自定义命令** - 将常用提示词保存为命令，快速调用
 - 📁 **统一配置管理** - 支持全局配置目录 `~/.ask-agent/` 和项目本地配置
+- 🔗 **ACP 支持** - Agent Client Protocol，可在 Zed、JetBrains 等 IDE 中使用
 
 ## 角色扮演模式截图
 
@@ -377,7 +378,7 @@ ag -n
 ## 命令行选项
 
 ```
-usage: ag [-q] [-a] [-e] [-n] [--agent] [--api-key API_KEY] [--log-level LOG_LEVEL] [query]
+usage: ag [-q] [-a] [-e] [-n] [--agent] [--acp] [--api-key API_KEY] [--log-level LOG_LEVEL] [query]
 
 Ask Agent - DeepSeek 聊天客户端
 
@@ -389,6 +390,7 @@ optional arguments:
   -a, --after          管道模式中，回答后进入连续对话模式
   -e, --translate      进入翻译模式
   --agent              进入智能体模式
+  --acp                以 ACP Agent 模式运行（用于 IDE 集成）
   -n, --no-memory      不记忆上下文，每次问答后只保留系统提示词
   --api-key API_KEY    API 密钥（临时覆盖配置文件中的设置，不推荐长期使用）
   --log-level LOG_LEVEL  设置日志级别（DEBUG, INFO, WARNING, ERROR, CRITICAL）
@@ -519,6 +521,60 @@ ag
 - 向 Bot 发送消息，智能体会自动处理你的任务
 - 支持所有智能体模式的功能（代码编辑、文件操作等）
 - 处理结果会通过 Telegram 返回
+
+## ACP (Agent Client Protocol) 集成
+
+Ask Agent 支持 [ACP 协议](https://agentclientprotocol.com)，可在 Zed、JetBrains、VS Code 等 IDE 中作为 AI 编程助手使用。
+
+### 启动 ACP 模式
+
+```bash
+ag --acp
+ag --acp --log-level DEBUG  # 调试模式
+```
+
+### IDE 配置
+
+**Zed：** 在 `settings.json` 中配置：
+
+```json
+{
+  "agent": {
+    "default_model": {
+      "provider": "ask-agent",
+      "model": "ask-agent"
+    }
+  },
+  "context_servers": {},
+  "assistant_providers": {
+    "ask-agent": {
+      "command": "ag",
+      "args": ["--acp"]
+    }
+  }
+}
+```
+
+**JetBrains：** 在 Settings → Tools → AI Assistant 中配置自定义 Agent，command 设为 `ag --acp`。
+
+### ACP 功能
+
+| 功能 | 说明 |
+|------|------|
+| 流式响应 | 逐 token 输出，IDE 中实时看到文字 |
+| 工具调用 | bash、文件读写、glob、grep 等 |
+| 模型切换 | IDE 中直接选择语言模型 |
+| 模式切换 | **Plan**（只读规划）/ **Build**（完整构建） |
+| 取消中断 | 支持 IDE 的 Stop 按钮，立即中断 LLM 请求 |
+| 客户端文件操作 | 优先使用 IDE 的文件读写，IDE 能感知变更 |
+| 会话持久化 | 支持 session/new、session/load、session/list |
+
+### Plan / Build 模式
+
+- **Plan** — 只读模式，用于分析代码、设计方案，不修改文件
+- **Build** — 完整构建模式，可执行命令、读写文件
+
+IDE 中可自由切换两种模式。
 
 ## MCP 服务器管理
 
@@ -985,6 +1041,7 @@ ag 支持任何兼容 OpenAI API 格式的 Provider：
 - **角色扮演系统** - 支持多角色管理，每个角色独立对话历史
 - **智能体系统** - 支持多智能体配置，可快速切换不同智能体
 - **MCP 集成** - 支持 Model Context Protocol，可连接外部工具服务器
+- **ACP 集成** - 支持 Agent Client Protocol，可在 Zed/JetBrains 等 IDE 中使用
 
 ## 系统提示词
 
