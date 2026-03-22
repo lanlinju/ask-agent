@@ -35,9 +35,11 @@ from acp.schema import (
     Implementation,
     ListSessionsResponse,
     McpCapabilities,
+    ModelInfo,
     PromptCapabilities,
     ResumeSessionResponse,
     SessionInfo,
+    SessionModelState,
     TextContentBlock,
 )
 
@@ -97,13 +99,44 @@ class AskAgentACP(Agent):
 
     _conn: Client
     _sessions: dict[str, list[dict]]
+    _session_models: dict[str, str]
     _cancelled: set[str]
     _next_session_num: int
 
     def __init__(self) -> None:
         self._sessions = {}
+        self._session_models = {}
         self._cancelled = set()
         self._next_session_num = 0
+
+    def _get_available_models(self) -> tuple[list[ModelInfo], str]:
+        """Get available models and current default model ID."""
+        from ask import list_models, PROVIDER_CONFIG
+
+        models = list_models()
+        model_infos = []
+        for mid in models:
+            info = PROVIDER_CONFIG.get_model_info(mid)
+            name = info.name if info else mid
+            provider = info.provider_id if info else ""
+            model_infos.append(
+                ModelInfo(
+                    model_id=mid,
+                    name=f"{name} ({provider})" if provider else name,
+                )
+            )
+        default = PROVIDER_CONFIG.default_model or (models[0] if models else "")
+        return model_infos, default
+
+    def _apply_model(self, model_id: str) -> None:
+        """Set global LLM config to use the given model."""
+        import ask as _ask
+
+        api_config = _ask.PROVIDER_CONFIG.get_api_config(model_id)
+        if api_config:
+            _ask.DEEPSEEK_API_URL = api_config["base_url"].rstrip("/v1")
+            _ask.DEEPSEEK_API_KEY = api_config["api_key"]
+            _ask.DEEPSEEK_MODEL = api_config["model"]
 
     def on_connect(self, conn: Client) -> None:
         self._conn = conn
@@ -148,8 +181,18 @@ class AskAgentACP(Agent):
     ) -> NewSessionResponse:
         session_id = f"sess_{uuid.uuid4().hex[:12]}"
         self._sessions[session_id] = []
-        logger.info("ACP new_session: %s (cwd=%s)", session_id, cwd)
-        return NewSessionResponse(session_id=session_id)
+        model_infos, default_model = self._get_available_models()
+        self._session_models[session_id] = default_model
+        logger.info(
+            "ACP new_session: %s (cwd=%s, model=%s)", session_id, cwd, default_model
+        )
+        return NewSessionResponse(
+            session_id=session_id,
+            models=SessionModelState(
+                available_models=model_infos,
+                current_model_id=default_model,
+            ),
+        )
 
     async def load_session(
         self,
@@ -161,6 +204,9 @@ class AskAgentACP(Agent):
         logger.info("ACP load_session: %s", session_id)
         if session_id not in self._sessions:
             self._sessions[session_id] = []
+        model_infos, default_model = self._get_available_models()
+        if session_id not in self._session_models:
+            self._session_models[session_id] = default_model
         return LoadSessionResponse()
 
     async def list_sessions(
@@ -182,7 +228,17 @@ class AskAgentACP(Agent):
     async def set_session_model(
         self, model_id: str, session_id: str, **kwargs: Any
     ) -> SetSessionModelResponse | None:
-        return None
+        from ask import PROVIDER_CONFIG
+
+        # Validate model exists
+        api_config = PROVIDER_CONFIG.get_api_config(model_id)
+        if not api_config:
+            logger.warning("ACP set_session_model: unknown model %s", model_id)
+            return None
+
+        self._session_models[session_id] = model_id
+        logger.info("ACP set_session_model: session=%s model=%s", session_id, model_id)
+        return SetSessionModelResponse()
 
     async def set_config_option(
         self, config_id: str, session_id: str, value: str, **kwargs: Any
@@ -229,6 +285,9 @@ class AskAgentACP(Agent):
         from ask import (
             SYSTEM_PROMPT_AGENT,
             TOOLS,
+            DEEPSEEK_API_KEY,
+            DEEPSEEK_API_URL,
+            DEEPSEEK_MODEL,
             execute_tool,
             get_streaming_response,
             merge_arguments,
@@ -236,6 +295,7 @@ class AskAgentACP(Agent):
             AGENT,
             logger as ask_logger,
         )
+        import ask as _ask
 
         # Ensure session exists
         if session_id not in self._sessions:
@@ -251,141 +311,156 @@ class AskAgentACP(Agent):
         user_text = "\n".join(block.text for block in prompt if hasattr(block, "text"))
         sess_msgs.append({"role": "user", "content": user_text})
 
-        # Send user message echo (optional, for client display)
-        # await self._conn.session_update(
-        #     session_id, update_user_message(user_text)
-        # )
+        # Save original global model config
+        orig_url = _ask.DEEPSEEK_API_URL
+        orig_key = _ask.DEEPSEEK_API_KEY
+        orig_model = _ask.DEEPSEEK_MODEL
+        orig_mode = _ask.current_mode
+
+        # Apply session-specific model
+        session_model = self._session_models.get(session_id)
+        if session_model:
+            self._apply_model(session_model)
 
         turn = 0
-        while True:
-            turn += 1
+        try:
+            while True:
+                turn += 1
 
-            # Check cancellation
-            if session_id in self._cancelled:
-                self._cancelled.discard(session_id)
-                return PromptResponse(stop_reason="cancelled")
-
-            # Run LLM call in thread to avoid blocking event loop
-            # Force tools on by temporarily setting mode
-            import ask as _ask
-
-            orig_mode = _ask.current_mode
-            _ask.current_mode = AGENT
-
-            try:
-                content, reasoning_content, tool_calls = await asyncio.to_thread(
-                    get_streaming_response, sess_msgs, TOOLS, True
-                )
-            finally:
-                _ask.current_mode = orig_mode
-
-            # Check cancellation after LLM call
-            if session_id in self._cancelled:
-                self._cancelled.discard(session_id)
-                return PromptResponse(stop_reason="cancelled")
-
-            # Stream agent text to client
-            if content:
-                await self._conn.session_update(
-                    session_id, update_agent_message(text_block(content))
-                )
-
-            # Stream reasoning/thought if present
-            if reasoning_content:
-                from acp import update_agent_thought
-
-                await self._conn.session_update(
-                    session_id, update_agent_thought(text_block(reasoning_content))
-                )
-
-            # Build assistant message for history
-            assistant_msg: dict[str, Any] = {"role": "assistant", "content": content}
-            if tool_calls:
-                assistant_msg["tool_calls"] = tool_calls
-                if reasoning_content:
-                    assistant_msg["reasoning_content"] = reasoning_content
-            sess_msgs.append(assistant_msg)
-
-            # No tool calls → turn complete
-            if not tool_calls:
-                return PromptResponse(stop_reason="end_turn")
-
-            # Execute each tool call
-            for tc in tool_calls:
-                # Check cancellation between tools
+                # Check cancellation
                 if session_id in self._cancelled:
                     self._cancelled.discard(session_id)
                     return PromptResponse(stop_reason="cancelled")
 
-                tc_id = tc.get("id", f"tc_{uuid.uuid4().hex[:8]}")
-                func = tc.get("function", {})
-                name = func.get("name", "")
-                raw_args = func.get("arguments", "{}")
+                # Force tools on
+                _ask.current_mode = AGENT
 
                 try:
-                    args = (
-                        json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    content, reasoning_content, tool_calls = await asyncio.to_thread(
+                        get_streaming_response, sess_msgs, TOOLS, True
                     )
-                except json.JSONDecodeError:
-                    args = {}
+                finally:
+                    _ask.current_mode = orig_mode
 
-                title = _tool_title(name, args)
-                kind = _get_tool_kind(name)
+                # Check cancellation after LLM call
+                if session_id in self._cancelled:
+                    self._cancelled.discard(session_id)
+                    return PromptResponse(stop_reason="cancelled")
 
-                # Notify: tool start
-                await self._conn.session_update(
-                    session_id,
-                    start_tool_call(
-                        tool_call_id=tc_id,
-                        title=title,
-                        kind=cast(
-                            Literal[
-                                "read",
-                                "edit",
-                                "delete",
-                                "move",
-                                "search",
-                                "execute",
-                                "think",
-                                "fetch",
-                                "switch_mode",
-                                "other",
-                            ],
-                            kind,
+                # Stream agent text to client
+                if content:
+                    await self._conn.session_update(
+                        session_id, update_agent_message(text_block(content))
+                    )
+
+                # Stream reasoning/thought if present
+                if reasoning_content:
+                    from acp import update_agent_thought
+
+                    await self._conn.session_update(
+                        session_id, update_agent_thought(text_block(reasoning_content))
+                    )
+
+                # Build assistant message for history
+                assistant_msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": content,
+                }
+                if tool_calls:
+                    assistant_msg["tool_calls"] = tool_calls
+                    if reasoning_content:
+                        assistant_msg["reasoning_content"] = reasoning_content
+                sess_msgs.append(assistant_msg)
+
+                # No tool calls → turn complete
+                if not tool_calls:
+                    return PromptResponse(stop_reason="end_turn")
+
+                # Execute each tool call
+                for tc in tool_calls:
+                    # Check cancellation between tools
+                    if session_id in self._cancelled:
+                        self._cancelled.discard(session_id)
+                        return PromptResponse(stop_reason="cancelled")
+
+                    tc_id = tc.get("id", f"tc_{uuid.uuid4().hex[:8]}")
+                    func = tc.get("function", {})
+                    name = func.get("name", "")
+                    raw_args = func.get("arguments", "{}")
+
+                    try:
+                        args = (
+                            json.loads(raw_args)
+                            if isinstance(raw_args, str)
+                            else raw_args
+                        )
+                    except json.JSONDecodeError:
+                        args = {}
+
+                    title = _tool_title(name, args)
+                    kind = _get_tool_kind(name)
+
+                    # Notify: tool start
+                    await self._conn.session_update(
+                        session_id,
+                        start_tool_call(
+                            tool_call_id=tc_id,
+                            title=title,
+                            kind=cast(
+                                Literal[
+                                    "read",
+                                    "edit",
+                                    "delete",
+                                    "move",
+                                    "search",
+                                    "execute",
+                                    "think",
+                                    "fetch",
+                                    "switch_mode",
+                                    "other",
+                                ],
+                                kind,
+                            ),
+                            status="in_progress",
+                            raw_input=args,
                         ),
-                        status="in_progress",
-                        raw_input=args,
-                    ),
-                )
+                    )
 
-                # Execute tool (in thread to avoid blocking)
-                try:
-                    output = await asyncio.to_thread(execute_tool, name, args)
-                except Exception as e:
-                    output = f"Error: {e}"
+                    # Execute tool (in thread to avoid blocking)
+                    try:
+                        output = await asyncio.to_thread(execute_tool, name, args)
+                    except Exception as e:
+                        output = f"Error: {e}"
 
-                # Truncate output for display
-                display_output = output[:2000] + "..." if len(output) > 2000 else output
+                    # Truncate output for display
+                    display_output = (
+                        output[:2000] + "..." if len(output) > 2000 else output
+                    )
 
-                # Notify: tool completed
-                await self._conn.session_update(
-                    session_id,
-                    update_tool_call(
-                        tool_call_id=tc_id,
-                        status="completed",
-                        content=[tool_content(text_block(display_output))],
-                        raw_output=output[:5000],
-                    ),
-                )
+                    # Notify: tool completed
+                    await self._conn.session_update(
+                        session_id,
+                        update_tool_call(
+                            tool_call_id=tc_id,
+                            status="completed",
+                            content=[tool_content(text_block(display_output))],
+                            raw_output=output[:5000],
+                        ),
+                    )
 
-                # Add tool result to message history
-                sess_msgs.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": output,
-                    }
-                )
+                    # Add tool result to message history
+                    sess_msgs.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": output,
+                        }
+                    )
+        finally:
+            # Restore original global model config
+            _ask.DEEPSEEK_API_URL = orig_url
+            _ask.DEEPSEEK_API_KEY = orig_key
+            _ask.DEEPSEEK_MODEL = orig_model
 
     # ── Cancellation ────────────────────────────────────────────────
 
@@ -413,4 +488,4 @@ async def run_acp_agent() -> None:
     init_command_manager()
 
     logger.info("Starting ask-agent in ACP mode (protocol v%d)", PROTOCOL_VERSION)
-    await run_agent(AskAgentACP())
+    await run_agent(AskAgentACP(), use_unstable_protocol=True)
