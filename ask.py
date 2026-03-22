@@ -1733,6 +1733,20 @@ def stat_token(data: Dict):
         )
 
 
+_streaming_response = None
+
+
+def _close_streaming_response():
+    """Close the active streaming response to interrupt a long-running request."""
+    global _streaming_response
+    if _streaming_response is not None:
+        try:
+            _streaming_response.close()
+        except Exception:
+            pass
+        _streaming_response = None
+
+
 def get_streaming_response(
     messages: List, tools: List, silent: bool = False, useTools: bool = True
 ) -> tuple[str, str, List]:
@@ -1779,24 +1793,26 @@ def get_streaming_response(
         headers=headers,
         json=data,
         stream=True,
+        timeout=(10, 30),
     ) as response:
+        global _streaming_response
+        _streaming_response = response
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ("", "", [])
-        for chunk in response.iter_lines():
+        for chunk in response.iter_lines(decode_unicode=True):
             if not chunk:
                 continue
             # ESC interrupt check
             if _interrupted:
                 break
-            decoded = chunk.decode("utf-8")
-            if not decoded.startswith("data:"):
+            if not chunk.startswith("data:"):
                 continue
-            if decoded == "data: [DONE]":
+            if chunk == "data: [DONE]":
                 logger.debug("data: [DONE]")
                 break
             try:
-                data = json.loads(decoded[6:])  # 去掉 "data: " 前缀
+                data = json.loads(chunk[6:])  # 去掉 "data: " 前缀
                 # logger.debug("data: %s", data)
                 if len(data["choices"]) == 0:
                     logger.debug("\nchoices length is 0")
@@ -1853,7 +1869,7 @@ def get_streaming_response(
             except json.JSONDecodeError:
                 continue
 
-    # logger.info("完整回答: %s", tool_calls_collected)
+    _streaming_response = None
     return (collected_content, reasoning_content, merge_arguments(tool_calls_collected))
 
 

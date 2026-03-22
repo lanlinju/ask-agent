@@ -503,6 +503,7 @@ class AskAgentACP(Agent):
         logger.info("ACP cancel: session=%s", session_id)
         self._cancelled.add(session_id)
         _ask._interrupted = True
+        _ask._close_streaming_response()
 
     # ── Extensions ──────────────────────────────────────────────────
 
