@@ -1160,6 +1160,28 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "webfetch",
+            "description": "Fetch content from a URL. Returns text, markdown, or html.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL to fetch",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["text", "markdown", "html"],
+                        "description": "Output format (default: markdown)",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "TodoWrite",
             "description": "Update the task list.",
             "parameters": {
@@ -1369,6 +1391,46 @@ def run_grep(pattern: str, path: str | None = None, include: str | None = None) 
         return f"Error: {e}"
 
 
+def run_webfetch(url: str, format: str = "markdown") -> str:
+    """Fetch content from a URL."""
+    try:
+        print(f"\033[34m% WebFetch {url} ({format})\033[0m")
+        headers = {"User-Agent": "Mozilla/5.0 ask-agent"}
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+
+        content_type = resp.headers.get("Content-Type", "")
+        text = resp.text
+
+        if format == "text":
+            # Strip HTML tags for plain text
+            text = re.sub(r"<[^>]+>", "", text)
+            text = re.sub(r"\s+", " ", text).strip()
+        elif format == "html":
+            pass  # raw HTML
+        else:  # markdown
+            if "html" in content_type:
+                # Basic HTML to markdown conversion
+                text = re.sub(r"<br\s*/?>", "\n", text)
+                text = re.sub(r"</?(p|div|section|article)[^>]*>", "\n", text)
+                text = re.sub(r"<h([1-6])[^>]*>(.*?)</h\1>", r"\n**\2**\n", text)
+                text = re.sub(
+                    r"<a[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", r"[\2](\1)", text
+                )
+                text = re.sub(r"<code[^>]*>(.*?)</code>", r"`\1`", text)
+                text = re.sub(
+                    r"<pre[^>]*>(.*?)</pre>", r"\n```\n\1\n```\n", text, flags=re.DOTALL
+                )
+                text = re.sub(r"<[^>]+>", "", text)
+                text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+        if len(text) > 50000:
+            text = text[:50000] + "\n\n... (truncated at 50000 chars)"
+        return text
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def run_todo(items: list) -> str:
     """Update the todo list."""
     try:
@@ -1574,6 +1636,8 @@ def execute_tool(name: str, args: dict) -> str:
         return run_grep(
             args["pattern"], path=args.get("path"), include=args.get("include")
         )
+    if name == "webfetch":
+        return run_webfetch(args["url"], format=args.get("format", "markdown"))
     if name == "TodoWrite":
         return run_todo(args["todos"])
     if name == "Task":
