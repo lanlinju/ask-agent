@@ -39,6 +39,8 @@ from acp.schema import (
     PromptCapabilities,
     ResumeSessionResponse,
     SessionInfo,
+    SessionMode,
+    SessionModeState,
     SessionModelState,
     TextContentBlock,
 )
@@ -94,18 +96,36 @@ def _tool_title(name: str, args: dict) -> str:
     return name
 
 
+PLAN_MODE = SessionMode(
+    id="plan",
+    name="Plan",
+    description="Read-only planning mode. Analyze code, design strategies, no file changes.",
+)
+BUILD_MODE = SessionMode(
+    id="build",
+    name="Build",
+    description="Full build mode. Execute commands, read/write files, all tools available.",
+)
+MODES = SessionModeState(
+    available_modes=[PLAN_MODE, BUILD_MODE],
+    current_mode_id="build",
+)
+
+
 class AskAgentACP(Agent):
     """ACP agent wrapping ask-agent's core capabilities."""
 
     _conn: Client
     _sessions: dict[str, list[dict]]
     _session_models: dict[str, str]
+    _session_modes: dict[str, str]
     _cancelled: set[str]
     _next_session_num: int
 
     def __init__(self) -> None:
         self._sessions = {}
         self._session_models = {}
+        self._session_modes = {}
         self._cancelled = set()
         self._next_session_num = 0
 
@@ -179,10 +199,19 @@ class AskAgentACP(Agent):
         mcp_servers: list[Any] | None = None,
         **kwargs: Any,
     ) -> NewSessionResponse:
+        import ask as _ask
+        from pathlib import Path
+
         session_id = f"sess_{uuid.uuid4().hex[:12]}"
         self._sessions[session_id] = []
         model_infos, default_model = self._get_available_models()
         self._session_models[session_id] = default_model
+        self._session_modes[session_id] = "build"
+
+        # Set working directory from client's cwd
+        if cwd:
+            _ask.WORKDIR = Path(cwd)
+
         logger.info(
             "ACP new_session: %s (cwd=%s, model=%s)", session_id, cwd, default_model
         )
@@ -191,6 +220,10 @@ class AskAgentACP(Agent):
             models=SessionModelState(
                 available_models=model_infos,
                 current_model_id=default_model,
+            ),
+            modes=SessionModeState(
+                available_modes=[BUILD_MODE, PLAN_MODE],
+                current_mode_id="build",
             ),
         )
 
@@ -201,12 +234,22 @@ class AskAgentACP(Agent):
         mcp_servers: list[Any] | None = None,
         **kwargs: Any,
     ) -> LoadSessionResponse | None:
+        import ask as _ask
+        from pathlib import Path
+
         logger.info("ACP load_session: %s", session_id)
         if session_id not in self._sessions:
             self._sessions[session_id] = []
         model_infos, default_model = self._get_available_models()
         if session_id not in self._session_models:
             self._session_models[session_id] = default_model
+        if session_id not in self._session_modes:
+            self._session_modes[session_id] = "build"
+
+        # Set working directory from client's cwd
+        if cwd:
+            _ask.WORKDIR = Path(cwd)
+
         return LoadSessionResponse()
 
     async def list_sessions(
@@ -223,6 +266,15 @@ class AskAgentACP(Agent):
     async def set_session_mode(
         self, mode_id: str, session_id: str, **kwargs: Any
     ) -> SetSessionModeResponse | None:
+        if mode_id not in ("plan", "build"):
+            logger.warning("ACP set_session_mode: unknown mode %s", mode_id)
+            return None
+        old_mode = self._session_modes.get(session_id, "build")
+        self._session_modes[session_id] = mode_id
+        # Reset messages on mode switch so new system prompt takes effect
+        if old_mode != mode_id and session_id in self._sessions:
+            self._sessions[session_id] = []
+        logger.info("ACP set_session_mode: session=%s mode=%s", session_id, mode_id)
         return SetSessionModeResponse()
 
     async def set_session_model(
@@ -290,10 +342,7 @@ class AskAgentACP(Agent):
             DEEPSEEK_MODEL,
             execute_tool,
             get_streaming_response,
-            merge_arguments,
-            current_mode,
             AGENT,
-            logger as ask_logger,
         )
         import ask as _ask
 
@@ -322,6 +371,10 @@ class AskAgentACP(Agent):
         if session_model:
             self._apply_model(session_model)
 
+        # Determine tool usage based on session mode
+        session_mode = self._session_modes.get(session_id, "build")
+        use_tools = session_mode == "build"
+
         turn = 0
         try:
             while True:
@@ -335,12 +388,12 @@ class AskAgentACP(Agent):
                     self._cancelled.discard(session_id)
                     return PromptResponse(stop_reason="cancelled")
 
-                # Force tools on
+                # Force AGENT mode for system prompt selection
                 _ask.current_mode = AGENT
 
                 try:
                     content, reasoning_content, tool_calls = await asyncio.to_thread(
-                        get_streaming_response, sess_msgs, TOOLS, True
+                        get_streaming_response, sess_msgs, TOOLS, True, use_tools
                     )
                 finally:
                     _ask.current_mode = orig_mode
