@@ -1,3 +1,4 @@
+agent-client-protocol>=0.8.0
 prompt-toolkit==3.0.50
 python-dotenv==1.2.1
 python-telegram-bot==22.6

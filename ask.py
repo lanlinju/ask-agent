@@ -1504,7 +1504,7 @@ def merge_arguments(tool_calls_collected: List) -> List:
 
         current = tool_calls_by_index[index]
 
-        if "id" in tool_call:
+        if "id" in tool_call and tool_call["id"]:
             current["id"] = tool_call["id"]
         if "function" in tool_call:
             func = tool_call["function"]
@@ -2625,11 +2625,24 @@ def main():
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="设置日志级别（默认: ERROR，可通过 .env 文件的 LOG_LEVEL 配置）",
     )
+    parser.add_argument(
+        "--acp",
+        action="store_true",
+        help="Run as ACP agent over stdio (for IDE integration)",
+    )
 
     args = parser.parse_args()
 
     # 设置日志级别
     logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
+
+    # ACP mode: run as agent over stdio, skip normal initialization
+    if args.acp:
+        import asyncio
+        from acp_agent import run_acp_agent
+
+        asyncio.run(run_acp_agent())
+        return
 
     # 设置 API 密钥
     global DEEPSEEK_API_KEY
