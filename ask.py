@@ -1273,6 +1273,10 @@ TOOLS = [
     },
 ]
 
+# Please ignore the following code, it's for personal preference and has no effect on the main logic. I recently like to see how the LLM uses the Linux command line.
+ONLY_BASH_TOOL = os.getenv("ONLY_BASH_TOOL", "disabled").lower()
+if ONLY_BASH_TOOL == "enabled":
+    TOOLS = TOOLS[:1]  # 仅保留 bash 工具
 
 def run_bash(command: str, timeout: Optional[int] = None) -> str:
     """执行 bash 命令并返回 stdout/stderr"""
