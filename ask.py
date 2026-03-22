@@ -1341,14 +1341,14 @@ def run_glob(pattern: str, path: str | None = None) -> str:
     """Find files matching a glob pattern."""
     try:
         base = safe_path(path) if path else WORKDIR
-        print(f"\033[34m→ Glob {pattern} in {base.relative_to(WORKDIR) or '.'}\033[0m")
+        print(f"\033[34m✱ Glob {pattern} in {base.relative_to(WORKDIR) or '.'}\033[0m")
         matches = sorted(
             str(p.relative_to(WORKDIR)) for p in base.glob(pattern) if p.is_file()
         )
         if not matches:
             return "(no matches)"
-        print("\n".join(matches))
-        return f"{len(matches)} files found\n" + "\n".join(matches)
+        logger.debug("Glob matches: %s", matches)
+        return f"{len(matches)} matches\n" + "\n".join(matches)
     except Exception as e:
         return f"Error: {e}"
 
@@ -1358,7 +1358,7 @@ def run_grep(pattern: str, path: str | None = None, include: str | None = None) 
     try:
         base = safe_path(path) if path else WORKDIR
         print(
-            f'\033[34m→ Grep "{pattern}" in {base.relative_to(WORKDIR) or "."}\033[0m'
+            f'\033[34m✱ Grep "{pattern}" in {base.relative_to(WORKDIR) or "."}\033[0m'
         )
         regex = re.compile(pattern)
         results = []
@@ -1385,8 +1385,8 @@ def run_grep(pattern: str, path: str | None = None, include: str | None = None) 
 
         if not results:
             return "(no matches)"
-        print("\n".join(results))
-        return f"{len(results)} matches found\n" + "\n".join(results)
+        logger.debug("Grep matches: %s", results)
+        return f"{len(results)} matches\n" + "\n".join(results)
     except Exception as e:
         return f"Error: {e}"
 
@@ -1426,6 +1426,7 @@ def run_webfetch(url: str, format: str = "markdown") -> str:
 
         if len(text) > 50000:
             text = text[:50000] + "\n\n... (truncated at 50000 chars)"
+        logger.debug("WebFetch result:\n%s", text)
         return text
     except Exception as e:
         return f"Error: {e}"
