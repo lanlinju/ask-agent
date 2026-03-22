@@ -22,6 +22,7 @@ from agent import AgentManager
 from command import CommandManager
 from typing import Optional
 from config import ConfigPathManager, get_config_path
+from util import YELLOW, GREEN, RESET
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -303,10 +304,6 @@ AGENT_MANAGER: Optional[AgentManager] = None
 COMMAND_DIR = WORKDIR / "command"
 COMMAND_CONFIG = _COMMAND_PATH_MANAGER.find_config() or (WORKDIR / "command.json")
 COMMAND_MANAGER: Optional[CommandManager] = None
-
-YELLOW = "\033[1;38;2;229;192;123m"
-GREEN = "\033[1;38;2;152;195;121m"
-RESET = "\033[0m"
 
 
 def init_role_manager() -> RoleManager:
@@ -1277,6 +1274,7 @@ TOOLS = [
 ONLY_BASH_TOOL = os.getenv("ONLY_BASH_TOOL", "disabled").lower()
 if ONLY_BASH_TOOL == "enabled":
     TOOLS = TOOLS[:1]  # 仅保留 bash 工具
+
 
 def run_bash(command: str, timeout: Optional[int] = None) -> str:
     """执行 bash 命令并返回 stdout/stderr"""
