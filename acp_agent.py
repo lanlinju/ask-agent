@@ -398,26 +398,66 @@ class AskAgentACP(Agent):
 
                 # Force AGENT mode for system prompt selection
                 _ask.current_mode = AGENT
-                try:
-                    content, reasoning_content, tool_calls = await asyncio.to_thread(
-                        get_streaming_response, sess_msgs, TOOLS, True, use_tools
+
+                # Streaming callback: send each token to client immediately
+                loop = asyncio.get_running_loop()
+                self._token_queue = asyncio.Queue()
+
+                def _on_token(kind: str, text: str) -> None:
+                    loop.call_soon_threadsafe(
+                        self._token_queue.put_nowait, (kind, text)
                     )
+
+                try:
+                    # Run LLM in thread with streaming callback
+                    import functools
+
+                    call = functools.partial(
+                        get_streaming_response,
+                        sess_msgs,
+                        TOOLS,
+                        True,
+                        use_tools,
+                        _on_token,
+                    )
+                    llm_task = asyncio.create_task(asyncio.to_thread(call))
+
+                    # Stream tokens to client while LLM runs
+                    while not llm_task.done():
+                        try:
+                            kind, text = await asyncio.wait_for(
+                                self._token_queue.get(), timeout=0.1
+                            )
+                            if kind == "text":
+                                await self._conn.session_update(
+                                    session_id, update_agent_message(text_block(text))
+                                )
+                            elif kind == "thought":
+                                await self._conn.session_update(
+                                    session_id, update_agent_thought(text_block(text))
+                                )
+                        except asyncio.TimeoutError:
+                            pass
+
+                    # Drain remaining tokens
+                    while not self._token_queue.empty():
+                        kind, text = self._token_queue.get_nowait()
+                        if kind == "text":
+                            await self._conn.session_update(
+                                session_id, update_agent_message(text_block(text))
+                            )
+                        elif kind == "thought":
+                            await self._conn.session_update(
+                                session_id, update_agent_thought(text_block(text))
+                            )
+
+                    content, reasoning_content, tool_calls = llm_task.result()
                 finally:
                     _ask.current_mode = orig_mode
 
                 if session_id in self._cancelled:
                     self._cancelled.discard(session_id)
                     return PromptResponse(stop_reason="cancelled")
-
-                # Stream updates to client
-                if content:
-                    await self._conn.session_update(
-                        session_id, update_agent_message(text_block(content))
-                    )
-                if reasoning_content:
-                    await self._conn.session_update(
-                        session_id, update_agent_thought(text_block(reasoning_content))
-                    )
 
                 # Record assistant message
                 assistant_msg: dict[str, Any] = {

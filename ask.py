@@ -1748,7 +1748,11 @@ def _close_streaming_response():
 
 
 def get_streaming_response(
-    messages: List, tools: List, silent: bool = False, useTools: bool = True
+    messages: List,
+    tools: List,
+    silent: bool = False,
+    useTools: bool = True,
+    on_token=None,
 ) -> tuple[str, str, List]:
     """获取真实的API流式响应，包含完整的对话上下文和系统提示词"""
     headers = {
@@ -1856,10 +1860,14 @@ def get_streaming_response(
                             reasoning_content += content
                             if should_display:
                                 print(f"\033[90m{content}\033[0m", end="", flush=True)
+                            if on_token:
+                                on_token("thought", content)
                             continue
                         collected_content += content
                         if not silent:
                             print(content, end="", flush=True)
+                        if on_token:
+                            on_token("text", content)
                     # 工具调用
                     elif delta.get("tool_calls"):
                         tool_calls = delta["tool_calls"]
