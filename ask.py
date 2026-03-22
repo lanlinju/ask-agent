@@ -1504,7 +1504,7 @@ def merge_arguments(tool_calls_collected: List) -> List:
 
         current = tool_calls_by_index[index]
 
-        if "id" in tool_call and tool_call["id"]:
+        if tool_call.get("id"):
             current["id"] = tool_call["id"]
         if "function" in tool_call:
             func = tool_call["function"]
