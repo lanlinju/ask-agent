@@ -1829,7 +1829,7 @@ def get_streaming_response(
                     if finish_reason == "length" and current_mode == ROLE:
                         print("\n📝 上下文即将达到限制，自动压缩对话历史...\n")
                         summarizer()
-                    break
+                    # continue
                 if "choices" in data and data["choices"][0]["delta"]:
                     delta = data["choices"][0]["delta"]
                     # 推理内容
@@ -1846,20 +1846,24 @@ def get_streaming_response(
                     elif delta.get("content"):
                         stop_thinking()
                         content = delta["content"]
-                        if "<think>" in content:
-                            in_think_tag = True
-                            if should_display:
-                                print("\033[34mThinking: \033[0m", end="", flush=True)
-                            content = content.replace("<think>", "")
-                        if "</think>" in content:
-                            in_think_tag = False
-                            continue
-                        if in_think_tag:
-                            # 在 think 标签内，作为推理内容
-                            reasoning_content += content
-                            if should_display:
-                                print(f"\033[90m{content}\033[0m", end="", flush=True)
-                            continue
+                        # if "<think>" in content:  # 推理开始
+                        #     in_think_tag = True
+                        #     if should_display:
+                        #         print("\033[34mThinking: \033[0m", end="", flush=True)
+                        #     # content = content.replace("<think>", "")
+                        # if "</think>" in content:  # 推理结束
+                        #     in_think_tag = False
+                        #     # content = content.replace("</think>", "")
+                        #     collected_content += content
+                        #     if should_display:
+                        #         print(f"\033[90m{content}\033[0m", end="", flush=True)
+                        #     continue
+                        # if in_think_tag:
+                        #     # 在 think 标签内，作为推理内容
+                        #     collected_content += content
+                        #     if should_display:
+                        #         print(f"\033[90m{content}\033[0m", end="", flush=True)
+                        #     continue
                         collected_content += content
                         if not silent:
                             print(content, end="", flush=True)

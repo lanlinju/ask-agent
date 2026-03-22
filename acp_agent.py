@@ -372,8 +372,8 @@ class AskAgentACP(Agent):
                     obj = json.loads(chunk[6:])
                     if not obj["choices"]:
                         continue
-                    if obj["choices"][0]["finish_reason"] is not None:
-                        break
+                    # if obj["choices"][0]["finish_reason"] is not None:
+                    #     continue
                     delta = obj["choices"][0].get("delta")
                     if not delta:
                         continue
@@ -383,16 +383,19 @@ class AskAgentACP(Agent):
                         yield ("thought", delta["reasoning_content"])
                     elif delta.get("content"):
                         content = delta["content"]
-                        if "<think>" in content:
-                            in_think = True
-                            content = content.replace("<think>", "")
-                        if "</think>" in content:
-                            in_think = False
-                            continue
-                        if in_think:
-                            reasoning += content
-                            yield ("thought", content)
-                            continue
+                        # if "<think>" in content:
+                        #     in_think = True
+                        #     # content = content.replace("<think>", "")
+                        # if "</think>" in content:
+                        #     in_think = False
+                        #     # content = content.replace("</think>", "")
+                        #     collected += content
+                        #     yield ("thought", content)
+                        #     continue
+                        # if in_think:
+                        #     collected += content
+                        #     yield ("thought", content)
+                        #     continue
                         collected += content
                         yield ("text", content)
                     elif delta.get("tool_calls"):
