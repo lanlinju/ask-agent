@@ -837,7 +837,7 @@ def get_agent_descriptions() -> str:
 
 
 # 系统智能体提示词
-SYSTEM_PROMPT_AGENT = f"""You are a coding agent at {WORKDIR}.
+SYSTEM_PROMPT_AGENT = f"""You are a coding agent.
 
 Loop: plan -> act with tools -> report.
 
@@ -1026,7 +1026,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Run a shell command (bash/zsh on Linux/macOS, PowerShell on Windows).",
+            "description": f"Run a shell command (bash/zsh on Linux/macOS, PowerShell on Windows). Current OS: {platform.system()}.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1112,7 +1112,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "glob",
-            "description": "Find files matching a glob pattern (e.g. '**/*.py', 'src/**/*.ts').",
+            "description": "Find files matching a glob pattern (e.g. '*.rs', '**/*.py', 'src/**/*.ts').",
             "parameters": {
                 "type": "object",
                 "properties": {
