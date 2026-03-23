@@ -920,7 +920,7 @@ class TodoManager:
         lines = []
         for item in self.items:
             if item["status"] == "completed":
-                lines.append(f"[x] {item['content']}")
+                lines.append(f"[✓] {item['content']}")
             elif item["status"] == "in_progress":
                 lines.append(f"[>] {item['content']}")
             else:
@@ -1192,7 +1192,7 @@ TOOLS = [
                             "properties": {
                                 "content": {
                                     "type": "string",
-                                    "description": "Task description",
+                                    "description": "Task description (must end with newline)",
                                 },
                                 "status": {
                                     "type": "string",
