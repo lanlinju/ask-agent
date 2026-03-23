@@ -44,6 +44,7 @@ from acp.schema import (
     SessionModeState,
     SessionModelState,
 )
+from util import format_range_info
 
 logger = logging.getLogger(__name__)
 
@@ -89,23 +90,28 @@ def _tool_title(name: str, args: dict) -> str:
     if name == "bash":
         return f"$ {args.get('command', '')[:60]}"
     if name == "read_file":
-        return f"Read {args.get('path', '')}"
+        path = args.get("path", "")
+        return f"→ Read {path}{format_range_info(args)}"
     if name == "write_file":
-        return f"Write {args.get('path', '')}"
+        return f"→ Write {args.get('path', '')}"
     if name == "edit_file":
-        return f"Edit {args.get('path', '')}"
+        return f"→ Edit {args.get('path', '')}"
     if name == "glob":
-        return f"Glob {args.get('pattern', '')}"
+        path = args.get("path", "")
+        path_info = f" in {path}" if path else ""
+        return f"✱ Glob {args.get('pattern', '')}{path_info}"
     if name == "grep":
-        return f'Grep "{args.get("pattern", "")}"'
+        path = args.get("path", "")
+        path_info = f" in {path}" if path else ""
+        return f'✱ Grep "{args.get("pattern", "")}"{path_info}'
     if name == "webfetch":
-        return f"Fetch {args.get('url', '')[:50]}"
+        return f"% Fetch {args.get('url', '')[:50]}"
     if name == "Task":
         return f"Task: {args.get('description', '')}"
     if name == "Skill":
         return f"Load skill: {args.get('skill', '')}"
     if name == "MCP":
-        return f"Connect MCP: {args.get('server', '')}"
+        return f"→ Connect MCP: {args.get('server', '')}"
     return _TOOL_TITLE_MAP.get(name, name)
 
 

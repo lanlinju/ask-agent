@@ -22,7 +22,7 @@ from agent import AgentManager
 from command import CommandManager
 from typing import Optional
 from config import ConfigPathManager, get_config_path
-from util import YELLOW, GREEN, RESET
+from util import YELLOW, GREEN, RESET, format_range_info
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -1294,8 +1294,12 @@ def safe_path(p: str) -> Path:
 def run_read(path: str, offset: int = 0, limit: int = None) -> str:
     """Read file contents."""
     try:
-        range_info = f"[offset={offset}, limit={limit}]" if offset or limit else ""
-        print(f"\033[34m→ Read {path} {range_info}\033[0m")
+        range_args = {}
+        if offset:
+            range_args["offset"] = offset
+        if limit:
+            range_args["limit"] = limit
+        print(f"\033[90m→ Read {path}{format_range_info(range_args)}\033[0m")
         lines = safe_path(path).read_text().splitlines()
         if offset:
             lines = lines[offset:]
@@ -1850,14 +1854,20 @@ def get_streaming_response(
                             collected_content += content
                             if should_display:
                                 print("\033[34mThinking: \033[0m", end="", flush=True)
-                                print(f"\033[90m{content.replace("<think>", "")}\033[0m", end="", flush=True)
-                            continue    
+                                print(
+                                    f"\033[90m{content.replace('<think>', '')}\033[0m",
+                                    end="",
+                                    flush=True,
+                                )
+                            continue
                         if "</think>" in content:  # 推理结束
                             in_think_tag = False
                             collected_content += content
-                            content = content.split('</think>')
+                            content = content.split("</think>")
                             if should_display:
-                                print(f"\033[90m{content[0]}\033[0m", end="", flush=True)
+                                print(
+                                    f"\033[90m{content[0]}\033[0m", end="", flush=True
+                                )
                                 print(content[1], end="", flush=True)
                             continue
                         if in_think_tag:

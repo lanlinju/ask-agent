@@ -1,9 +1,9 @@
-
 # ANSI color utilities using One Dark Pro theme.
 def _rgb(r: int, g: int, b: int, bold: bool = True) -> str:
     """Generate ANSI 24-bit color escape sequence."""
     prefix = "\033[1;" if bold else "\033["
     return f"{prefix}38;2;{r};{g};{b}m"
+
 
 # One Dark Pro theme colors
 
@@ -34,3 +34,13 @@ OPERATOR = CYAN
 
 # Reset
 RESET = "\033[0m"
+
+
+def format_range_info(args: dict) -> str:
+    """格式化读取范围信息 (offset/limit)"""
+    range_parts = []
+    if args.get("limit"):
+        range_parts.append(f"limit={args['limit']}")
+    if args.get("offset"):
+        range_parts.append(f"offset={args['offset']}")
+    return f" [{', '.join(range_parts)}]" if range_parts else ""
