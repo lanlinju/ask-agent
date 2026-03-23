@@ -1057,7 +1057,7 @@ TOOLS = [
                     },
                     "offset": {
                         "type": "integer",
-                        "description": "Start reading from line number (0-indexed, default: 0)",
+                        "description": "Start reading from line number (1-indexed, default: 1)",
                     },
                     "limit": {
                         "type": "integer",
@@ -1299,10 +1299,10 @@ def run_read(path: str, offset: int = 0, limit: int = None) -> str:
             range_args["offset"] = offset
         if limit:
             range_args["limit"] = limit
-        print(f"\033[90m→ Read {path}{format_range_info(range_args)}\033[0m")
+        print(f"\033[34m→ Read {path}{format_range_info(range_args)}\033[0m")
         lines = safe_path(path).read_text().splitlines()
         if offset:
-            lines = lines[offset:]
+            lines = lines[offset - 1 :]
         if limit:
             lines = lines[:limit]
         return "\n".join(lines)
