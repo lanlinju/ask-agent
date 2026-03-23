@@ -20,15 +20,18 @@
 - 📁 **统一配置管理** - 支持全局配置目录 `~/.ask-agent/` 和项目本地配置
 - 🔗 **ACP 支持** - Agent Client Protocol，可在 Zed、JetBrains 等 IDE 中使用
 
-## 角色扮演模式截图
+## 使用示例截图
 
-![角色扮演模式示例](image/role.png)
-
-## Telegram Bot示例截图
-
-<div align="center">
-  <img src="./image/bot.jpg" width="400" alt="Telegram Bot示例">
-</div>
+<table>
+  <tr>
+    <td align="center"><strong>角色扮演模式</strong><br><img src="image/role.png" width="400" alt="角色扮演模式示例"></td>
+    <td align="center"><strong>ACP 使用示例</strong><br><img src="image/acp_demo.jpg" width="400" alt="ACP 使用示例"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>智能体模式示例</strong><br><img src="image/agent_demo1.jpg" width="400" alt="智能体模式示例"></td>
+    <td align="center"><strong>Telegram Bot 示例</strong><br><img src="image/bot.jpg" width="400" alt="Telegram Bot示例"></td>
+  </tr>
+</table>
 
 ## 安装
 
