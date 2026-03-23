@@ -428,6 +428,14 @@ class AskAgentACP(Agent):
         tool_calls = merge_arguments(tool_calls_collected)
         yield ("done", (collected, reasoning, tool_calls))
 
+    def _resolve_path(self, raw_path: str) -> str:
+        """Resolve relative path against WORKDIR."""
+        import ask as _ask
+
+        if raw_path and not Path(raw_path).is_absolute():
+            return str(_ask.WORKDIR / raw_path)
+        return raw_path
+
     async def _execute_tool(self, name: str, args: dict, session_id: str) -> str:
         """Execute a tool, preferring client fs when available."""
         from ask import execute_tool
@@ -435,23 +443,25 @@ class AskAgentACP(Agent):
         # Try client fs for read_file (only if client supports it)
         if name == "read_file" and self._client_caps.get("fs_read"):
             try:
-                _acp_debug.info("TOOL: > fs_read %s", args.get("path", ""))
+                path = self._resolve_path(args.get("path", ""))
+                _acp_debug.info("TOOL: > fs_read %s", path)
                 resp = await self._conn.read_text_file(
-                    path=args.get("path", ""),
+                    path=path,
                     session_id=session_id,
                     line=args.get("offset"),
                     limit=args.get("limit"),
                 )
-                if resp.content is not None:
+                if resp.content:
                     _acp_debug.debug("TOOL: fs_read success, len=%d", len(resp.content))
                     return resp.content
+                _acp_debug.info("TOOL: fs_read returned empty content, falling back")
             except Exception as e:
                 _acp_debug.info("TOOL: client fs_read failed: %s", e)
 
         # Try client fs for write_file (only if client supports it)
         if name == "write_file" and self._client_caps.get("fs_write"):
             try:
-                path = args.get("path", "")
+                path = self._resolve_path(args.get("path", ""))
                 content = args.get("content", "")
                 _acp_debug.info("TOOL: > fs_write %s", path)
                 await self._conn.write_text_file(
