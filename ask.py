@@ -1192,7 +1192,7 @@ TOOLS = [
                             "properties": {
                                 "content": {
                                     "type": "string",
-                                    "description": "Task description (must end with newline)",
+                                    "description": "Task description",
                                 },
                                 "status": {
                                     "type": "string",
