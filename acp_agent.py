@@ -48,6 +48,15 @@ from util import format_range_info
 
 logger = logging.getLogger(__name__)
 
+_acp_log_path = Path.home() / ".ask-agent" / "log-acp.txt"
+_acp_log_path.parent.mkdir(parents=True, exist_ok=True)
+_acp_debug = logging.getLogger("acp_debug")
+_acp_debug.setLevel(logging.DEBUG)
+_file_handler = logging.FileHandler(str(_acp_log_path), encoding="utf-8")
+_file_handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
+_acp_debug.addHandler(_file_handler)
+_acp_debug.propagate = False
+
 TOOL_KIND = Literal[
     "read",
     "edit",
@@ -198,6 +207,12 @@ class AskAgentACP(Agent):
                     getattr(fs, "write_text_file", False)
                 )
 
+        _acp_debug.info(
+            "INITIALIZE: client=%s protocol=%d caps=%s",
+            getattr(client_info, "name", "unknown"),
+            protocol_version,
+            self._client_caps,
+        )
         logger.info(
             "ACP initialize: client=%s, protocol=%d, caps=%s",
             getattr(client_info, "name", "unknown"),
@@ -421,32 +436,40 @@ class AskAgentACP(Agent):
         # Try client fs for read_file (only if client supports it)
         if name == "read_file" and self._client_caps.get("fs_read"):
             try:
+                _acp_debug.info(
+                    "TOOL: > fs_read %s", args.get("path", "")
+                )
                 resp = await self._conn.read_text_file(
                     path=args.get("path", ""),
                     session_id=session_id,
                     line=args.get("offset"),
                     limit=args.get("limit"),
                 )
-                if resp.text is not None:
-                    return resp.text
-            except Exception:
-                pass
+                if resp.content is not None:
+                    _acp_debug.debug(
+                        "TOOL: fs_read success, len=%d", len(resp.content)
+                    )
+                    return resp.content
+            except Exception as e:
+                _acp_debug.info("TOOL: client fs_read failed: %s", e)
 
         # Try client fs for write_file (only if client supports it)
         if name == "write_file" and self._client_caps.get("fs_write"):
             try:
                 path = args.get("path", "")
                 content = args.get("content", "")
+                _acp_debug.info("TOOL: > fs_write %s", path)
                 await self._conn.write_text_file(
                     content=content,
                     path=path,
                     session_id=session_id,
                 )
                 return f"Wrote {len(content)} bytes to {path}"
-            except Exception:
-                pass
+            except Exception as e:
+                _acp_debug.info("TOOL: fs_write failed: %s", e)
 
         # Default: local execution (bash always local, fs fallback)
+        _acp_debug.info("TOOL: > %s args=%s", name, str(args)[:300])
         return await asyncio.to_thread(execute_tool, name, args)
 
     # ── Prompt Turn ─────────────────────────────────────────────────
@@ -465,7 +488,62 @@ class AskAgentACP(Agent):
         if not sess_msgs:
             sess_msgs.append({"role": "system", "content": SYSTEM_PROMPT_AGENT})
 
-        user_text = "\n".join(block.text for block in prompt if hasattr(block, "text"))
+        parts: list[str] = []
+        _acp_debug.info("PROMPT: session=%s blocks=%d", session_id, len(prompt))
+        for i, block in enumerate(prompt):
+            block_type = getattr(block, "type", None)
+            _acp_debug.debug(
+                "PROMPT block[%d]: type=%s",
+                i,
+                block_type,
+            )
+            if block_type == "text":
+                preview = block.text[:200]
+                _acp_debug.debug("PROMPT block[%d] text: %s", i, preview)
+                parts.append(block.text)
+            elif block_type == "resource":
+                resource = block.resource
+                uri = getattr(resource, "uri", "unknown")
+                if hasattr(resource, "text"):
+                    preview = resource.text[:300]
+                    _acp_debug.debug(
+                        "PROMPT block[%d] resource(text): uri=%s len=%d preview=%s",
+                        i,
+                        uri,
+                        len(resource.text),
+                        preview,
+                    )
+                    parts.append(f"[Attachment: {uri}]\n```\n{resource.text}\n```")
+                elif hasattr(resource, "blob"):
+                    mime = getattr(resource, "mime_type", "unknown")
+                    _acp_debug.debug(
+                        "PROMPT block[%d] resource(blob): uri=%s mime=%s",
+                        i,
+                        uri,
+                        mime,
+                    )
+                    parts.append(f"[Attachment: {uri}] (binary, {mime})")
+                else:
+                    _acp_debug.debug(
+                        "PROMPT block[%d] resource(unknown): uri=%s resource_attrs=%s",
+                        i,
+                        uri,
+                        [a for a in dir(resource) if not a.startswith("_")],
+                    )
+            elif block_type == "resource_link":
+                uri = getattr(block, "uri", "")
+                name = getattr(block, "name", uri)
+                parts.append(f"[File reference: {name} ({uri})]")
+            elif block_type == "image":
+                parts.append("[Image attachment included]")
+            elif block_type == "audio":
+                parts.append("[Audio attachment included]")
+            elif hasattr(block, "text"):
+                parts.append(block.text)
+            else:
+                _acp_debug.info("PROMPT block[%d] unknown type, skipped", i)
+        user_text = "\n".join(parts)
+        _acp_debug.info("PROMPT: User Prompt: %s", user_text)
         sess_msgs.append({"role": "user", "content": user_text})
 
         use_tools = self._session_modes.get(session_id, "build") == "build"
