@@ -665,6 +665,8 @@ class AskAgentACP(Agent):
                         ),
                     )
 
+                _acp_debug.info("TOOL: Result -> %s", output[:400])    
+
                 sess_msgs.append(
                     {
                         "role": "tool",
