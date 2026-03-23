@@ -642,16 +642,28 @@ class AskAgentACP(Agent):
                 except Exception as e:
                     output = f"Error: {e}"
 
-                display = output[:2000] + "..." if len(output) > 2000 else output
-                await self._conn.session_update(
-                    session_id,
-                    update_tool_call(
-                        tool_call_id=tc_id,
-                        status="completed",
-                        content=[tool_content(text_block(display))],
-                        raw_output=output[:5000],
-                    ),
-                )
+                # Don't send grep/glob/webfetch results to client
+                if name in ("grep", "glob", "webfetch"):
+                    await self._conn.session_update(
+                        session_id,
+                        update_tool_call(
+                            tool_call_id=tc_id,
+                            status="completed",
+                            content=[],
+                            raw_output="",
+                        ),
+                    )
+                else:
+                    display = output[:2000] + "..." if len(output) > 2000 else output
+                    await self._conn.session_update(
+                        session_id,
+                        update_tool_call(
+                            tool_call_id=tc_id,
+                            status="completed",
+                            content=[tool_content(text_block(display))],
+                            raw_output=output[:5000],
+                        ),
+                    )
 
                 sess_msgs.append(
                     {
