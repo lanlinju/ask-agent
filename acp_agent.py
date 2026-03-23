@@ -51,7 +51,6 @@ logger = logging.getLogger(__name__)
 _acp_log_path = Path.home() / ".ask-agent" / "log-acp.txt"
 _acp_log_path.parent.mkdir(parents=True, exist_ok=True)
 _acp_debug = logging.getLogger("acp_debug")
-_acp_debug.setLevel(logging.DEBUG)
 _file_handler = logging.FileHandler(str(_acp_log_path), encoding="utf-8")
 _file_handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
 _acp_debug.addHandler(_file_handler)
@@ -436,9 +435,7 @@ class AskAgentACP(Agent):
         # Try client fs for read_file (only if client supports it)
         if name == "read_file" and self._client_caps.get("fs_read"):
             try:
-                _acp_debug.info(
-                    "TOOL: > fs_read %s", args.get("path", "")
-                )
+                _acp_debug.info("TOOL: > fs_read %s", args.get("path", ""))
                 resp = await self._conn.read_text_file(
                     path=args.get("path", ""),
                     session_id=session_id,
@@ -446,9 +443,7 @@ class AskAgentACP(Agent):
                     limit=args.get("limit"),
                 )
                 if resp.content is not None:
-                    _acp_debug.debug(
-                        "TOOL: fs_read success, len=%d", len(resp.content)
-                    )
+                    _acp_debug.debug("TOOL: fs_read success, len=%d", len(resp.content))
                     return resp.content
             except Exception as e:
                 _acp_debug.info("TOOL: client fs_read failed: %s", e)
@@ -680,10 +675,13 @@ class AskAgentACP(Agent):
 # ── Entry Point ─────────────────────────────────────────────────────
 
 
-async def run_acp_agent() -> None:
+async def run_acp_agent(log_level: str = "ERROR") -> None:
     from acp import run_agent
     from ask import init_providers, init_command_manager, AGENT
     import ask as _ask
+
+    # 设置ACP调试日志级别
+    _acp_debug.setLevel(getattr(logging, log_level.upper(), logging.ERROR))
 
     init_providers()
     init_command_manager()

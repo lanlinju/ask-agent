@@ -2683,7 +2683,7 @@ def main():
         import asyncio
         from acp_agent import run_acp_agent
 
-        asyncio.run(run_acp_agent())
+        asyncio.run(run_acp_agent(args.log_level))
         return
 
     # 设置 API 密钥

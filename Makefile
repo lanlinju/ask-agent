@@ -26,6 +26,9 @@ cp-config:
 	cp -R ./skills ~/.ask-agent/skills
 	cp -R ./command ~/.ask-agent/command
 
+log:
+	tail -f ~/.ask-agent/log-acp.txt		
+
 clean:
 	rm -rf ./cache
 	rm -f config.json roles.json
