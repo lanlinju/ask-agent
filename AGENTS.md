@@ -1,3 +1,30 @@
+# AGENTS.md
+
+## Project Overview
+
+**ask-agent** is a Python CLI tool for interacting with AI providers (OpenAI, DeepSeek, etc.) via streaming chat. Supports MCP (Model Context Protocol) tool integration, multiple agents/roles, Telegram bot mode, and session management.
+
+## Project Structure
+
+```
+ask.py          - Main entry point (CLI, Telegram bot)
+agent.py        - Agent management (discover/load agent configs)
+provider.py     - Provider config parsing (ProviderOptions, ModelInfo)
+mcp.py          - MCP client (StdioClient, HttpClient, tool discovery)
+session.py      - Session persistence (save/load conversations)
+role.py         - Role/prompt management
+command.py      - Command execution manager
+config.py       - Config path resolution (current dir vs ~/.ask-agent)
+MCPConfig.py    - MCP server configuration dataclasses
+util.py         - Utilities (terminal colors, helpers)
+server/         - HTTP MCP server implementation
+agents/         - Agent prompt files (*.md)
+roles/          - Role prompt files
+skills/         - Skill prompt files
+command/        - Command definitions
+tests/          - pytest test suite
+```
+
 ## Build, Lint, Test Commands
 
 ```bash
@@ -9,10 +36,11 @@ make debug         # Run with DEBUG log level
 # Linting
 make lint          # Type check with pyright
 
-# Testing
-make test          # Run all tests
-pytest tests/test_merge_arguments.py -v           # Run single test file
+# Testing (no make target; run pytest directly)
+pytest tests/ -v                      # Run all tests
+pytest tests/test_merge_arguments.py -v                          # Run single test file
 pytest tests/test_merge_arguments.py::test_merge_arguments_empty -v  # Run single test
+pytest tests/ -v -k "merge"                                      # Run tests matching pattern
 
 # MCP server
 make mcpserver     # Run HTTP MCP server for testing
@@ -21,6 +49,14 @@ make mcpserver     # Run HTTP MCP server for testing
 make pipreqs       # Regenerate requirements.txt
 make clean         # Clear cache directory
 ```
+
+## Testing Conventions
+
+- Tests live in `tests/`, use `pytest` (no extra config file; run from project root).
+- Test files: `test_<module>.py`, test functions: `test_<description>`.
+- Tests import functions directly: `from ask import merge_arguments`.
+- Docstrings on tests are in Chinese (existing convention).
+- No fixtures or conftest.py currently; tests are self-contained.
 
 ## Code Style Guidelines
 
@@ -78,7 +114,7 @@ Use `@dataclass` for configuration and data structures. Provide `from_dict` clas
 class ProviderOptions:
     base_url: str
     api_key: str
-    
+
     @classmethod
     def from_dict(cls, options: Dict[str, Any]) -> "ProviderOptions":
         return cls(...)
