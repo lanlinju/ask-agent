@@ -1317,9 +1317,9 @@ def run_write(path: str, content: str) -> str:
         fp = safe_path(path)
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(content)
-        # 打印部分内容（最大800字符）
-        preview = content[:800]
-        suffix = "..." if len(content) > 800 else ""
+        # 打印部分内容（最大2000字符）
+        preview = content[:2000]
+        suffix = "..." if len(content) > 2000 else ""
         print(f"{preview}{suffix}")
         return f"Wrote {len(content)} bytes to {path}"
     except Exception as e:
@@ -1335,6 +1335,9 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
         if old_text not in text:
             return f"Error: Text not found in {path}"
         fp.write_text(text.replace(old_text, new_text, 1))
+        preview = new_text[:2000]
+        suffix = "..." if len(new_text) > 2000 else ""
+        print(f"{preview}{suffix}")
         return (
             f"Edited {path}: replaced {len(old_text)} chars with {len(new_text)} chars"
         )
