@@ -9,6 +9,7 @@ Usage: ag --acp
 import asyncio
 import json
 import logging
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -145,6 +146,8 @@ class AskAgentACP(Agent):
         self._session_modes: dict[str, str] = {}
         self._client_caps: dict[str, bool] = {}
         self._cancelled: set[str] = set()
+        self._current_process: subprocess.Popen | None = None
+        self._process_lock = asyncio.Lock()
 
     # ── Helpers ──────────────────────────────────────────────────────
 
@@ -473,9 +476,57 @@ class AskAgentACP(Agent):
             except Exception as e:
                 _acp_debug.info("TOOL: fs_write failed: %s", e)
 
-        # Default: local execution (bash always local, fs fallback)
+        # Special handling for bash: use Popen for cancellable execution
+        if name == "bash":
+            return await self._execute_bash(args.get("command", ""), args.get("timeout"))
+
+        # Default: local execution (fs fallback)
         _acp_debug.info("TOOL: > %s args=%s", name, str(args)[:300])
         return await asyncio.to_thread(execute_tool, name, args)
+
+    async def _execute_bash(self, command: str, timeout: int | None = None) -> str:
+        """Execute bash command with cancellation support using Popen."""
+        import ask as _ask
+
+        if any(d in command for d in ["rm -rf /", "shutdown"]):
+            return "Error: Dangerous command blocked"
+
+        _acp_debug.info("BASH: $ %s", command)
+
+        async with self._process_lock:
+            self._current_process = subprocess.Popen(
+                command,
+                shell=True,
+                cwd=str(_ask.WORKDIR),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+        try:
+            stdout, stderr = await asyncio.to_thread(
+                self._current_process.communicate,
+                timeout=timeout or 120,
+            )
+            output = (stdout + stderr).strip()
+            _acp_debug.info("BASH: exit=%d output_len=%d", self._current_process.returncode, len(output))
+            return output
+        except subprocess.TimeoutExpired:
+            async with self._process_lock:
+                if self._current_process:
+                    self._current_process.kill()
+                    self._current_process = None
+            return f"Error: Command timed out after {timeout or 120}s"
+        except asyncio.CancelledError:
+            async with self._process_lock:
+                if self._current_process:
+                    _acp_debug.info("BASH: cancelled, killing process")
+                    self._current_process.kill()
+                    self._current_process = None
+            raise
+        finally:
+            async with self._process_lock:
+                self._current_process = None
 
     # ── Prompt Turn ─────────────────────────────────────────────────
 
@@ -686,6 +737,16 @@ class AskAgentACP(Agent):
         self._cancelled.add(session_id)
         _ask._interrupted = True
         _ask._close_streaming_response()
+
+        # Kill any running subprocess
+        async with self._process_lock:
+            if self._current_process:
+                _acp_debug.info("CANCEL: killing subprocess pid=%d", self._current_process.pid)
+                try:
+                    self._current_process.kill()
+                except Exception as e:
+                    _acp_debug.info("CANCEL: failed to kill subprocess: %s", e)
+                self._current_process = None
 
     # ── Extensions ──────────────────────────────────────────────────
 
