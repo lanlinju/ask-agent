@@ -43,45 +43,6 @@ logger = logging.getLogger(__name__)
 if sys.platform != "win32":
     import readline
 
-_interrupted = False
-
-
-def _start_esc_listener(stop_event: threading.Event):
-    """监听 ESC 键。用 cbreak 模式：逐字符读取，保留输出处理(换行正常)。"""
-    global _interrupted
-    if sys.platform == "win32":
-        import msvcrt
-
-        while not stop_event.is_set():
-            if msvcrt.kbhit():
-                if msvcrt.getwch() == "\x1b":
-                    _interrupted = True
-                    break
-            time.sleep(0.05)
-    else:
-        import tty
-        import termios
-        import select
-
-        fd = sys.stdin.fileno()
-        old = termios.tcgetattr(fd)
-        new = termios.tcgetattr(fd)
-        # cbreak: 禁用 ICANON(逐字符读取) + ECHO(不回显)
-        # 保留 ISIG(Ctrl+C 生效) + 所有输出处理(ONLCR 换行正常)
-        new[3] &= ~(termios.ICANON | termios.ECHO)
-        try:
-            termios.tcsetattr(fd, termios.TCSANOW, new)
-            while not stop_event.is_set():
-                r, _, _ = select.select([fd], [], [], 0.1)
-                if r:
-                    ch = os.read(fd, 1)
-                    if ch == b"\x1b":
-                        _interrupted = True
-                        break
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-
 _INPUT_HISTORY = InMemoryHistory()
 _PROMPT_SESSION = PromptSession(history=_INPUT_HISTORY)
 
@@ -1738,9 +1699,8 @@ def stat_token(data: Dict):
             total_tokens,
         )
 
-
+_interrupted = False
 _streaming_response = None
-
 
 def _close_streaming_response():
     """Close the active streaming response to interrupt a long-running request."""
@@ -1751,6 +1711,43 @@ def _close_streaming_response():
         except Exception:
             pass
         _streaming_response = None
+
+def _start_esc_listener(stop_event: threading.Event):
+    """监听 ESC 键。用 cbreak 模式：逐字符读取，保留输出处理(换行正常)。"""
+    global _interrupted
+    if sys.platform == "win32":
+        import msvcrt
+
+        while not stop_event.is_set():
+            if msvcrt.kbhit():
+                if msvcrt.getwch() == "\x1b":
+                    _interrupted = True
+                    _close_streaming_response()
+                    break
+            time.sleep(0.05)
+    else:
+        import tty
+        import termios
+        import select
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        new = termios.tcgetattr(fd)
+        # cbreak: 禁用 ICANON(逐字符读取) + ECHO(不回显)
+        # 保留 ISIG(Ctrl+C 生效) + 所有输出处理(ONLCR 换行正常)
+        new[3] &= ~(termios.ICANON | termios.ECHO)
+        try:
+            termios.tcsetattr(fd, termios.TCSANOW, new)
+            while not stop_event.is_set():
+                r, _, _ = select.select([fd], [], [], 0.1)
+                if r:
+                    ch = os.read(fd, 1)
+                    if ch == b"\x1b":
+                        _interrupted = True
+                        _close_streaming_response()
+                        break
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
 def get_streaming_response(
@@ -2290,10 +2287,10 @@ def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
         while proc.poll() is None:
             if _interrupted:
                 _kill_proc(proc)
-                return "Error: Command interrupted by user"
+                return "Warning: Command interrupted by user"
             if time.time() > deadline:
                 _kill_proc(proc)
-                return f"Error: Command timed out after {timeout_sec}s"
+                return f"Warning: Command timed out after {timeout_sec}s"
             time.sleep(0.1)
         stdout = proc.stdout.read() if proc.stdout else ""
         stderr = proc.stderr.read() if proc.stderr else ""
