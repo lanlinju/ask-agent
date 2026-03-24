@@ -1806,6 +1806,7 @@ def get_streaming_response(
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ("", "", [])
+        response.encoding = 'utf-8'
         for chunk in response.iter_lines(decode_unicode=True):
             if not chunk:
                 continue

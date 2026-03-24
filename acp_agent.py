@@ -382,6 +382,7 @@ class AskAgentACP(Agent):
                 yield ("done", ("", "", []))
                 return
 
+            response.encoding = 'utf-8'
             for chunk in response.iter_lines(decode_unicode=True):
                 if not chunk:
                     continue
