@@ -558,7 +558,26 @@ ag --acp --log-level DEBUG  # 调试模式
 }
 ```
 
+[JetBrains ACP 官方配置教程](https://www.jetbrains.com/zh-cn/help/ai-assistant/acp.html)
+
 **JetBrains：** 在 Settings → Tools → AI Assistant 中配置自定义 Agent，command 设为 `ag --acp`。
+
+或者编辑 `~/.jetbrains/acp.json` 文件：
+
+```json
+{
+    "agent_servers": {
+        "Ask Agent": {
+          "command": "/Users/John.Doe/Downloads/ask-agent/ag",
+          "args": ["--acp"]
+        },
+        "OpenCode": {
+            "command": "/Users/John.Doe/.opencode/bin/opencode",
+            "args": ["acp"]
+        }
+    }
+}
+```
 
 ### ACP 功能
 
