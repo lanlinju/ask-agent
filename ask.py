@@ -2407,7 +2407,6 @@ def agent(prompt: str) -> str:
             # 如果没有工具调用或者esc中断，结束循环
             if not tool_calls or _interrupted:
                 _interrupted = False
-                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
                 return content
 
             for tool_call in tool_calls:
@@ -2442,10 +2441,8 @@ def agent(prompt: str) -> str:
                 messages.append(tool_result)
 
             sub_turn += 1
-    except Exception:
-        cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
-        raise
     finally:
+        cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
         _esc_stop.set()
         if t is not None:
             t.join(timeout=0.5)

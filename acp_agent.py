@@ -608,126 +608,126 @@ class AskAgentACP(Agent):
         reasoning_start_index = len(sess_msgs)
         sub_turn = 1
 
-        while True:
-            _ask._interrupted = False
-
-            if session_id in self._cancelled:
-                self._cancelled.discard(session_id)
-                return PromptResponse(stop_reason="cancelled")
-
-            content = ""
-            reasoning_content = ""
-            tool_calls: list = []
-
-            async for event in self._stream_response(sess_msgs, TOOLS, use_tools):
-                kind, payload = event
-
-                if session_id in self._cancelled:
-                    self._cancelled.discard(session_id)
-                    return PromptResponse(stop_reason="cancelled")
-
-                if kind == "done":
-                    content, reasoning_content, tool_calls = payload  # type: ignore
-                elif kind == "text":
-                    await self._conn.session_update(
-                        session_id,
-                        update_agent_message(text_block(str(payload))),
-                    )
-                elif kind == "thought":
-                    await self._conn.session_update(
-                        session_id,
-                        update_agent_thought(text_block(str(payload))),
-                    )
-
-            if session_id in self._cancelled:
-                self._cancelled.discard(session_id)
-                return PromptResponse(stop_reason="cancelled")
-
-            assistant_msg: dict[str, Any] = {
-                "role": "assistant",
-                "content": content,
-            }
-            if tool_calls:
-                assistant_msg["tool_calls"] = tool_calls
-                if reasoning_content:
-                    assistant_msg["reasoning_content"] = reasoning_content
-            sess_msgs.append(assistant_msg)
-
-            if not tool_calls or _ask._interrupted:
+        try:
+            while True:
                 _ask._interrupted = False
-                _ask.cleanup_reasoning_content(
-                    sess_msgs, reasoning_start_index, sub_turn
-                )
-                return PromptResponse(stop_reason="end_turn")
 
-            for tc in tool_calls:
                 if session_id in self._cancelled:
                     self._cancelled.discard(session_id)
                     return PromptResponse(stop_reason="cancelled")
 
-                tc_id = tc.get("id", f"tc_{uuid.uuid4().hex[:8]}")
-                func = tc.get("function", {})
-                name = func.get("name", "")
-                raw_args = func.get("arguments", "{}")
+                content = ""
+                reasoning_content = ""
+                tool_calls: list = []
 
-                try:
-                    args = (
-                        json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                    )
-                except json.JSONDecodeError:
-                    args = {}
+                async for event in self._stream_response(sess_msgs, TOOLS, use_tools):
+                    kind, payload = event
 
-                await self._conn.session_update(
-                    session_id,
-                    start_tool_call(
-                        tool_call_id=tc_id,
-                        title=_tool_title(name, args),
-                        kind=cast(TOOL_KIND, _get_tool_kind(name)),
-                        status="in_progress",
-                        raw_input=args,
-                    ),
-                )
+                    if session_id in self._cancelled:
+                        self._cancelled.discard(session_id)
+                        return PromptResponse(stop_reason="cancelled")
 
-                try:
-                    output = await self._execute_tool(name, args, session_id)
-                except Exception as e:
-                    output = f"Error: {e}"
+                    if kind == "done":
+                        content, reasoning_content, tool_calls = payload  # type: ignore
+                    elif kind == "text":
+                        await self._conn.session_update(
+                            session_id,
+                            update_agent_message(text_block(str(payload))),
+                        )
+                    elif kind == "thought":
+                        await self._conn.session_update(
+                            session_id,
+                            update_agent_thought(text_block(str(payload))),
+                        )
 
-                # Don't send grep/glob/webfetch results to client
-                if name in ("grep", "glob", "webfetch"):
+                if session_id in self._cancelled:
+                    self._cancelled.discard(session_id)
+                    return PromptResponse(stop_reason="cancelled")
+
+                assistant_msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": content,
+                }
+                if tool_calls:
+                    assistant_msg["tool_calls"] = tool_calls
+                    if reasoning_content:
+                        assistant_msg["reasoning_content"] = reasoning_content
+                sess_msgs.append(assistant_msg)
+
+                if not tool_calls or _ask._interrupted:
+                    _ask._interrupted = False
+                    return PromptResponse(stop_reason="end_turn")
+
+                for tc in tool_calls:
+                    if session_id in self._cancelled:
+                        self._cancelled.discard(session_id)
+                        return PromptResponse(stop_reason="cancelled")
+
+                    tc_id = tc.get("id", f"tc_{uuid.uuid4().hex[:8]}")
+                    func = tc.get("function", {})
+                    name = func.get("name", "")
+                    raw_args = func.get("arguments", "{}")
+
+                    try:
+                        args = (
+                            json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                        )
+                    except json.JSONDecodeError:
+                        args = {}
+
                     await self._conn.session_update(
                         session_id,
-                        update_tool_call(
+                        start_tool_call(
                             tool_call_id=tc_id,
-                            status="completed",
-                            content=[],
-                            raw_output="",
-                        ),
-                    )
-                else:
-                    display = output[:2000] + "..." if len(output) > 2000 else output
-                    await self._conn.session_update(
-                        session_id,
-                        update_tool_call(
-                            tool_call_id=tc_id,
-                            status="completed",
-                            content=[tool_content(text_block(display))],
-                            raw_output=output[:5000],
+                            title=_tool_title(name, args),
+                            kind=cast(TOOL_KIND, _get_tool_kind(name)),
+                            status="in_progress",
+                            raw_input=args,
                         ),
                     )
 
-                _acp_debug.info("TOOL: Result -> %s", output[:400])    
+                    try:
+                        output = await self._execute_tool(name, args, session_id)
+                    except Exception as e:
+                        output = f"Error: {e}"
 
-                sess_msgs.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": output,
-                    }
-                )
+                    # Don't send grep/glob/webfetch results to client
+                    if name in ("grep", "glob", "webfetch"):
+                        await self._conn.session_update(
+                            session_id,
+                            update_tool_call(
+                                tool_call_id=tc_id,
+                                status="completed",
+                                content=[],
+                                raw_output="",
+                            ),
+                        )
+                    else:
+                        display = output[:2000] + "..." if len(output) > 2000 else output
+                        await self._conn.session_update(
+                            session_id,
+                            update_tool_call(
+                                tool_call_id=tc_id,
+                                status="completed",
+                                content=[tool_content(text_block(display))],
+                                raw_output=output[:5000],
+                            ),
+                        )
 
-            sub_turn += 1
+                    _acp_debug.info("TOOL: Result -> %s", output[:400])    
 
+                    sess_msgs.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": output,
+                        }
+                    )
+
+                sub_turn += 1
+        finally:
+            _ask.cleanup_reasoning_content(sess_msgs, reasoning_start_index, sub_turn)
+            
     # ── Cancellation ────────────────────────────────────────────────
 
     async def cancel(self, session_id: str, **kwargs: Any) -> None:
