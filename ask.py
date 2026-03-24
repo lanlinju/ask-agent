@@ -2263,19 +2263,41 @@ def show_help():
     return help_text
 
 
-def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
-    """执行shell命令并返回输出"""
+def _kill_proc(proc: subprocess.Popen):
+    """终止进程，先terminate后kill"""
+    proc.terminate()
     try:
-        result = subprocess.run(
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
+    """执行shell命令并返回输出，支持ESC中断"""
+    global _interrupted
+    try:
+        proc = subprocess.Popen(
             cmd,
             shell=True,
             cwd=WORKDIR,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout or 10,
         )
-        output = result.stdout + result.stderr
-        return output.strip()
+        timeout_sec = timeout or 10
+        deadline = time.time() + timeout_sec
+        while proc.poll() is None:
+            if _interrupted:
+                _kill_proc(proc)
+                return "Error: Command interrupted by user"
+            if time.time() > deadline:
+                _kill_proc(proc)
+                return f"Error: Command timed out after {timeout_sec}s"
+            time.sleep(0.1)
+        stdout = proc.stdout.read() if proc.stdout else ""
+        stderr = proc.stderr.read() if proc.stderr else ""
+        return (stdout + stderr).strip()
     except Exception as e:
         return f"Error: {e}"
 
@@ -2352,85 +2374,84 @@ def run_bot():
 
 def agent(prompt: str) -> str:
     """处理问题，添加到历史并获取回答"""
+    global _interrupted
+    _interrupted = False
 
-    # 将用户新消息添加到消息列表
-    messages.append({"role": "user", "content": prompt})
+    # 启动ESC监听线程，持续到整个agent()调用结束
+    _esc_stop = threading.Event()
+    t = None
+    if sys.stdin.isatty():
+        t = threading.Thread(target=_start_esc_listener, args=(_esc_stop,), daemon=True)
+        t.start()
 
     # 记录当前问题的工具调用轮次
     sub_turn = 1
     # 记录本轮推理开始时的消息索引
     reasoning_start_index = len(messages)
-    while True:
-        global _interrupted
-        _interrupted = False
-        _esc_stop = threading.Event()
-        t = None
 
-        if sys.stdin.isatty():
-            t = threading.Thread(
-                target=_start_esc_listener, args=(_esc_stop,), daemon=True
-            )
-            t.start()
+    try:
+        # 将用户新消息添加到消息列表
+        messages.append({"role": "user", "content": prompt})
 
-        try:
+        while True:
             content, reasoning_content, tool_calls = get_streaming_response(
                 messages, TOOLS
             )
-        except Exception:
-            cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
-            raise
-        finally:
-            _esc_stop.set()
-            if t is not None:
-                t.join(timeout=0.5)
 
-        # 构建助手消息并添加到历史
-        assistant_msg = {"role": "assistant", "content": content}
-        if tool_calls:
-            assistant_msg["tool_calls"] = tool_calls
-            if reasoning_content:  # tool_calls 需添加推理内容
-                assistant_msg["reasoning_content"] = reasoning_content
-        messages.append(assistant_msg)
-        logger.debug("添加助手回复: %s", assistant_msg)
+            # 构建助手消息并添加到历史
+            assistant_msg = {"role": "assistant", "content": content}
+            if tool_calls:
+                assistant_msg["tool_calls"] = tool_calls
+                if reasoning_content:  # tool_calls 需添加推理内容
+                    assistant_msg["reasoning_content"] = reasoning_content
+            messages.append(assistant_msg)
+            logger.debug("添加助手回复: %s", assistant_msg)
 
-        # 如果没有工具调用或者esc中断，结束循环
-        if not tool_calls or _interrupted:
-            _interrupted = False
-            cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
-            return content
+            # 如果没有工具调用或者esc中断，结束循环
+            if not tool_calls or _interrupted:
+                _interrupted = False
+                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
+                return content
 
-        for tool_call in tool_calls:
-            name = tool_call["function"]["name"]
-            args = json.loads(tool_call["function"]["arguments"])
-            logger.info("执行工具: %s, 参数: %s", name, args)
+            for tool_call in tool_calls:
+                name = tool_call["function"]["name"]
+                args = json.loads(tool_call["function"]["arguments"])
+                logger.info("执行工具: %s, 参数: %s", name, args)
 
-            # Task and Skill tools have special display handling
-            if name == "Task":
-                print(f"\n> Task: {args.get('description', 'subtask')}")
-            elif name == "Skill":
-                print(f"\n> Loading skill: {args.get('skill', '?')}")
-            else:
-                print(f"\n> {name}")
+                # Task and Skill tools have special display handling
+                if name == "Task":
+                    print(f"\n> Task: {args.get('description', 'subtask')}")
+                elif name == "Skill":
+                    print(f"\n> Loading skill: {args.get('skill', '?')}")
+                else:
+                    print(f"\n> {name}")
 
-            output = execute_tool(name, args)
+                output = execute_tool(name, args)
 
-            if name == "Skill":
-                print(f"  Skill loaded ({len(output)} chars)")
-            elif name != "Task":
-                preview = output[:400] + "..." if len(output) > 400 else output
-                print(f"{preview}")
+                if name == "Skill":
+                    print(f"  Skill loaded ({len(output)} chars)")
+                elif name != "Task":
+                    preview = output[:400] + "..." if len(output) > 400 else output
+                    print(f"{preview}")
 
-            tool_result = {
-                "role": "tool",
-                "tool_call_id": tool_call["id"],
-                "content": output,
-            }
+                tool_result = {
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content": output,
+                }
 
-            logger.debug("Add tool output: %s", tool_result)
-            # 将工具执行结果添加到消息列表
-            messages.append(tool_result)
+                logger.debug("Add tool output: %s", tool_result)
+                # 将工具执行结果添加到消息列表
+                messages.append(tool_result)
 
-        sub_turn += 1
+            sub_turn += 1
+    except Exception:
+        cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
+        raise
+    finally:
+        _esc_stop.set()
+        if t is not None:
+            t.join(timeout=0.5)
 
 
 def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round: int):

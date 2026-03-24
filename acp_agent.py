@@ -506,7 +506,7 @@ class AskAgentACP(Agent):
         try:
             stdout, stderr = await asyncio.to_thread(
                 self._current_process.communicate,
-                timeout=timeout or 120,
+                timeout=timeout or 10,
             )
             output = (stdout + stderr).strip()
             _acp_debug.info("BASH: exit=%d output_len=%d", self._current_process.returncode, len(output))
@@ -516,7 +516,7 @@ class AskAgentACP(Agent):
                 if self._current_process:
                     self._current_process.kill()
                     self._current_process = None
-            return f"Error: Command timed out after {timeout or 120}s"
+            return f"Error: Command timed out after {timeout or 10}s"
         except asyncio.CancelledError:
             async with self._process_lock:
                 if self._current_process:
