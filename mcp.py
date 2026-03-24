@@ -97,7 +97,7 @@ class StdioClient:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=0,
+                bufsize=1,  # 行缓冲
                 env=process_env,
                 cwd=str(self.cwd) if self.cwd else None,
             )
@@ -166,6 +166,8 @@ class StdioClient:
                 raise MCPError(
                     f"Received empty response. Error output: {stderr_output}"
                 )
+            
+            # stdout, stderr = self.process.communicate(input=request_line)
 
             logger.debug(f"Received response: {response_line.strip()}")
             response = json.loads(response_line.strip())
