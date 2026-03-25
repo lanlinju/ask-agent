@@ -1869,7 +1869,7 @@ def get_streaming_response(
                                 print(
                                     f"\033[90m{content[0]}\033[0m", end="", flush=True
                                 )
-                                print(content[1], end="", flush=True)
+                            print(content[1].replace("\n", ""), end="", flush=True)
                             continue
                         if in_think_tag:
                             # 在 think 标签内，作为推理内容
