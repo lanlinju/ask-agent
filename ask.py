@@ -22,7 +22,7 @@ from agent import AgentManager
 from command import CommandManager
 from typing import Optional
 from config import ConfigPathManager, get_config_path
-from util import YELLOW, GREEN, RESET, format_range_info
+from util import YELLOW, GREEN, RESET, BLUE, format_range_info
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -2350,6 +2350,8 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(
         f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}"
     )
+
+    print(f"{BLUE}Telegram Bot:{RESET}")
 
     # 获取回复并按段落分割发送
     response = agent(message_text)
