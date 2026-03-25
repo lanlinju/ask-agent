@@ -2363,6 +2363,8 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
+    from telegram.error import TimedOut, NetworkError
+
     # 创建应用
     application = Application.builder().token(BOT_TOKEN).build()
 
@@ -2373,7 +2375,14 @@ def run_bot():
     print("机器人已启动！按 Ctrl+C 停止")
 
     # 运行机器人
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except TimedOut:
+        print("❌ Telegram Bot 连接超时，请检查网络连接或代理设置")
+    except NetworkError as e:
+        print(f"❌ Telegram Bot 网络错误: {e}")
+    except Exception as e:
+        print(f"❌ Telegram Bot 发生错误: {e}")
 
 
 def agent(prompt: str) -> str:
