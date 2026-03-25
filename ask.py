@@ -2337,8 +2337,8 @@ async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"{show_help()}")
         await update.message.reply_text("注意不要执行交互式命令!")
     else:
-        command(cmd)
-        await update.message.reply_text(f"执行命令: {cmd}")
+        command(command_text)
+        await update.message.reply_text(f"执行命令: {command_text}")
 
 
 async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
