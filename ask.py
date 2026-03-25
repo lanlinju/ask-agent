@@ -2341,7 +2341,7 @@ async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"执行命令: {cmd}")
 
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理接收到的文本消息"""
     user = update.effective_user
     message_text = update.message.text
@@ -2351,8 +2351,12 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}"
     )
 
-    # 回复用户确认收到
-    await update.message.reply_text(f"{agent(message_text)}")
+    # 获取回复并按段落分割发送
+    response = agent(message_text)
+    paragraphs = response.split("\n\n")
+    for para in paragraphs:
+        if para.strip():
+            await update.message.reply_text(para)
     print()
 
 
@@ -2362,7 +2366,7 @@ def run_bot():
 
     # 添加处理器 - 捕获所有以 / 开头的命令
     application.add_handler(MessageHandler(filters.COMMAND, bot_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_text))
 
     print("机器人已启动！按 Ctrl+C 停止")
 
