@@ -2353,6 +2353,8 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 获取回复并按段落分割发送
     response = agent(message_text)
+    # 移除 <think>...</think> 标签及其内容
+    response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
     paragraphs = response.split("\n\n")
     for para in paragraphs:
         if para.strip():
