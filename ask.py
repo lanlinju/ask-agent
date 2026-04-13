@@ -1586,6 +1586,22 @@ Complete the task and return a clear, concise summary."""
     return content
 
 
+def truncate_output(output: str, max_lines: int = 24) -> str:
+    """按行数截断输出内容。
+
+    Args:
+        output: 要截断的输出内容
+        max_lines: 最大行数，默认30行
+
+    Returns:
+        截断后的内容，超出部分用 "..." 省略
+    """
+    lines = output.split('\n')
+    if len(lines) > max_lines:
+        return '\n'.join(lines[:max_lines]) + "\n..."
+    return output
+
+
 def execute_tool(name: str, args: dict) -> str:
     if name == "bash":
         return run_bash(args["command"], timeout=args.get("timeout"))
@@ -2452,8 +2468,7 @@ def agent(prompt: str) -> str:
                 if name == "Skill":
                     print(f"  Skill loaded ({len(output)} chars)")
                 elif name != "Task":
-                    preview = output[:400] + "..." if len(output) > 400 else output
-                    print(f"{preview}")
+                    print(truncate_output(output))
 
                 tool_result = {
                     "role": "tool",
