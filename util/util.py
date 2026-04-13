@@ -1,4 +1,9 @@
 # ANSI color utilities using One Dark Pro theme.
+import os
+from pathlib import Path
+from typing import Optional
+
+
 def _rgb(r: int, g: int, b: int, bold: bool = True) -> str:
     """Generate ANSI 24-bit color escape sequence."""
     prefix = "\033[1;" if bold else "\033["
@@ -44,3 +49,29 @@ def format_range_info(args: dict) -> str:
     if args.get("offset"):
         range_parts.append(f"offset={args['offset']}")
     return f" [{', '.join(range_parts)}]" if range_parts else ""
+
+
+# File I/O Helper Functions (UTF-8 default)
+def read_file(path: str | Path, errors: str = 'strict') -> str:
+    """Read file with UTF-8 encoding.
+    
+    Args:
+        path: File path to read
+        errors: How to handle encoding errors ('strict', 'replace', 'ignore', etc.)
+        
+    Returns:
+        File content as string
+    """
+    return Path(path).read_text(encoding='utf-8', errors=errors)
+
+
+def write_file(path: str | Path, content: str) -> None:
+    """Write content to file with UTF-8 encoding.
+    
+    Args:
+        path: File path to write
+        content: Content to write
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content, encoding='utf-8')

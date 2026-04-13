@@ -22,7 +22,7 @@ from agent import AgentManager
 from command import CommandManager
 from typing import Optional
 from config import ConfigPathManager, get_config_path
-from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff
+from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff, read_file, write_file
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -122,7 +122,7 @@ class SkillLoader:
         Returns dict with: name, description, body, path, dir
         Returns None if file doesn't match format.
         """
-        content = path.read_text()
+        content = read_file(path)
 
         # Match YAML frontmatter between --- markers
         match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
@@ -1261,7 +1261,7 @@ def run_read(path: str, offset: int = 0, limit: int = None) -> str:
         if limit:
             range_args["limit"] = limit
         print(f"\033[34m→ Read {path}{format_range_info(range_args)}\033[0m")
-        lines = safe_path(path).read_text().splitlines()
+        lines = read_file(safe_path(path)).splitlines()
         if offset:
             lines = lines[offset - 1 :]
         if limit:
@@ -1277,7 +1277,7 @@ def run_write(path: str, content: str) -> str:
         print(f"\033[34m→ Wrote {path}\033[0m")
         fp = safe_path(path)
         fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(content)
+        write_file(fp, content)
         # 打印部分内容（最大2000字符）
         preview = content[:2000]
         suffix = "..." if len(content) > 2000 else ""
@@ -1292,11 +1292,11 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
     try:
         print(f"\033[34m→ Edited {path}\033[0m")
         fp = safe_path(path)
-        text = fp.read_text()
+        text = read_file(fp)
         if old_text not in text:
             return f"Error: Text not found in {path}"
         new_file_text = text.replace(old_text, new_text, 1)
-        fp.write_text(new_file_text)
+        write_file(fp, new_file_text)
         print(format_diff(old_text, new_text, colored=True))
         return (
             f"Edited {path}: replaced {len(old_text)} chars with {len(new_text)} chars"
@@ -1343,7 +1343,7 @@ def run_grep(pattern: str, path: str | None = None, include: str | None = None) 
                 continue
             try:
                 for i, line in enumerate(
-                    fp.read_text(errors="replace").splitlines(), 1
+                    read_file(fp, errors='replace').splitlines(), 1
                 ):
                     if regex.search(line):
                         rel = fp.relative_to(WORKDIR)
