@@ -2274,27 +2274,35 @@ def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
     """执行shell命令并返回输出，支持ESC中断"""
     global _interrupted
     try:
-        proc = subprocess.Popen(
-            cmd,
-            shell=True,
-            cwd=WORKDIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        # Windows 上使用 PowerShell，其他系统使用默认 shell
+        if platform.system() == "Windows":
+            proc = subprocess.Popen(
+                ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", cmd],
+                cwd=WORKDIR,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+            )
+        else:
+            proc = subprocess.Popen(
+                cmd,
+                shell=True,
+                cwd=WORKDIR,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
         timeout_sec = timeout or 10
-        deadline = time.time() + timeout_sec
-        while proc.poll() is None:
-            if _interrupted:
-                _kill_proc(proc)
-                return "Warning: Command interrupted by user"
-            if time.time() > deadline:
-                _kill_proc(proc)
-                return f"Warning: Command timed out after {timeout_sec}s"
-            time.sleep(0.1)
-        stdout = proc.stdout.read() if proc.stdout else ""
-        stderr = proc.stderr.read() if proc.stderr else ""
-        return (stdout + stderr).strip()
+        
+        # 使用 communicate 方法等待进程结束，更可靠
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout_sec)
+            return (stdout + stderr).strip()
+        except subprocess.TimeoutExpired:
+            _kill_proc(proc)
+            return f"Warning: Command timed out after {timeout_sec}s"
     except Exception as e:
         return f"Error: {e}"
 

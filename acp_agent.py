@@ -9,6 +9,7 @@ Usage: ag --acp
 import asyncio
 import json
 import logging
+import platform
 import subprocess
 import uuid
 from pathlib import Path
@@ -495,14 +496,26 @@ class AskAgentACP(Agent):
         _acp_debug.info("BASH: $ %s", command)
 
         async with self._process_lock:
-            self._current_process = subprocess.Popen(
-                command,
-                shell=True,
-                cwd=str(_ask.WORKDIR),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
+            # Windows 上使用 PowerShell，其他系统使用默认 shell
+            if platform.system() == "Windows":
+                self._current_process = subprocess.Popen(
+                    ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", command],
+                    cwd=str(_ask.WORKDIR),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                )
+            else:
+                self._current_process = subprocess.Popen(
+                    command,
+                    shell=True,
+                    cwd=str(_ask.WORKDIR),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
 
         try:
             stdout, stderr = await asyncio.to_thread(
