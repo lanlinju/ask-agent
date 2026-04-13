@@ -57,7 +57,19 @@ pip install -r requirements.txt
 pip install python-dotenv requests python-telegram-bot prompt-toolkit
 ```
 
-3. 创建软链接（可选，简化使用）
+3. 启动程序
+```bash
+# 方式一：使用启动脚本（Linux/Mac）
+./ag
+
+# 方式二：使用 Python 直接运行
+python ag
+
+# 方式三：Windows 系统
+./ag.bat
+```
+
+4. 创建软链接（可选，简化使用）
 ```bash
 # 创建 ~/.local/bin 目录（如果不存在）
 mkdir -p ~/.local/bin
@@ -71,7 +83,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 之后就可以直接使用 `ag` 命令了！
 
-4. 配置 AI Providers
+5. 配置 AI Providers
 
  ag 支持多个 AI Provider，通过 `providers.json` 配置文件管理。
 
@@ -166,7 +178,7 @@ LOG_LEVEL=ERROR
 
  .env 文件会自动被加载，无需手动设置环境变量。
 
- 5. 配置文件路径管理
+ 6. 配置文件路径管理
 
  Ask Agent 支持全局配置和项目本地配置两种方式，配置文件存储规则如下：
 
@@ -211,7 +223,7 @@ LOG_LEVEL=ERROR
  - 程序会自动创建 `~/.ask-agent/` 目录
  - 配置文件会在首次使用时生成或从示例创建
 
- 6. 获取 API 密钥
+ 7. 获取 API 密钥
 
 访问以下官网获取 API 密钥：
 
