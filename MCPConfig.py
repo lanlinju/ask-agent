@@ -190,7 +190,7 @@ class MCPConfig:
             # 检查文件是否存在
             if not self.path.exists():
                 self.servers = {}
-                logger.warning(f"MCP 配置文件不存在: {self.path}")
+                logger.info(f"MCP 配置文件不存在: {self.path}")
                 return True
 
             # 读取 JSON 文件
