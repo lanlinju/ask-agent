@@ -1586,19 +1586,25 @@ Complete the task and return a clear, concise summary."""
     return content
 
 
-def truncate_output(output: str, max_lines: int = 24) -> str:
-    """按行数截断输出内容。
+def truncate_output(output: str, max_lines: int = 24, max_chars: int = 10000) -> str:
+    """按行数和字符数截断输出内容。
 
     Args:
         output: 要截断的输出内容
-        max_lines: 最大行数，默认30行
+        max_lines: 最大行数，默认24行
+        max_chars: 最大字符数，默认10000字符
 
     Returns:
         截断后的内容，超出部分用 "..." 省略
     """
+    # 先按字符数截断
+    if len(output) > max_chars:
+        output = output[:max_chars] + "\n... (truncated at {} chars)".format(max_chars)
+
+    # 再按行数截断
     lines = output.split('\n')
     if len(lines) > max_lines:
-        return '\n'.join(lines[:max_lines]) + "\n..."
+        return '\n'.join(lines[:max_lines]) + "\n... (truncated)"
     return output
 
 
