@@ -22,7 +22,7 @@ from agent import AgentManager
 from command import CommandManager
 from typing import Optional
 from config import ConfigPathManager, get_config_path
-from util import YELLOW, GREEN, RESET, BLUE, format_range_info
+from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -1295,10 +1295,9 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
         text = fp.read_text()
         if old_text not in text:
             return f"Error: Text not found in {path}"
-        fp.write_text(text.replace(old_text, new_text, 1))
-        preview = new_text[:2000]
-        suffix = "..." if len(new_text) > 2000 else ""
-        print(f"{preview}{suffix}")
+        new_file_text = text.replace(old_text, new_text, 1)
+        fp.write_text(new_file_text)
+        print(format_diff(old_text, new_text, colored=True))
         return (
             f"Edited {path}: replaced {len(old_text)} chars with {len(new_text)} chars"
         )
