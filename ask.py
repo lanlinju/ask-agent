@@ -1269,7 +1269,7 @@ def safe_path(p: str, allow_escape: bool = True) -> Path:
         allow_escape: 是否允许路径超出工作区范围
     """
     if allow_escape:
-        return path 
+        return Path(p).resolve()
     path = (WORKDIR / p).resolve()
     if not path.is_relative_to(WORKDIR):
         raise ValueError(f"Path escapes workspace: {p}")
