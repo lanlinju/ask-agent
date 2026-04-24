@@ -809,11 +809,13 @@ def get_agent_descriptions() -> str:
 
 
 def get_environment_info() -> str:
-    """获取运行环境信息，用于系统提示词
+    """获取运行环境信息，用于系统提示词的动态段落。
 
     Returns:
         环境信息字符串
     """
+    import datetime
+
     os_name = platform.system()
     os_release = platform.release()
     arch = platform.machine()
@@ -821,24 +823,30 @@ def get_environment_info() -> str:
         shell = "PowerShell"
     else:
         shell = "Bash"
-    return f"""Environment:
-- OS: {os_name} {os_release} | {arch}
-- Shell: {shell}
-- Working Directory: {WORKDIR}"""
+    today = datetime.date.today().isoformat()
+    python_ver = platform.python_version()
+    user = os.getenv("USER") or os.getenv("USERNAME") or "unknown"
 
-# 系统智能体提示词
-SYSTEM_PROMPT_AGENT = f"""You are a coding agent.
+    lines = [
+        f"Current date: {today}",
+        f"OS: {os_name} {os_release} | {arch}",
+        f"Shell: {shell}",
+        f"Python: {python_ver}",
+        f"User: {user}",
+        f"Working Directory: {WORKDIR}",
+        f"Model: {DEEPSEEK_MODEL}",
+    ]
+    return "Environment:\n" + "\n".join(f"- {l}" for l in lines)
+
+ASK = 0  # 问答模式
+TRANSLATE = 1  # 翻译模式
+AGENT = 2  # 智能体模式
+ROLE = 3  # 角色扮演模式
+
+# 系统智能体核心提示词（不含动态内容，由 SystemPromptBuilder 组装）
+SYSTEM_PROMPT_AGENT_CORE = """You are a coding agent.
 
 Loop: plan -> act with tools -> report.
-
-**Skills available** (invoke with Skill tool when task matches):
-{SKILLS.get_descriptions()}
-
-**MCP servers available** (invoke with MCP tool to connect):
-{MCP_MANAGER.get_descriptions()}
-
-**Subagents available** (invoke with Task tool for focused subtasks):
-{get_agent_descriptions()}
 
 Rules:
 - Use Skill tool IMMEDIATELY when a task matches a skill description
@@ -846,12 +854,147 @@ Rules:
 - Use TodoWrite to track multi-step work
 - Prefer tools over prose. Act, don't just explain.
 - After finishing, summarize what changed.
-""" + "\n\n" + get_environment_info()
+"""
 
-ASK = 0  # 问答模式
-TRANSLATE = 1  # 翻译模式
-AGENT = 2  # 智能体模式
-ROLE = 3  # 角色扮演模式
+# 动态边界标记：上面更稳定，下面更容易变
+DYNAMIC_BOUNDARY = "=== DYNAMIC_BOUNDARY ==="
+
+
+class SystemPromptBuilder:
+    """按流水线组装系统提示词，每一段只负责一种来源。
+
+    Pipeline:
+      1. core       - 核心身份与行为说明
+      2. tools      - 工具说明（skills/MCP/subagents 元信息）
+      3. memory     - 跨会话记忆
+      4. guidance   - 工具使用指导（如 MemorySave）
+      5. DYNAMIC_BOUNDARY
+      6. dynamic    - 动态环境信息（日期、目录、模型等）
+    """
+
+    def __init__(self, mode: int = ASK, role_id: str | None = None, agent_id: str | None = None):
+        self.mode = mode
+        self.role_id = role_id
+        self.agent_id = agent_id
+
+    # -- Section 1: Core instructions --
+    def _build_core(self) -> str:
+        if self.mode == TRANSLATE:
+            return SYSTEM_PROMPT_TRANSLATE
+        elif self.mode == AGENT:
+            actual_agent_id = self.agent_id
+            if not actual_agent_id:
+                init_agent_manager()
+                assert AGENT_MANAGER is not None
+                actual_agent_id = AGENT_MANAGER.default_agent
+
+            if not actual_agent_id or actual_agent_id == "builtin":
+                return SYSTEM_PROMPT_AGENT_CORE
+            else:
+                init_agent_manager()
+                assert AGENT_MANAGER is not None
+                agent_prompt = AGENT_MANAGER.get_agent_prompt(actual_agent_id)
+                if agent_prompt:
+                    return agent_prompt
+                else:
+                    print(f"❌ 未找到智能体: {actual_agent_id}")
+                    return SYSTEM_PROMPT_AGENT_CORE
+        elif self.mode == ROLE and self.role_id:
+            init_role_manager()
+            assert ROLE_MANAGER is not None
+            system_prompt = ROLE_MANAGER.get_role_prompt(self.role_id)
+            if not system_prompt:
+                print(f"❌ 未找到角色: {self.role_id}")
+                return SYSTEM_PROMPT_ASK
+            return system_prompt
+        else:
+            return SYSTEM_PROMPT_ASK
+
+    # -- Section 2: Tool metadata (skills/MCP/subagents) --
+    def _build_tools_metadata(self) -> str:
+        """注入工具元信息（skills/MCP/subagents 描述）。
+
+        - ASK/TRANSLATE 模式：无工具，不注入
+        - AGENT/ROLE 模式：注入，帮助模型了解可用能力
+        """
+        if self.mode not in (AGENT, ROLE):
+            return ""
+
+        parts = []
+        skills_desc = SKILLS.get_descriptions()
+        if skills_desc and skills_desc != "(no skills available)":
+            parts.append(f"**Skills available** (invoke with Skill tool when task matches):\n{skills_desc}")
+
+        mcp_desc = MCP_MANAGER.get_descriptions()
+        if mcp_desc and mcp_desc != "(no MCP servers configured)":
+            parts.append(f"**MCP servers available** (invoke with MCP tool to connect):\n{mcp_desc}")
+
+        agent_desc = get_agent_descriptions()
+        if agent_desc:
+            parts.append(f"**Subagents available** (invoke with Task tool for focused subtasks):\n{agent_desc}")
+
+        return "\n\n".join(parts)
+
+    # -- Section 3: Memory content --
+    def _build_memory(self) -> str:
+        memory_section = MEMORY_MANAGER.get_memory_prompt()
+        return memory_section if memory_section else ""
+
+    # -- Section 4: Tool usage guidance --
+    def _build_guidance(self) -> str:
+        if self.mode in (AGENT, ROLE):
+            return MEMORY_GUIDANCE
+        return ""
+
+    # -- Section 6: Dynamic context --
+    def _build_dynamic(self) -> str:
+        """每轮可能变化的环境信息，放在 DYNAMIC_BOUNDARY 下方。"""
+        return get_environment_info()
+
+    # -- Assemble all sections --
+    def build(self) -> str:
+        """按流水线组装完整系统提示词。"""
+        sections = []
+
+        core = self._build_core()
+        if core:
+            sections.append(core)
+
+        tools = self._build_tools_metadata()
+        if tools:
+            sections.append(tools)
+
+        memory = self._build_memory()
+        if memory:
+            sections.append(memory)
+
+        guidance = self._build_guidance()
+        if guidance:
+            sections.append(guidance)
+
+        # 稳定/动态边界
+        sections.append(DYNAMIC_BOUNDARY)
+
+        dynamic = self._build_dynamic()
+        if dynamic:
+            sections.append(dynamic)
+
+        return "\n\n".join(sections)
+
+    def list_sections(self) -> List[str]:
+        """列出当前配置下各段的标题，用于调试。"""
+        sections = ["core"]
+        if self._build_tools_metadata():
+            sections.append("tools_metadata")
+        if self._build_memory():
+            sections.append("memory")
+        if self._build_guidance():
+            sections.append("guidance")
+        sections.append("DYNAMIC_BOUNDARY")
+        sections.append("dynamic")
+        return sections
+
+
 current_mode: int = ASK
 # 对话历史缓冲
 messages: List[Dict[str, str | List]] = []
@@ -952,57 +1095,21 @@ def init_session_manager(mode: int = ASK, role_id: Optional[str] = None):
 def init_system_prompt(
     mode: int = ASK, role_id: Optional[str] = None, agent_id: Optional[str] = None
 ):
-    """初始化系统提示词"""
+    """初始化系统提示词（通过 SystemPromptBuilder 组装流水线）"""
     global title_generated
     messages.clear()
     title_generated = False
-    if mode == TRANSLATE:
-        system_prompt = SYSTEM_PROMPT_TRANSLATE
-    elif mode == AGENT:
-        # 获取要使用的智能体ID
-        actual_agent_id = agent_id
-        if not actual_agent_id:
-            # 使用默认智能体
-            init_agent_manager()
-            assert AGENT_MANAGER is not None
-            actual_agent_id = AGENT_MANAGER.default_agent
 
-        # builtin 或 None 使用内置提示词
-        if not actual_agent_id or actual_agent_id == "builtin":
-            system_prompt = SYSTEM_PROMPT_AGENT
-        else:
-            # 使用智能体的markdown文件内容
-            init_agent_manager()
-            assert AGENT_MANAGER is not None
-            agent_prompt = AGENT_MANAGER.get_agent_prompt(actual_agent_id)
-            if agent_prompt:
-                system_prompt = agent_prompt + "\n\n" + get_environment_info()
-            else:
-                print(f"❌ 未找到智能体: {actual_agent_id}")
-                system_prompt = SYSTEM_PROMPT_AGENT
+    builder = SystemPromptBuilder(mode=mode, role_id=role_id, agent_id=agent_id)
+    system_prompt = builder.build()
 
-    elif mode == ROLE and role_id:
+    # 角色未找到时回退到 ASK 模式
+    if mode == ROLE and role_id:
         init_role_manager()
         assert ROLE_MANAGER is not None
-        system_prompt = ROLE_MANAGER.get_role_prompt(role_id)
-        if not system_prompt:
-            print(f"❌ 未找到角色: {role_id}")
+        if not ROLE_MANAGER.get_role_prompt(role_id):
+            global current_mode
             current_mode = ASK
-            system_prompt = SYSTEM_PROMPT_ASK
-            role_id = None
-        else:
-            # 角色模式下追加环境信息（角色可以使用工具）
-            system_prompt += "\n\n" + get_environment_info()
-    else:
-        system_prompt = SYSTEM_PROMPT_ASK
-
-    # 注入跨会话记忆（所有模式共享）
-    memory_section = MEMORY_MANAGER.get_memory_prompt()
-    if memory_section:
-        system_prompt += "\n\n" + memory_section
-    # 仅在有工具的模式下注入 MemorySave 使用指导
-    if mode in (AGENT, ROLE):
-        system_prompt += "\n\n" + MEMORY_GUIDANCE
 
     messages.append({"role": "system", "content": system_prompt})
 

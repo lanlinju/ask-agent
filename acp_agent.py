@@ -554,13 +554,14 @@ class AskAgentACP(Agent):
         session_id: str,
         **kwargs: Any,
     ) -> PromptResponse:
-        from ask import SYSTEM_PROMPT_AGENT, TOOLS, AGENT
+        from ask import SystemPromptBuilder, TOOLS, AGENT
         import ask as _ask
 
         sess_msgs = self._sessions.setdefault(session_id, [])
 
         if not sess_msgs:
-            sess_msgs.append({"role": "system", "content": SYSTEM_PROMPT_AGENT})
+            builder = SystemPromptBuilder(mode=AGENT)
+            sess_msgs.append({"role": "system", "content": builder.build()})
 
         parts: list[str] = []
         _acp_debug.info("PROMPT: session=%s blocks=%d", session_id, len(prompt))
