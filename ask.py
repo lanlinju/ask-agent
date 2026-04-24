@@ -23,6 +23,7 @@ from command import CommandManager
 from typing import Optional
 from config import ConfigPathManager, get_config_path
 from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff, read_file, write_file
+from util.hooks import HookManager, HookEvent, HookInput
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -234,6 +235,9 @@ def list_skills():
 
 # Global MCP manager instance
 MCP_MANAGER = MCPManager()
+
+# Global hook manager instance
+HOOK_MANAGER = HookManager(workdir=WORKDIR)
 
 # Config path managers
 _PROVIDERS_PATH_MANAGER = ConfigPathManager("providers.json")
@@ -2858,6 +2862,12 @@ def main():
 
     # 初始化命令管理器
     init_command_manager()
+
+    # Fire SessionStart hooks
+    HOOK_MANAGER.run_hooks(
+        HookEvent.SESSION_START,
+        HookInput(event=HookEvent.SESSION_START),
+    )
 
     # 将多个参数连接成一个字符串
     query = " ".join(args.query) if args.query else None
