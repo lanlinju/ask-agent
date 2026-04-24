@@ -24,6 +24,7 @@ from memory import MemoryManager, MEMORY_GUIDANCE
 from typing import Optional
 from config import ConfigPathManager, get_config_path
 from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff, read_file, write_file
+from util.background import BackgroundManager, before_model_call
 from util.hooks import HookManager, HookEvent, HookInput
 from telegram import Update
 from telegram.ext import (
@@ -257,6 +258,10 @@ CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 # Global cache directory - always use user directory
 CACHE_DIR = Path.home() / ".ask-agent" / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Global background manager instance
+RUNTIME_DIR = CACHE_DIR / "runtime-tasks"
+BG_MANAGER = BackgroundManager(RUNTIME_DIR, workdir=WORKDIR)
 
 # Global session manager instance - will be initialized with the current mode
 SESSION_MANAGER: Optional[SessionManager] = None
@@ -1291,6 +1296,43 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "background_run",
+            "description": "Run a shell command in a background thread. Returns task_id immediately.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to run in background",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (default: 300)",
+                    },
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_background",
+            "description": "Check background task status. Provide task_id for one task, or omit to list all.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID to check (omit to list all)",
+                    },
+                },
+            },
+        },
+    },
 ]
 
 ONLY_BASH_TOOL = os.getenv("ONLY_BASH_TOOL", "disabled").lower()
@@ -1712,6 +1754,10 @@ def execute_tool(name: str, args: dict) -> str:
         return MEMORY_MANAGER.save_memory(
             args["name"], args["description"], args["type"], args["content"]
         )
+    if name == "background_run":
+        return BG_MANAGER.run(args["command"], timeout=args.get("timeout", 300))
+    if name == "check_background":
+        return BG_MANAGER.check(args.get("task_id"))
     if name.startswith("mcp_"):
         import re
 
@@ -2533,6 +2579,9 @@ def agent(prompt: str) -> str:
         messages.append({"role": "user", "content": prompt})
 
         while True:
+            # 每轮模型调用前，排空后台任务通知
+            before_model_call(messages, BG_MANAGER)
+
             content, reasoning_content, tool_calls = get_streaming_response(
                 messages, TOOLS
             )
