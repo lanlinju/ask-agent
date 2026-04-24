@@ -38,6 +38,7 @@ class ProviderOptions:
 
     base_url: str
     api_key: str
+    thinking: str = "enabled"  # "enabled" or "disabled"
     timeout: Optional[int] = None
     max_retries: Optional[int] = None
     extra_headers: Optional[Dict[str, str]] = None
@@ -48,6 +49,7 @@ class ProviderOptions:
         return cls(
             base_url=options.get("baseURL", ""),
             api_key=options.get("apiKey", ""),
+            thinking=options.get("thinking", "enabled"),
             timeout=options.get("timeout"),
             max_retries=options.get("maxRetries"),
             extra_headers=options.get("headers"),
@@ -135,6 +137,7 @@ class ProviderConfig:
         self.config_path = Path(config_path)
         self.providers: Dict[str, Provider] = {}
         self.default_model: Optional[str] = None
+        self.thinking: str = "enabled"  # 全局 thinking 默认值: "enabled" or "disabled"
         self.raw_config: Dict[str, Any] = {}
         self._loaded = False
 
@@ -161,6 +164,9 @@ class ProviderConfig:
 
             # 解析默认模型（可选字段）
             self.default_model = self.raw_config.get("model")
+
+            # 解析全局 thinking 配置（可选字段，默认 enabled）
+            self.thinking = self.raw_config.get("thinking", "enabled")
 
             # 解析 providers
             providers_config = self.raw_config.get("providers", {})
@@ -306,6 +312,7 @@ class ProviderConfig:
             "api_key": provider.options.resolve_api_key(),
             "model": model_info.id,
             "provider": provider.id,
+            "thinking": provider.options.thinking,  # 每个 provider 的 thinking 设置
             "timeout": provider.options.timeout,
             "max_retries": provider.options.max_retries,
             "headers": provider.options.extra_headers,
@@ -361,13 +368,14 @@ class ProviderConfig:
                 "options": {
                     "baseURL": provider.options.base_url,
                     "apiKey": provider.options.api_key,
+                    "thinking": provider.options.thinking,
                     "timeout": provider.options.timeout,
                     "maxRetries": provider.options.max_retries,
                 },
                 "models": models_dict,
             }
 
-        return {"model": self.default_model, "providers": providers_dict}
+        return {"model": self.default_model, "thinking": self.thinking, "providers": providers_dict}
 
     def save(self, path: Optional[Union[str, Path]] = None) -> bool:
         """

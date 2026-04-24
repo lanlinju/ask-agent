@@ -360,6 +360,7 @@ class AskAgentACP(Agent):
             "model": _ask.DEEPSEEK_MODEL,
             "messages": messages,
             "stream": True,
+            "thinking": {"type": _ask.get_thinking_mode()},
         }
         if use_tools:
             data["tools"] = tools

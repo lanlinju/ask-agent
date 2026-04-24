@@ -92,13 +92,15 @@ export PATH="$HOME/.local/bin:$PATH"
 ```json
 {
   "model": "deepseek/deepseek-chat",
+  "thinking": "enabled",
   "providers": {
     "deepseek": {
       "name": "DeepSeek",
       "enabled": true,
       "options": {
         "baseURL": "https://api.deepseek.com/v1",
-        "apiKey": "env:DEEPSEEK_API_KEY"
+        "apiKey": "env:DEEPSEEK_API_KEY",
+        "thinking": "disabled"
       },
       "models": {
         "deepseek-chat": {
@@ -1000,6 +1002,7 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
 ```json
 {
   "model": "deepseek/deepseek-chat",
+  "thinking": "enabled",
   "providers": {
     "provider_id": {
       "name": "Provider 显示名称",
@@ -1007,6 +1010,7 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
       "options": {
         "baseURL": "https://api.example.com/v1",
         "apiKey": "env:API_KEY",
+        "thinking": "enabled",
         "timeout": 60,
         "maxRetries": 3
       },
@@ -1024,6 +1028,7 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
 
 **顶层字段：**
 - `model`: 默认模型 ID（格式：`provider_id/model_id`），可选
+- `thinking`: 全局 thinking 模式，`"enabled"` 或 `"disabled"`（默认：`"enabled"`），可选
 - `providers`: Provider 配置对象
 
 **Provider 配置：**
@@ -1031,6 +1036,7 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
 - `enabled`: 是否启用该 Provider（布尔值）
 - `options.baseURL`: API 基础 URL
 - `options.apiKey`: API 密钥，支持直接值或环境变量引用（格式：`env:ENV_VAR_NAME`）
+- `options.thinking`: 该 Provider 的 thinking 模式，覆盖全局设置（`"enabled"` 或 `"disabled"`），可选
 - `options.timeout`: 请求超时时间（秒），可选
 - `options.maxRetries`: 最大重试次数，可选
 - `models`: 模型配置对象

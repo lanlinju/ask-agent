@@ -18,6 +18,7 @@ Provider 配置系统允许：
 ```json
 {
   "model": "provider_id/model_id",
+  "thinking": "enabled",
   "providers": {
     "provider_id": {
       "name": "Provider 显示名称",
@@ -25,6 +26,7 @@ Provider 配置系统允许：
       "options": {
         "baseURL": "https://api.example.com/v1",
         "apiKey": "env:API_KEY",
+        "thinking": "enabled",
         "timeout": 60,
         "maxRetries": 3,
         "headers": {}
@@ -46,6 +48,7 @@ Provider 配置系统允许：
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `model` | string | 否 | 默认模型 ID，格式：`provider_id/model_id` |
+| `thinking` | string | 否 | 全局 thinking 模式，`"enabled"` 或 `"disabled"`（默认：`"enabled"`） |
 | `providers` | object | 是 | Provider 配置对象 |
 
 ### Provider 配置
@@ -63,6 +66,7 @@ Provider 配置系统允许：
 |------|------|------|------|
 | `baseURL` | string | 是 | API 基础 URL |
 | `apiKey` | string | 是 | API 密钥，支持直接值或环境变量引用 |
+| `thinking` | string | 否 | 该 Provider 的 thinking 模式，覆盖全局设置（`"enabled"` 或 `"disabled"`） |
 | `timeout` | number | 否 | 请求超时时间（秒） |
 | `maxRetries` | number | 否 | 最大重试次数 |
 | `headers` | object | 否 | 额外的 HTTP 请求头 |
@@ -160,6 +164,7 @@ Ask Agent 支持任何兼容 OpenAI API 格式的 Provider。
 ```json
 {
   "model": "deepseek/deepseek-chat",
+  "thinking": "enabled",
   "providers": {
     "deepseek": {
       "name": "DeepSeek",
@@ -167,6 +172,7 @@ Ask Agent 支持任何兼容 OpenAI API 格式的 Provider。
       "options": {
         "baseURL": "https://api.deepseek.com/v1",
         "apiKey": "env:DEEPSEEK_API_KEY",
+        "thinking": "disabled",
         "timeout": 60,
         "maxRetries": 3
       },
@@ -270,6 +276,14 @@ cat providers.json
 2. 系统环境变量
 3. `.env` 文件
 4. 命令行参数 `--api-key`（仅用于临时覆盖）
+
+### thinking 模式优先级
+
+thinking 模式的配置优先级（从高到低）：
+
+1. Provider 级别的 `options.thinking`（如 `"disabled"`）
+2. 全局 `thinking` 字段（如 `"enabled"`）
+3. 默认值：`"enabled"`
 
 ## 最佳实践
 

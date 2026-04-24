@@ -1795,7 +1795,7 @@ def get_streaming_response(
         "model": DEEPSEEK_MODEL,
         "messages": messages,
         "stream": True,
-        "thinking": {"type": "disabled"},
+        "thinking": {"type": get_thinking_mode()},
     }
 
     if useTools and current_mode in (AGENT, ROLE):
@@ -2562,6 +2562,24 @@ def update_model_prompt():
     except Exception as e:
         logger.warning(f"更新模型提示符失败: {e}, 使用默认值")
         model_prompt = DEEPSEEK_MODEL
+
+
+def get_thinking_mode() -> str:
+    """获取当前模型的 thinking 模式配置
+
+    优先级: provider 级别 > 全局级别 > 默认(enabled)
+    
+    Returns:
+        "enabled" 或 "disabled"
+    """
+    try:
+        model_id = PROVIDER_CONFIG.default_model if PROVIDER_CONFIG.default_model else DEEPSEEK_MODEL
+        api_config = PROVIDER_CONFIG.get_api_config(model_id)
+        if api_config:
+            return api_config.get("thinking", PROVIDER_CONFIG.thinking)
+        return PROVIDER_CONFIG.thinking
+    except Exception:
+        return "enabled"
 
 
 def load_config() -> dict:
