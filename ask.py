@@ -1551,6 +1551,8 @@ Complete the task and return a clear, concise summary."""
             sub_assistant_msg["tool_calls"] = tool_calls
             # 思考模式下，有工具调用时回传 reasoning_content
             sub_assistant_msg["reasoning_content"] = reasoning_content
+        if sub_turn > 1 and not tool_calls: # 工具调用结束时，此时tool_calls=[]，需要额外判定追加 reasoning_content
+            sub_assistant_msg["reasoning_content"] = reasoning_content     
         sub_messages.append(sub_assistant_msg)
 
         # If no tools to execute, break
@@ -2456,6 +2458,8 @@ def agent(prompt: str) -> str:
                 assistant_msg["tool_calls"] = tool_calls
                 # 思考模式下，有工具调用时回传 reasoning_content
                 assistant_msg["reasoning_content"] = reasoning_content
+            if sub_turn > 1 and not tool_calls: # 工具调用结束时，此时tool_calls=[]，需要额外判定追加 reasoning_content
+                assistant_msg["reasoning_content"] = reasoning_content        
             messages.append(assistant_msg)
             logger.debug("添加助手回复: %s", assistant_msg)
 

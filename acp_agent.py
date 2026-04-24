@@ -666,6 +666,8 @@ class AskAgentACP(Agent):
                 assistant_msg["tool_calls"] = tool_calls
                 # 思考模式下，有工具调用时须回传 reasoning_content
                 assistant_msg["reasoning_content"] = reasoning_content
+            if sub_turn > 1 and not tool_calls: # 工具调用结束时，此时tool_calls=[]，需要额外判定追加 reasoning_content
+                assistant_msg["reasoning_content"] = reasoning_content      
             sess_msgs.append(assistant_msg)
 
             if not tool_calls or _ask._interrupted:
