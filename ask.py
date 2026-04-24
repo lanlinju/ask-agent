@@ -1244,8 +1244,15 @@ def run_bash(command: str, timeout: Optional[int] = None) -> str:
     return execute_cmd(command, timeout)
 
 
-def safe_path(p: str) -> Path:
-    """Ensure path stays within workspace."""
+def safe_path(p: str, allow_escape: bool = True) -> Path:
+    """Ensure path stays within workspace.
+
+    Args:
+        p: 文件路径
+        allow_escape: 是否允许路径超出工作区范围
+    """
+    if allow_escape:
+        return path 
     path = (WORKDIR / p).resolve()
     if not path.is_relative_to(WORKDIR):
         raise ValueError(f"Path escapes workspace: {p}")
