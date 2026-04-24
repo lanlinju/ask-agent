@@ -18,6 +18,7 @@
 - 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
 - 📦 **自定义命令** - 将常用提示词保存为命令，快速调用
 - 📁 **统一配置管理** - 支持全局配置目录 `~/.ask-agent/` 和项目本地配置
+- 🧠 **记忆系统** - 跨会话持久记忆
 - 🔗 **ACP 支持** - Agent Client Protocol，可在 Zed、JetBrains 等 IDE 中使用
 
 ## 使用示例截图
@@ -1114,6 +1115,83 @@ ag 根据不同模式使用不同的系统提示词：
 - 加载角色自定义提示词
 - 保持角色对话风格
 - 每个角色独立对话历史
+
+## 记忆系统（Memory）
+
+记忆系统提供跨会话持久化存储，只有跨会话仍然有价值、且不能从当前代码轻易重新推导的信息才值得进入 memory。
+
+### 记忆类型
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| `user` | 用户偏好 | "I like tabs", "always use pytest" |
+| `feedback` | 用户纠正 | "don't do X", "that was wrong because..." |
+| `project` | 不易从代码看出的项目约定 | 合规规则、遗留模块不可删除 |
+| `reference` | 外部资源指针 | 看板 URL、监控面板、文档链接 |
+
+### 不该存的东西
+
+- 文件结构、函数签名、目录布局（可重新读代码得到）
+- 当前任务进度（属于 task/plan，不属于 memory）
+- 临时分支名、当前 PR 号（很快会过时）
+- 密钥、密码、凭证（安全风险）
+
+### 存储结构
+
+```bash
+.memory/
+├── MEMORY.md              # 索引文件（自动维护，最多 200 行）
+├── prefer_tabs.md         # 单条记忆文件（带 frontmatter）
+├── feedback_tests.md
+└── incident_board.md
+```
+
+如果当前目录下没有 `.memory/`，回退到 `~/.ask-agent/memory/`。
+
+### 记忆文件格式
+
+每条记忆是一个带 YAML frontmatter 的 Markdown 文件：
+
+```markdown
+---
+name: prefer_tabs
+description: User prefers tabs over spaces
+type: user
+---
+Always use tabs for indentation, not spaces.
+```
+
+### 记忆与系统提示词
+
+记忆内容通过 `SystemPromptBuilder._build_memory()` 自动注入系统提示词，按类型分组展示：
+
+```
+# Memories (persistent across sessions)
+
+## [user]
+### prefer_tabs: User prefers tabs over spaces
+Always use tabs for indentation, not spaces.
+
+## [project]
+### legacy_module: Legacy module must not be removed
+The auth module uses a custom protocol...
+```
+
+在智能体和角色扮演模式下，还会注入 `MEMORY_GUIDANCE` 指导模型何时保存记忆。
+
+### 记忆整合（Dream）- (这个目前暂未实现)
+
+`DreamConsolidator` 提供可选的会话间记忆自动整合，防止记忆存储变成噪音堆。7 道门控全部通过才会执行：
+
+1. 启用标志
+2. 记忆目录存在且有文件
+3. 不在 plan 模式
+4. 24 小时冷却
+5. 10 分钟扫描节流
+6. 至少 5 次会话
+7. 无活跃锁文件
+
+整合分为 4 个阶段：Orient → Gather → Consolidate → Prune。
 
 ## 技能系统（Skills）
 
