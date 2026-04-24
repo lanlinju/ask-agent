@@ -362,6 +362,9 @@ class AskAgentACP(Agent):
             "stream": True,
             "thinking": {"type": _ask.get_thinking_mode()},
         }
+        # thinking 启用时设置 reasoning_effort
+        if _ask.get_thinking_mode() == "enabled":
+            data["reasoning_effort"] = _ask.PROVIDER_CONFIG.reasoning_effort
         if use_tools:
             data["tools"] = tools
             data["tool_choice"] = "auto"

@@ -138,6 +138,7 @@ class ProviderConfig:
         self.providers: Dict[str, Provider] = {}
         self.default_model: Optional[str] = None
         self.thinking: str = "enabled"  # 全局 thinking 默认值: "enabled" or "disabled"
+        self.reasoning_effort: str = "high"  # 推理努力程度: "high" or "max"
         self.raw_config: Dict[str, Any] = {}
         self._loaded = False
 
@@ -167,6 +168,10 @@ class ProviderConfig:
 
             # 解析全局 thinking 配置（可选字段，默认 enabled）
             self.thinking = self.raw_config.get("thinking", "enabled")
+
+            # 解析全局 reasoning_effort 配置（可选字段，默认 high）
+            # 有效值: "high", "max"
+            self.reasoning_effort = self.raw_config.get("reasoning_effort", "high")
 
             # 解析 providers
             providers_config = self.raw_config.get("providers", {})
@@ -313,6 +318,7 @@ class ProviderConfig:
             "model": model_info.id,
             "provider": provider.id,
             "thinking": provider.options.thinking,  # 每个 provider 的 thinking 设置
+            "reasoning_effort": self.reasoning_effort,  # 全局 reasoning_effort 设置
             "timeout": provider.options.timeout,
             "max_retries": provider.options.max_retries,
             "headers": provider.options.extra_headers,
@@ -375,7 +381,7 @@ class ProviderConfig:
                 "models": models_dict,
             }
 
-        return {"model": self.default_model, "thinking": self.thinking, "providers": providers_dict}
+        return {"model": self.default_model, "thinking": self.thinking, "reasoning_effort": self.reasoning_effort, "providers": providers_dict}
 
     def save(self, path: Optional[Union[str, Path]] = None) -> bool:
         """

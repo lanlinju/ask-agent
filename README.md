@@ -93,6 +93,7 @@ export PATH="$HOME/.local/bin:$PATH"
 {
   "model": "deepseek/deepseek-chat",
   "thinking": "enabled",
+  "reasoning_effort": "high",
   "providers": {
     "deepseek": {
       "name": "DeepSeek",
@@ -1003,6 +1004,7 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
 {
   "model": "deepseek/deepseek-chat",
   "thinking": "enabled",
+  "reasoning_effort": "high",
   "providers": {
     "provider_id": {
       "name": "Provider 显示名称",
@@ -1029,6 +1031,7 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
 **顶层字段：**
 - `model`: 默认模型 ID（格式：`provider_id/model_id`），可选
 - `thinking`: 全局 thinking 模式，`"enabled"` 或 `"disabled"`（默认：`"enabled"`），可选
+- `reasoning_effort`: 推理努力程度，`"high"` 或 `"max"`（默认：`"high"`），仅在 thinking 启用时生效，可选
 - `providers`: Provider 配置对象
 
 **Provider 配置：**

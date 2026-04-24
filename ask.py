@@ -1800,6 +1800,10 @@ def get_streaming_response(
         "thinking": {"type": get_thinking_mode()},
     }
 
+    # thinking 启用时设置 reasoning_effort
+    if get_thinking_mode() == "enabled":
+        data["reasoning_effort"] = PROVIDER_CONFIG.reasoning_effort
+
     if useTools and current_mode in (AGENT, ROLE):
         data["tools"] = tools
         data["tool_choice"] = "auto"
