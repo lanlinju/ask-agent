@@ -51,7 +51,7 @@ _PROMPT_SESSION = PromptSession(history=_INPUT_HISTORY)
 
 # 配置API参数
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WORKDIR = Path.cwd()
