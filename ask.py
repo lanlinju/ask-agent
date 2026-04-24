@@ -24,6 +24,7 @@ from typing import Optional
 from config import ConfigPathManager, get_config_path
 from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff, read_file, write_file
 from util.hooks import HookManager, HookEvent, HookInput
+from util.permission import PermissionManager, PermissionBehavior, PermissionMode
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -238,6 +239,9 @@ MCP_MANAGER = MCPManager()
 
 # Global hook manager instance
 HOOK_MANAGER = HookManager(workdir=WORKDIR)
+
+# Global permission manager instance
+PERMISSION_MANAGER = PermissionManager.from_config(workdir=WORKDIR)
 
 # Config path managers
 _PROVIDERS_PATH_MANAGER = ConfigPathManager("providers.json")
@@ -1259,8 +1263,7 @@ if ONLY_BASH_TOOL == "enabled":
 
 def run_bash(command: str, timeout: Optional[int] = None) -> str:
     """执行 bash 命令并返回 stdout/stderr"""
-    if any(d in command for d in ["rm -rf /", "shutdown"]):
-        return "Error: Dangerous command blocked"
+    # Note: dangerous command checks now handled by PermissionManager
     print(f"  \033[34m$ {command}\033[0m")
     return execute_cmd(command, timeout)
 
@@ -1638,7 +1641,43 @@ def truncate_output(output: str, max_lines: int = 24, max_chars: int = 10000) ->
     return output
 
 
+def _pause_esc_listener():
+    """暂停 ESC 监听线程，恢复终端正常模式，以便 input() 能正常读取。
+    返回 stop_event 用于后续恢复。"""
+    # _esc_stop 是 agent() 中的局部变量，通过模块变量暴露
+    global _current_esc_stop
+    if _current_esc_stop is not None:
+        _current_esc_stop.set()
+    # 恢复终端正常模式
+    if sys.platform != "win32" and sys.stdin.isatty():
+        import termios
+        try:
+            fd = sys.stdin.fileno()
+            # 恢复原始终端属性（ESC listener 的 finally 块会做，
+            # 但我们需要确保在 input() 之前就已恢复）
+            attr = termios.tcgetattr(fd)
+            attr[3] |= termios.ICANON | termios.ECHO
+            termios.tcsetattr(fd, termios.TCSANOW, attr)
+        except Exception:
+            pass
+
+
+_current_esc_stop: threading.Event | None = None
+
+
 def execute_tool(name: str, args: dict) -> str:
+    # Permission check (only in AGENT/ROLE mode with tools)
+    if current_mode in (AGENT, ROLE):
+        perm_result = PERMISSION_MANAGER.check(name, args)
+        if perm_result.behavior == PermissionBehavior.DENY:
+            logger.warning("Permission denied: %s - %s", name, perm_result.reason)
+            return f"Permission denied: {perm_result.reason}"
+        if perm_result.behavior == PermissionBehavior.ASK:
+            # 暂停 ESC 监听，恢复终端正常模式，让 input() 能工作
+            _pause_esc_listener()
+            if not PERMISSION_MANAGER.ask_user(name, args):
+                return f"Permission denied by user for {name}"
+
     if name == "bash":
         return run_bash(args["command"], timeout=args.get("timeout"))
     if name == "read_file":
@@ -2219,6 +2258,40 @@ def command(command: str):
         list_skills()
         return
 
+    # 权限管理命令: /perm, /perm <mode>, /perm -l, /perm -r
+    if command == "/perm" or command.startswith("/perm "):
+        parts = command.split(maxsplit=1)
+        arg = parts[1].strip() if len(parts) > 1 else ""
+
+        if arg == "-l" or arg == "-r":
+            # /perm -l 或 /perm -r: 列出当前规则
+            rules = PERMISSION_MANAGER.list_rules()
+            print(f"\n🔒 权限模式: {PERMISSION_MANAGER.mode}")
+            print(f"📋 当前规则 ({len(rules)} 条):\n")
+            for i, rule in enumerate(rules):
+                parts_str = [f"tool={rule['tool']}"]
+                if rule.get("path"):
+                    parts_str.append(f"path={rule['path']}")
+                if rule.get("content"):
+                    parts_str.append(f"content={rule['content']}")
+                print(f"  [{i}] {rule['behavior']:5s} | {' '.join(parts_str)}")
+            print()
+        elif arg:
+            # /perm <mode>: 切换权限模式
+            if PERMISSION_MANAGER.set_mode(arg):
+                print(f"✅ 权限模式已切换到: {arg}\n")
+            else:
+                modes = ", ".join(m.value for m in PermissionMode)
+                print(f"❌ 未知模式: {arg}")
+                print(f"💡 可用模式: {modes}\n")
+        else:
+            # /perm: 显示当前状态
+            print(f"\n🔒 权限模式: {PERMISSION_MANAGER.mode}")
+            print(f"💡 可用模式: plan, default, auto, acceptEdits, dontAsk, bypassPermissions")
+            print(f"   /perm <mode>  - 切换模式")
+            print(f"   /perm -l      - 列出当前规则\n")
+        return
+
     # 新增: 处理自定义命令
     if command.startswith("/"):
         cmd_name = command[1:].split()[0]
@@ -2280,6 +2353,9 @@ def show_help():
     /load <id>    - 加载指定会话（使用 /session 查看 ID）
     /commands     - 列出所有自定义命令
     /skills       - 列出所有可用的 Skills
+    /perm         - 查看权限模式
+    /perm <mode>  - 切换权限模式 (plan/default/auto/acceptEdits/dontAsk/bypassPermissions)
+    /perm -l      - 列出当前权限规则
     /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
     /help         - 显示此帮助信息
     /exit         - 退出程序（自动保存会话）
@@ -2453,11 +2529,12 @@ def run_bot():
 
 def agent(prompt: str) -> str:
     """处理问题，添加到历史并获取回答"""
-    global _interrupted
+    global _interrupted, _current_esc_stop
     _interrupted = False
 
     # 启动ESC监听线程，持续到整个agent()调用结束
     _esc_stop = threading.Event()
+    _current_esc_stop = _esc_stop  # 暴露给 execute_tool 以便权限确认时暂停
     t = None
     if sys.stdin.isatty():
         t = threading.Thread(target=_start_esc_listener, args=(_esc_stop,), daemon=True)
@@ -2527,6 +2604,7 @@ def agent(prompt: str) -> str:
     finally:
         # cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
         _esc_stop.set()
+        _current_esc_stop = None  # 清理引用
         if t is not None:
             t.join(timeout=0.5)
 
