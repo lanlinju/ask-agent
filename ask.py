@@ -1549,14 +1549,14 @@ Complete the task and return a clear, concise summary."""
         sub_assistant_msg = {"role": "assistant", "content": content}
         if tool_calls:
             sub_assistant_msg["tool_calls"] = tool_calls
-            if reasoning_content:  # tool_calls 需添加推理内容
-                sub_assistant_msg["reasoning_content"] = reasoning_content
+            # 思考模式下，有工具调用时回传 reasoning_content
+            sub_assistant_msg["reasoning_content"] = reasoning_content
         sub_messages.append(sub_assistant_msg)
 
         # If no tools to execute, break
         if not tool_calls:
-            if reasoning_content:
-                cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
+            # if reasoning_content:
+            #     cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
             break
 
         # Execute tools
@@ -1795,6 +1795,7 @@ def get_streaming_response(
         "model": DEEPSEEK_MODEL,
         "messages": messages,
         "stream": True,
+        "thinking": {"type": "disabled"},
     }
 
     if useTools and current_mode in (AGENT, ROLE):
@@ -2453,8 +2454,8 @@ def agent(prompt: str) -> str:
             assistant_msg = {"role": "assistant", "content": content}
             if tool_calls:
                 assistant_msg["tool_calls"] = tool_calls
-                if reasoning_content:  # tool_calls 需添加推理内容
-                    assistant_msg["reasoning_content"] = reasoning_content
+                # 思考模式下，有工具调用时回传 reasoning_content
+                assistant_msg["reasoning_content"] = reasoning_content
             messages.append(assistant_msg)
             logger.debug("添加助手回复: %s", assistant_msg)
 
@@ -2495,7 +2496,7 @@ def agent(prompt: str) -> str:
 
             sub_turn += 1
     finally:
-        cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
+        # cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
         _esc_stop.set()
         if t is not None:
             t.join(timeout=0.5)
