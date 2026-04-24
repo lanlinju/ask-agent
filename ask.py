@@ -20,6 +20,7 @@ from session import SessionManager
 from role import RoleManager
 from agent import AgentManager
 from command import CommandManager
+from memory import MemoryManager, MEMORY_GUIDANCE
 from typing import Optional
 from config import ConfigPathManager, get_config_path
 from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff, read_file, write_file
@@ -235,6 +236,7 @@ def list_skills():
 
 # Global MCP manager instance
 MCP_MANAGER = MCPManager()
+MEMORY_MANAGER = MemoryManager()
 
 # Global hook manager instance
 HOOK_MANAGER = HookManager(workdir=WORKDIR)
@@ -988,6 +990,15 @@ def init_system_prompt(
             system_prompt += "\n\n" + get_environment_info()
     else:
         system_prompt = SYSTEM_PROMPT_ASK
+
+    # 注入跨会话记忆（所有模式共享）
+    memory_section = MEMORY_MANAGER.get_memory_prompt()
+    if memory_section:
+        system_prompt += "\n\n" + memory_section
+    # 仅在有工具的模式下注入 MemorySave 使用指导
+    if mode in (AGENT, ROLE):
+        system_prompt += "\n\n" + MEMORY_GUIDANCE
+
     messages.append({"role": "system", "content": system_prompt})
 
     init_session_manager(mode, role_id)
@@ -1247,6 +1258,36 @@ TOOLS = [
                     }
                 },
                 "required": ["server"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "MemorySave",
+            "description": "Save a persistent memory that survives across sessions. Use for user preferences, corrections, non-obvious project facts, or external resource pointers. Do NOT use for code structure, task state, or secrets.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Short identifier (e.g. prefer_tabs, db_schema)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "One-line summary of what this memory captures",
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["user", "feedback", "project", "reference"],
+                        "description": "user=preferences, feedback=corrections, project=non-obvious project conventions or decision reasons, reference=external resource pointers",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Full memory content (multi-line OK)",
+                    },
+                },
+                "required": ["name", "description", "type", "content"],
             },
         },
     },
@@ -1667,6 +1708,10 @@ def execute_tool(name: str, args: dict) -> str:
         return run_skill(args["skill"])
     if name == "MCP":
         return run_mcp(args["server"])
+    if name == "MemorySave":
+        return MEMORY_MANAGER.save_memory(
+            args["name"], args["description"], args["type"], args["content"]
+        )
     if name.startswith("mcp_"):
         import re
 
@@ -2219,6 +2264,19 @@ def command(command: str):
         list_skills()
         return
 
+    # 列出/管理记忆
+    if command == "/memories" or command.startswith("/memories "):
+        parts = command.split(maxsplit=2)
+        if len(parts) > 1 and parts[1] == "-d" and len(parts) > 2:
+            # /memories -d name: 删除指定记忆
+            result = MEMORY_MANAGER.delete_memory(parts[2])
+            print(f"  {result}\n")
+        else:
+            # /memories: 列出所有记忆
+            listing = MEMORY_MANAGER.list_memories()
+            print(f"  Memories ({MEMORY_MANAGER.memory_dir}):\n{listing}\n")
+        return
+
     # 新增: 处理自定义命令
     if command.startswith("/"):
         cmd_name = command[1:].split()[0]
@@ -2280,6 +2338,8 @@ def show_help():
     /load <id>    - 加载指定会话（使用 /session 查看 ID）
     /commands     - 列出所有自定义命令
     /skills       - 列出所有可用的 Skills
+    /memories     - 列出所有跨会话记忆
+    /memories -d <name> - 删除指定记忆
     /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
     /help         - 显示此帮助信息
     /exit         - 退出程序（自动保存会话）
@@ -2815,6 +2875,11 @@ def main():
     # 设置记忆模式
     global memory
     memory = not args.no_memory
+
+    # 加载跨会话记忆（必须在 init_system_prompt 之前，否则记忆不会注入系统提示词）
+    mem_count = MEMORY_MANAGER.load_all()
+    if mem_count > 0:
+        logger.info(f"[Memory: {mem_count} memories loaded from {MEMORY_MANAGER.memory_dir}]")
 
     # 加载上次保存的模式
     saved_config = load_config()
