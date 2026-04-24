@@ -797,6 +797,24 @@ def get_agent_descriptions() -> str:
     )
 
 
+def get_environment_info() -> str:
+    """获取运行环境信息，用于系统提示词
+
+    Returns:
+        环境信息字符串
+    """
+    os_name = platform.system()
+    os_release = platform.release()
+    arch = platform.machine()
+    if os_name == "Windows":
+        shell = "PowerShell"
+    else:
+        shell = "Bash"
+    return f"""Environment:
+- OS: {os_name} {os_release} | {arch}
+- Shell: {shell}
+- Working Directory: {WORKDIR}"""
+
 # 系统智能体提示词
 SYSTEM_PROMPT_AGENT = f"""You are a coding agent.
 
@@ -817,12 +835,7 @@ Rules:
 - Use TodoWrite to track multi-step work
 - Prefer tools over prose. Act, don't just explain.
 - After finishing, summarize what changed.
-
-Environment:
-- OS platform: {platform.system()}
-    - Windows: use PowerShell command.
-    - Linux/macOS: use Bash command.
-"""
+""" + "\n\n" + get_environment_info()
 
 ASK = 0  # 问答模式
 TRANSLATE = 1  # 翻译模式
@@ -952,10 +965,11 @@ def init_system_prompt(
             assert AGENT_MANAGER is not None
             agent_prompt = AGENT_MANAGER.get_agent_prompt(actual_agent_id)
             if agent_prompt:
-                system_prompt = agent_prompt
+                system_prompt = agent_prompt + "\n\n" + get_environment_info()
             else:
                 print(f"❌ 未找到智能体: {actual_agent_id}")
                 system_prompt = SYSTEM_PROMPT_AGENT
+
     elif mode == ROLE and role_id:
         init_role_manager()
         assert ROLE_MANAGER is not None
@@ -965,6 +979,9 @@ def init_system_prompt(
             current_mode = ASK
             system_prompt = SYSTEM_PROMPT_ASK
             role_id = None
+        else:
+            # 角色模式下追加环境信息（角色可以使用工具）
+            system_prompt += "\n\n" + get_environment_info()
     else:
         system_prompt = SYSTEM_PROMPT_ASK
     messages.append({"role": "system", "content": system_prompt})
