@@ -2120,7 +2120,7 @@ def get_streaming_response(
                             collected_content += content
                             content = content.split("</think>")
                             if should_display:
-                                print(
+                                print(  
                                     f"\033[90m{content[0]}\033[0m", end="", flush=True
                                 )
                             print(content[1].replace("\n", ""), end="", flush=True)
@@ -2774,9 +2774,8 @@ def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round:
 
 
 def sanitize_memory():
-    """翻译模式或不记忆模式时清理对话历史"""
-    # 检查是否需要清理（智能体模式保留记忆）
-    if current_mode == TRANSLATE or not memory:
+    """不记忆模式时清理对话历史"""
+    if not memory:
         init_system_prompt(current_mode)  # 重新初始化系统提示词
 
 
