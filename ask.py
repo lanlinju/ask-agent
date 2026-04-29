@@ -45,7 +45,7 @@ load_dotenv(override=True)
 # 指数退避配置
 BACKOFF_BASE_DELAY = 1.0  # 基础延迟（秒）
 BACKOFF_MAX_DELAY = 128   # 最大延迟（秒）
-MAX_RETRIES = 8           # 最大重试次数
+MAX_RETRIES = 3           # 最大重试次数
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -2026,8 +2026,9 @@ def get_streaming_response(
         except RequestException as e:
             if attempt < MAX_RETRIES:
                 delay = backoff_delay(attempt)
-                print(f"[Recovery] Connection error: {e}. "
-                      f"Retrying in {delay:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                if not silent:
+                    print(f"[Recovery] Connection error: {e}. "
+                        f"Retrying in {delay:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})")
                 time.sleep(delay)
                 continue
             else:
