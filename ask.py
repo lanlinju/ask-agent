@@ -4,12 +4,14 @@ import sys
 import os
 import re
 import requests
+from requests.exceptions import RequestException
 import json
 from typing import List, Dict
 import argparse
 import subprocess
 import logging
 import time
+import random
 from dotenv import load_dotenv
 from pathlib import Path
 import platform
@@ -39,6 +41,11 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import InMemoryHistory
 
 load_dotenv(override=True)
+
+# 指数退避配置
+BACKOFF_BASE_DELAY = 1.0  # 基础延迟（秒）
+BACKOFF_MAX_DELAY = 128   # 最大延迟（秒）
+MAX_RETRIES = 8           # 最大重试次数
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -1999,7 +2006,35 @@ def _start_esc_listener(stop_event: threading.Event):
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
+def backoff_delay(attempt: int) -> float:
+    """Exponential backoff with jitter: base * 2^attempt + random(0, 1)."""
+    delay = min(BACKOFF_BASE_DELAY * (2 ** attempt), BACKOFF_MAX_DELAY)
+    jitter = random.uniform(0, 1)
+    return delay + jitter
+
+
 def get_streaming_response(
+    messages: List,
+    tools: List,
+    silent: bool = False,
+    useTools: bool = True,
+) -> tuple[str, str, List]:
+    """获取流式响应，带指数退避重试"""
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            return _get_streaming_response(messages, tools, silent, useTools)
+        except RequestException as e:
+            if attempt < MAX_RETRIES:
+                delay = backoff_delay(attempt)
+                print(f"[Recovery] Connection error: {e}. "
+                      f"Retrying in {delay:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                time.sleep(delay)
+                continue
+            else:
+                # If we exhaust all retries, raise the last exception
+                raise RequestException(f"Failed after {MAX_RETRIES} retries: {e}")
+
+def _get_streaming_response(
     messages: List,
     tools: List,
     silent: bool = False,
