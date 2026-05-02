@@ -21,6 +21,7 @@
 - 🧠 **记忆系统** - 跨会话持久记忆
 - 🔗 **ACP 支持** - Agent Client Protocol，可在 Zed、JetBrains 等 IDE 中使用
 - 🧩 **Agent Team** - 持久化命名队友，独立线程运行，通过 JSONL 邮箱通信（`--agent-team` 启用）
+- 🖼️ **图片理解** - 支持图片识别和分析，通过 URL 或本地文件发送图片给模型
 
 ## 使用示例截图
 
@@ -479,6 +480,7 @@ ag
 - 技能加载
 - MCP 服务器工具调用
 - Agent Team 团队协作（需 `--agent-team`）
+- 图片识别和分析（支持 URL 和本地文件）
 
 ### 角色扮演模式
 ```bash
@@ -997,6 +999,42 @@ LOG_LEVEL=ERROR
 3. **智能体模式** - 支持文件操作、Shell命令执行等高级功能
 4. **角色扮演模式** - 与预设角色对话，每个角色独立对话历史
 5. **Shell命令集成** - 执行命令结果自动添加到对话历史
+6. **图片理解** - 支持识别和分析图片内容（需模型支持）
+
+### 图片理解
+
+ag 支持图片识别和分析功能，可以通过 URL 或本地文件发送图片给模型进行理解。
+
+**使用方式：**
+
+1. **Telegram Bot 发送图片** - 直接向 Bot 发送图片，自动识别内容
+2. **智能体工具调用** - 使用 `recognize_image` 工具分析图片
+
+**工具说明：**
+
+| 工具 | 功能 | 参数 |
+|------|------|------|
+| `recognize_image` | 识别图片内容 | `image_url`, `source_type`, `prompt` |
+| `send_image` | 发送图片给用户 | `path`, `caption` |
+
+**recognize_image 参数：**
+- `image_url`: 图片 URL 或本地路径
+- `source_type`: `"url"`（网络图片）或 `"local"`（本地图片）
+- `prompt`: 对图片的问题或指令（默认: "Describe this image in detail"）
+
+**示例：**
+```json
+{
+  "name": "recognize_image",
+  "arguments": {
+    "image_url": "https://example.com/photo.jpg",
+    "source_type": "url",
+    "prompt": "这张图片里有什么？"
+  }
+}
+```
+
+**注意：** 只有配置了 `modalities.input` 包含 `"image"` 的模型才能使用图片识别功能。
 
 ## Provider 配置系统
 
@@ -1053,6 +1091,35 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
 **模型配置：**
 - `model_id`: 模型 ID（Provider 的模型标识符）
 - `name`: 模型显示名称
+- `modalities`: 模型支持的模态类型（可选）
+  - `input`: 支持的输入类型，如 `["text", "image"]`
+  - `output`: 支持的输出类型，如 `["text", "image"]`
+
+**图片理解配置示例：**
+
+```json
+{
+  "mimo": {
+    "name": "MiMo",
+    "enabled": true,
+    "options": {
+      "baseURL": "https://api.example.com/v1",
+      "apiKey": "env:MIMO_API_KEY"
+    },
+    "models": {
+      "mimo-v2.5": {
+        "name": "Mimo V2.5",
+        "modalities": {
+          "input": ["text", "image"],
+          "output": ["text"]
+        }
+      }
+    }
+  }
+}
+```
+
+只有配置了 `"image"` 输入模态的模型才能使用图片识别功能。
 
 ### 环境变量引用
 
@@ -1570,3 +1637,4 @@ echo $OPENAI_API_KEY
 
 - [learn-claude-code](https://github.com/shareAI-lab/learn-claude-code)
 - [deepseek-guides-thinking-mode-tool-calls](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8)
+- [multimodal-understanding-image-understanding](https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/multimodal-understanding/image-understanding)

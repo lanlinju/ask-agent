@@ -10,6 +10,7 @@ Provider 配置系统允许：
 - 启用/禁用特定 Provider
 - 为每个 Provider 配置多个模型
 - 指定默认模型
+- 配置模型的模态支持（如图片输入/输出）
 
 ## 配置文件结构
 
@@ -33,7 +34,11 @@ Provider 配置系统允许：
       },
       "models": {
         "model_id": {
-          "name": "模型显示名称"
+          "name": "模型显示名称",
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
         }
       }
     }
@@ -77,6 +82,34 @@ Provider 配置系统允许：
 |------|------|------|------|
 | `model_id` | string | 是 | 模型 ID（Provider 的模型标识符，对象的键） |
 | `name` | string | 是 | 模型显示名称 |
+| `modalities` | object | 否 | 模型支持的模态类型配置 |
+
+### Modalities 配置
+
+`modalities` 字段用于声明模型支持的输入和输出类型，主要用于图片理解等功能。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `input` | string[] | 支持的输入类型：`["text"]`、`["text", "image"]` |
+| `output` | string[] | 支持的输出类型：`["text"]`、`["text", "image"]` |
+
+**示例：**
+```json
+{
+  "mimo-v2.5": {
+    "name": "Mimo V2.5",
+    "modalities": {
+      "input": ["text", "image"],
+      "output": ["text"]
+    }
+  }
+}
+```
+
+**说明：**
+- `input` 包含 `"image"` 时，模型支持图片识别功能（`recognize_image` 工具）
+- `output` 包含 `"image"` 时，模型支持图片生成功能（为将来预留）
+- 未配置 `modalities` 时，默认为 `{"input": ["text"], "output": ["text"]}`
 
 ## 环境变量引用
 
@@ -195,10 +228,32 @@ Ask Agent 支持任何兼容 OpenAI API 格式的 Provider。
       },
       "models": {
         "gpt-4o": {
-          "name": "GPT-4o"
+          "name": "GPT-4o",
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
         },
         "gpt-4-turbo": {
           "name": "GPT-4 Turbo"
+        }
+      }
+    },
+    "mimo": {
+      "name": "MiMo",
+      "enabled": true,
+      "options": {
+        "baseURL": "https://api.example.com/v1",
+        "apiKey": "env:MIMO_API_KEY",
+        "thinking": "enabled"
+      },
+      "models": {
+        "mimo-v2.5": {
+          "name": "Mimo V2.5",
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
         }
       }
     }
@@ -268,6 +323,30 @@ cat providers.json
   }
 }
 ```
+
+### 4. 图片识别功能不可用
+
+**问题**：使用 `recognize_image` 工具时提示"Current model does not support image input"
+
+**解决**：检查当前模型是否配置了图片输入支持
+
+```json
+{
+  "model_id": {
+    "name": "Model Name",
+    "modalities": {
+      "input": ["text", "image"],  // 必须包含 "image"
+      "output": ["text"]
+    }
+  }
+}
+```
+
+**检查步骤：**
+1. 使用 `/model` 查看当前模型
+2. 检查 `providers.json` 中该模型的 `modalities` 配置
+3. 确保 `input` 数组包含 `"image"`
+4. 切换到支持图片输入的模型
 ## 配置优先级
 
 配置读取的优先级（从高到低）：
@@ -292,6 +371,7 @@ thinking 模式的配置优先级（从高到低）：
 3. **设置合理的超时**：根据网络状况调整 timeout 值
 4. **配置重试机制**：设置 `maxRetries` 提高请求可靠性
 5. **定期更新模型**：关注 Provider 的模型更新，及时添加新模型
+6. **配置模态支持**：对于支持图片理解的模型，配置 `modalities` 字段以启用图片识别功能
 
 ## 相关文档
 
