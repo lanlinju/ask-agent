@@ -21,12 +21,49 @@ class ProviderConfigError(Exception):
 
 
 @dataclass
+class ModelModalities:
+    """模型支持的模态类型"""
+
+    input: List[str] = None  # 支持的输入类型: ["text", "image", "audio", "video"]
+    output: List[str] = None  # 支持的输出类型: ["text", "image"]
+
+    def __post_init__(self):
+        if self.input is None:
+            self.input = ["text"]
+        if self.output is None:
+            self.output = ["text"]
+
+    def supports_image_input(self) -> bool:
+        """是否支持图片输入"""
+        return "image" in self.input
+
+    def supports_image_output(self) -> bool:
+        """是否支持图片输出"""
+        return "image" in self.output
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any] | None) -> "ModelModalities":
+        """从字典创建 ModelModalities"""
+        if not data:
+            return cls()
+        return cls(
+            input=data.get("input", ["text"]),
+            output=data.get("output", ["text"]),
+        )
+
+
+@dataclass
 class ModelInfo:
     """模型信息"""
 
     id: str  # 模型 ID（如 "gpt-4o"）
     name: str  # 模型显示名称
     provider_id: str  # 所属 provider ID
+    modalities: ModelModalities = None  # 模型支持的模态类型
+
+    def __post_init__(self):
+        if self.modalities is None:
+            self.modalities = ModelModalities()
 
     def __repr__(self) -> str:
         return f"ModelInfo(id='{self.id}', name='{self.name}', provider='{self.provider_id}')"
@@ -92,10 +129,13 @@ class Provider:
         # 解析模型列表
         models = {}
         for model_id, model_config in config.get("models", {}).items():
+            # 解析 modalities 配置
+            modalities = ModelModalities.from_dict(model_config.get("modalities"))
             models[model_id] = ModelInfo(
                 id=model_id,
                 name=model_config.get("name", model_id),
                 provider_id=provider_id,
+                modalities=modalities,
             )
 
         return cls(
@@ -363,10 +403,17 @@ class ProviderConfig:
         """将配置转换为字典"""
         providers_dict = {}
         for provider_id, provider in self.providers.items():
-            models_dict = {
-                model_id: {"name": model.name}
-                for model_id, model in provider.models.items()
-            }
+            models_dict = {}
+            for model_id, model in provider.models.items():
+                model_data: Dict[str, Any] = {"name": model.name}
+                # 保存 modalities 配置（仅当不是默认值时）
+                if model.modalities:
+                    if model.modalities.input != ["text"] or model.modalities.output != ["text"]:
+                        model_data["modalities"] = {
+                            "input": model.modalities.input,
+                            "output": model.modalities.output,
+                        }
+                models_dict[model_id] = model_data
 
             providers_dict[provider_id] = {
                 "name": provider.name,

@@ -15,6 +15,7 @@ import random
 import atexit
 import shutil
 import asyncio
+import base64
 from dotenv import load_dotenv
 from pathlib import Path
 import platform
@@ -2817,6 +2818,159 @@ async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"执行命令: {command_text}")
 
 
+def get_image_mime_type(file_path: str) -> str:
+    """根据文件扩展名获取图片 MIME 类型（已迁移到 util/image.py）"""
+    from util.image import get_image_mime_type as _get_image_mime_type
+    return _get_image_mime_type(file_path)
+
+
+def current_model_supports_image_input() -> bool:
+    """检查当前模型是否支持图片输入
+
+    Returns:
+        当前模型是否支持图片输入
+    """
+    model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
+    if model_info and model_info.modalities:
+        return model_info.modalities.supports_image_input()
+    return False
+
+
+async def download_telegram_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
+    """下载 Telegram 图片并返回 Base64 编码
+
+    Args:
+        update: Telegram 更新对象
+        context: Telegram 上下文
+
+    Returns:
+        Base64 编码的图片数据，失败返回 None
+    """
+    from util.image import image_bytes_to_base64
+
+    try:
+        # 获取最大尺寸的图片
+        photo = update.message.photo[-1]
+        file = await context.bot.get_file(photo.file_id)
+
+        # 下载图片到内存
+        photo_bytes = await file.download_as_bytearray()
+
+        # 转换为 Base64
+        base64_data = image_bytes_to_base64(photo_bytes)
+
+        return base64_data
+    except Exception as e:
+        logger.error(f"下载图片失败: {e}")
+        return None
+
+
+def agent_with_image(prompt: str, image_base64: str, mime_type: str = "image/jpeg") -> str:
+    """处理包含图片的问题，添加到历史并获取回答
+
+    Args:
+        prompt: 用户文本提示
+        image_base64: Base64 编码的图片数据
+        mime_type: 图片 MIME 类型
+
+    Returns:
+        模型回复内容
+    """
+    global _interrupted
+    _interrupted = False
+
+    # 构建多模态消息内容
+    multimodal_content = [
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{mime_type};base64,{image_base64}"
+            }
+        },
+        {
+            "type": "text",
+            "text": prompt
+        }
+    ]
+
+    # 将用户新消息添加到消息列表（使用多模态格式）
+    messages.append({"role": "user", "content": multimodal_content})
+
+    # 获取回复
+    content, reasoning_content, tool_calls = get_streaming_response(
+        messages, TOOLS, silent=False, useTools=False
+    )
+
+    # 构建助手消息并添加到历史
+    assistant_msg = {"role": "assistant", "content": content}
+    messages.append(assistant_msg)
+
+    return content
+
+
+async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理接收到的图片消息"""
+    global _telegram_update, _telegram_context, _telegram_pending_tasks
+    user = update.effective_user
+
+    # 检查当前模型是否支持图片输入
+    if not current_model_supports_image_input():
+        model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
+        model_name = model_info.name if model_info else DEEPSEEK_MODEL
+        await update.message.reply_text(
+            f"❌ 当前模型 {model_name} 不支持图片理解\n"
+            f"请切换到支持图片输入的模型"
+        )
+        return
+
+    # 设置全局 Telegram 上下文
+    _telegram_update = update
+    _telegram_context = context
+    _telegram_pending_tasks = []
+
+    # 获取图片说明（如果有）
+    caption = update.message.caption or "请描述这张图片的内容"
+
+    # 打印到控制台
+    print(
+        f"收到图片 | 用户: {user.username or user.first_name} (ID: {user.id}) | 说明: {caption}"
+    )
+
+    print(f"{BLUE}Telegram Bot (图片理解):{RESET}")
+
+    # 下载图片并转换为 Base64
+    image_base64 = await download_telegram_photo(update, context)
+
+    if not image_base64:
+        await update.message.reply_text("❌ 图片下载失败，请重试")
+        return
+
+    # 获取图片 MIME 类型
+    photo = update.message.photo[-1]
+    file = await context.bot.get_file(photo.file_id)
+    file_path = file.file_path or ""
+    mime_type = get_image_mime_type(file_path)
+
+    # 调用模型进行图片理解
+    response = agent_with_image(caption, image_base64, mime_type)
+
+    # 移除 <think>...</think> 标签及其内容
+    response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
+
+    # 按段落分割发送
+    paragraphs = response.split("\n\n")
+    for para in paragraphs:
+        if para.strip():
+            await update.message.reply_text(para)
+
+    # 等待所有待处理的异步任务
+    if _telegram_pending_tasks:
+        await asyncio.gather(*_telegram_pending_tasks)
+        _telegram_pending_tasks = []
+
+    print()
+
+
 async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理接收到的文本消息"""
     global _telegram_update, _telegram_context, _telegram_pending_tasks
@@ -2860,6 +3014,7 @@ def run_bot():
 
     # 添加处理器 - 捕获所有以 / 开头的命令
     application.add_handler(MessageHandler(filters.COMMAND, bot_command))
+    application.add_handler(MessageHandler(filters.PHOTO, reply_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_text))
 
     print("机器人已启动！按 Ctrl+C 停止")
