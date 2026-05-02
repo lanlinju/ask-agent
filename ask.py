@@ -1512,25 +1512,21 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "recognize_image",
-            "description": "Recognize and analyze image content. Use this when user asks to describe, analyze, or understand an image. Supports network URLs and local file paths.",
+            "description": "Recognize and analyze image content. Use this when user asks to describe, analyze, or understand one or multiple images. Supports network URLs and local file paths.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "image_url": {
-                        "type": "string",
-                        "description": "Image URL (network URL like 'https://...' or local file path like './image.jpg')",
+                    "image_urls": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of image URLs or local file paths (e.g. ['https://example.com/1.jpg', './local.png'])",
                     },
                     "prompt": {
                         "type": "string",
-                        "description": "Question or instruction about the image (default: 'Describe this image in detail')",
-                    },
-                    "source_type": {
-                        "type": "string",
-                        "enum": ["url", "local"],
-                        "description": "Type of image source: 'url' for network URLs, 'local' for local files",
+                        "description": "Question or instruction about the image(s) (default: 'Describe this image in detail')",
                     },
                 },
-                "required": ["image_url", "source_type"],
+                "required": ["image_urls"],
             },
         },
     },
@@ -1783,19 +1779,19 @@ def run_send_image(path: str, caption: str = "") -> str:
         return f"Error sending image: {e}"
 
 
-def run_recognize_image(image_url: str, source_type: str, prompt: str = "Describe this image in detail") -> str:
-    """Recognize and analyze image content.
+def run_recognize_image(image_urls: List[str], prompt: str = "Describe this image in detail") -> str:
+    """Recognize and analyze image content (supports multiple images).
 
     Args:
-        image_url: Image URL (network URL or local file path)
-        source_type: Type of image source: 'url' for network URLs, 'local' for local files
-        prompt: Question or instruction about the image
+        image_urls: List of image URLs or local file paths
+        prompt: Question or instruction about the image(s)
 
     Returns:
-        Model response about the image
+        Model response about the image(s)
     """
     try:
-        print(f"\033[34m→ Recognize Image {image_url} (source: {source_type})\033[0m")
+        count = len(image_urls)
+        print(f"\033[34m→ Recognize Image\033[0m")
 
         # Check if current model supports image input
         if not current_model_supports_image_input():
@@ -1803,62 +1799,67 @@ def run_recognize_image(image_url: str, source_type: str, prompt: str = "Describ
             messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
             return error_msg
 
-        if source_type == "url":
-            if not image_url.startswith(("http://", "https://")):
-                error_msg = f"Error: Invalid network URL: {image_url}"
-                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
-                return error_msg
-
-            multimodal_content = [
-                {"type": "image_url", "image_url": {"url": image_url}},
-                {"type": "text", "text": prompt}
-            ]
-            messages.append({"role": "user", "content": multimodal_content})
-            return f"Image recognized (URL): {image_url}"
-
-        elif source_type == "local":
-            from util.image import image_to_base64, get_image_mime_type, is_supported_image, validate_image_size
-
-            image_path = safe_path(image_url)
-
-            if not image_path.exists():
-                error_msg = f"Error: Local image file not found: {image_url}"
-                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
-                return error_msg
-
-            if not image_path.is_file():
-                error_msg = f"Error: Path is not a file: {image_url}"
-                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
-                return error_msg
-
-            if not is_supported_image(str(image_path)):
-                error_msg = f"Error: Unsupported image format: {image_path.suffix}"
-                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
-                return error_msg
-
-            if not validate_image_size(str(image_path), max_size_mb=50.0):
-                error_msg = f"Error: Image file too large (max 50MB): {image_url}"
-                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
-                return error_msg
-
-            base64_data = image_to_base64(str(image_path))
-            if not base64_data:
-                error_msg = f"Error: Failed to convert image to base64: {image_url}"
-                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
-                return error_msg
-
-            mime_type = get_image_mime_type(str(image_path))
-            multimodal_content = [
-                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_data}"}},
-                {"type": "text", "text": prompt}
-            ]
-            messages.append({"role": "user", "content": multimodal_content})
-            return f"Image recognized (local): {image_url}"
-
-        else:
-            error_msg = f"Error: Invalid source_type: {source_type}. Must be 'url' or 'local'"
+        if not image_urls:
+            error_msg = "Error: No image URLs provided"
             messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
             return error_msg
+
+        from util.image import image_to_base64, get_image_mime_type, is_supported_image, validate_image_size
+
+        multimodal_content = []
+        success = 0
+        errors = []
+
+        for url in image_urls:
+            # Auto-detect source type
+            if url.startswith(("http://", "https://")):
+                multimodal_content.append({"type": "image_url", "image_url": {"url": url}})
+                success += 1
+            else:
+                try:
+                    image_path = safe_path(url)
+
+                    if not image_path.exists():
+                        errors.append(f"{url} (not found)")
+                        continue
+
+                    if not image_path.is_file():
+                        errors.append(f"{url} (not a file)")
+                        continue
+
+                    if not is_supported_image(str(image_path)):
+                        errors.append(f"{url} (unsupported format)")
+                        continue
+
+                    if not validate_image_size(str(image_path), max_size_mb=50.0):
+                        errors.append(f"{url} (too large)")
+                        continue
+
+                    base64_data = image_to_base64(str(image_path))
+                    if not base64_data:
+                        errors.append(f"{url} (read failed)")
+                        continue
+
+                    mime_type = get_image_mime_type(str(image_path))
+                    multimodal_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{base64_data}"}
+                    })
+                    success += 1
+
+                except Exception as e:
+                    errors.append(f"{url} ({e})")
+
+        # Add text prompt
+        multimodal_content.append({"type": "text", "text": prompt})
+
+        # Inject into messages
+        messages.append({"role": "user", "content": multimodal_content})
+
+        if errors:
+            print(f"\033[31m  Errors: {'; '.join(errors)}\033[0m")
+
+        return f"Recognized {count} image(s)"
 
     except Exception as e:
         error_msg = f"Error recognizing image: {e}"
@@ -2113,8 +2114,7 @@ def execute_tool(name: str, args: dict) -> str:
         return run_send_image(args["path"], caption=args.get("caption", ""))
     if name == "recognize_image":
         return run_recognize_image(
-            args["image_url"],
-            args["source_type"],
+            args["image_urls"],
             prompt=args.get("prompt", "Describe this image in detail")
         )
     # Agent Team tools
