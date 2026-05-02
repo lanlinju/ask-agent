@@ -1735,8 +1735,10 @@ def merge_arguments(tool_calls_collected: List) -> List:
 
         if tool_call.get("id"):
             current["id"] = tool_call["id"]
-        if tool_call.get("thought_signature"): # 兼容Gemini的thought_signature
-            current["thought_signature"] = tool_call["thought_signature"]    
+        # 兼容Gemini的thought_signature (嵌套在extra_content.google.thought_signature)
+        # Gemini API要求回传时保持extra_content结构
+        if "extra_content" in tool_call:
+            current["extra_content"] = tool_call["extra_content"]
         if "function" in tool_call:
             func = tool_call["function"]
             if func.get("name"):

@@ -106,3 +106,55 @@ def test_merge_arguments_order_preserved():
     assert result[0]['id'] == 'call_001'
     assert result[1]['id'] == 'call_002'
     assert result[2]['id'] == 'call_003'
+
+
+def test_merge_arguments_gemini_thought_signature():
+    """测试Gemini的thought_signature保留在extra_content中"""
+    from ask import merge_arguments
+    
+    # Gemini返回的tool_call带有extra_content.google.thought_signature
+    tool_calls = [
+        {
+            'index': 0,
+            'id': 'call_gemini',
+            'type': 'function',
+            'function': {'name': 'bash', 'arguments': '{"command":"date"}'},
+            'extra_content': {
+                'google': {
+                    'thought_signature': 'EjQKMgEMOdbHhEfnAtFwU4+jzZWkiXO9bAhTFWzwXTyJiQfOE/STssHZ/5d6nkfiQOjjMtvN'
+                }
+            }
+        }
+    ]
+    
+    result = merge_arguments(tool_calls)
+    assert len(result) == 1
+    assert result[0]['id'] == 'call_gemini'
+    assert 'extra_content' in result[0]
+    assert 'google' in result[0]['extra_content']
+    assert 'thought_signature' in result[0]['extra_content']['google']
+    assert result[0]['extra_content']['google']['thought_signature'] == 'EjQKMgEMOdbHhEfnAtFwU4+jzZWkiXO9bAhTFWzwXTyJiQfOE/STssHZ/5d6nkfiQOjjMtvN'
+
+
+def test_merge_arguments_gemini_thought_signature_top_level():
+    """测试Gemini的thought_signature在顶层时转换为extra_content格式"""
+    from ask import merge_arguments
+    
+    # 兼容thought_signature在顶层的情况
+    tool_calls = [
+        {
+            'index': 0,
+            'id': 'call_gemini',
+            'type': 'function',
+            'function': {'name': 'bash', 'arguments': '{"command":"date"}'},
+            'thought_signature': 'EjQKMgEMOdbHhEfnAtFwU4+jzZWkiXO9bAhTFWzwXTyJiQfOE/STssHZ/5d6nkfiQOjjMtvN'
+        }
+    ]
+    
+    result = merge_arguments(tool_calls)
+    assert len(result) == 1
+    assert result[0]['id'] == 'call_gemini'
+    assert 'extra_content' in result[0]
+    assert 'google' in result[0]['extra_content']
+    assert 'thought_signature' in result[0]['extra_content']['google']
+    assert result[0]['extra_content']['google']['thought_signature'] == 'EjQKMgEMOdbHhEfnAtFwU4+jzZWkiXO9bAhTFWzwXTyJiQfOE/STssHZ/5d6nkfiQOjjMtvN'
