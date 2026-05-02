@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import platform
+import re
 import subprocess
 import uuid
 from pathlib import Path
@@ -365,6 +366,10 @@ class AskAgentACP(Agent):
         # thinking 启用时设置 reasoning_effort
         if _ask.get_thinking_mode() == "enabled":
             data["reasoning_effort"] = _ask.PROVIDER_CONFIG.reasoning_effort
+        # Gemini 不支持 thinking 字段
+        if re.search(r"googleapis\.com", _ask.DEEPSEEK_API_URL):
+            data.pop("thinking", None)
+            data.pop("reasoning_effort", None)    
         if use_tools:
             data["tools"] = tools
             data["tool_choice"] = "auto"

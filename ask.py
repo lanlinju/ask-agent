@@ -1735,6 +1735,8 @@ def merge_arguments(tool_calls_collected: List) -> List:
 
         if tool_call.get("id"):
             current["id"] = tool_call["id"]
+        if tool_call.get("thought_signature"): # 兼容Gemini的thought_signature
+            current["thought_signature"] = tool_call["thought_signature"]    
         if "function" in tool_call:
             func = tool_call["function"]
             if func.get("name"):
@@ -2101,6 +2103,11 @@ def _get_streaming_response(
     if get_thinking_mode() == "enabled":
         data["reasoning_effort"] = PROVIDER_CONFIG.reasoning_effort
 
+    # Gemini 不支持 thinking 字段
+    if re.search(r"googleapis\.com", DEEPSEEK_API_URL):
+        data.pop("thinking", None)
+        data.pop("reasoning_effort", None)
+        
     if useTools and current_mode in (AGENT, ROLE):
         data["tools"] = tools
         data["tool_choice"] = "auto"
@@ -2156,7 +2163,7 @@ def _get_streaming_response(
                 if len(data["choices"]) == 0:
                     logger.debug("\nchoices length is 0")
                     continue
-                if data["choices"][0]["finish_reason"] != None:
+                if data["choices"][0].get("finish_reason") is not None:
                     finish_reason = data["choices"][0]["finish_reason"]
                     logger.info("\nfinish_reason: %s", finish_reason)
                     # 打印 token 使用情况
