@@ -12,6 +12,8 @@ import subprocess
 import logging
 import time
 import random
+import atexit
+import shutil
 from dotenv import load_dotenv
 from pathlib import Path
 import platform
@@ -26,8 +28,9 @@ from memory import MemoryManager, MEMORY_GUIDANCE
 from typing import Optional
 from config import ConfigPathManager, get_config_path
 from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff, read_file, write_file
-from util.background import BackgroundManager, before_model_call
+from util.background import BackgroundManager, drain_background_notifications
 from util.hooks import HookManager, HookEvent, HookInput
+from util.agent_team import TeammateManager
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -269,6 +272,24 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Global background manager instance
 RUNTIME_DIR = CACHE_DIR / "runtime-tasks"
 BG_MANAGER = BackgroundManager(RUNTIME_DIR, workdir=WORKDIR)
+
+# Global agent team manager instance (lazy init)
+TEAM_MANAGER: Optional[TeammateManager] = None
+
+
+def _cleanup_team_dir():
+    """Remove .team directory on program exit."""
+    if not AGENT_TEAM_ENABLED or not TEAM_MANAGER:
+        return
+    team_dir = WORKDIR / ".team"
+    if team_dir.exists():
+        try:
+            shutil.rmtree(team_dir)
+        except Exception:
+            pass
+
+
+atexit.register(_cleanup_team_dir)
 
 # Global session manager instance - will be initialized with the current mode
 SESSION_MANAGER: Optional[SessionManager] = None
@@ -684,6 +705,19 @@ def init_command_manager() -> CommandManager:
     if not COMMAND_MANAGER:
         COMMAND_MANAGER = CommandManager(COMMAND_DIR, COMMAND_CONFIG)
     return COMMAND_MANAGER
+
+
+def init_team_manager() -> TeammateManager:
+    """初始化 Agent Team 管理器"""
+    global TEAM_MANAGER
+    if not TEAM_MANAGER:
+        team_dir = WORKDIR / ".team"
+        TEAM_MANAGER = TeammateManager(
+            team_dir=team_dir,
+            llm_caller=lambda msgs, tools, silent: get_streaming_response(msgs, tools, silent),
+            tool_executor=execute_tool,
+        )
+    return TEAM_MANAGER
 
 
 def list_custom_commands():
@@ -1453,6 +1487,10 @@ ONLY_BASH_TOOL = os.getenv("ONLY_BASH_TOOL", "disabled").lower()
 if ONLY_BASH_TOOL == "enabled":
     TOOLS = TOOLS[:1]  # 仅保留 bash 工具
 
+# Agent Team tools (available in AGENT mode when --agent-team is set)
+TEAM_TOOLS = TeammateManager.lead_tools()
+AGENT_TEAM_ENABLED = False
+
 
 def run_bash(command: str, timeout: Optional[int] = None) -> str:
     """执行 bash 命令并返回 stdout/stderr"""
@@ -1872,6 +1910,10 @@ def execute_tool(name: str, args: dict) -> str:
         return BG_MANAGER.run(args["command"], timeout=args.get("timeout", 300))
     if name == "check_background":
         return BG_MANAGER.check(args.get("task_id"))
+    # Agent Team tools
+    if name in ("spawn_teammate", "list_teammates", "send_message", "read_inbox", "broadcast", "shutdown_teammate"):
+        team = init_team_manager()
+        return team.execute_lead_tool(name, args)
     if name.startswith("mcp_"):
         import re
 
@@ -2426,6 +2468,28 @@ def command(command: str):
         handle_mcp_command(command)
         return
 
+    # Agent Team 管理
+    if command == "/team":
+        if not AGENT_TEAM_ENABLED:
+            print("❌ Agent Team 未启用，请使用 --agent-team 参数\n")
+            return
+        team = init_team_manager()
+        print(team.list_all())
+        return
+
+    # 读取 lead 的 team inbox
+    if command == "/inbox":
+        if not AGENT_TEAM_ENABLED:
+            print("❌ Agent Team 未启用，请使用 --agent-team 参数\n")
+            return
+        team = init_team_manager()
+        inbox = team.bus.read_inbox("lead")
+        if inbox:
+            print(json.dumps(inbox, indent=2, ensure_ascii=False))
+        else:
+            print("📭 Inbox is empty")
+        return
+
     # 模型命令: /model, /model -l, /model number
     if command == "/model" or command.startswith("/model "):
         # 解析参数
@@ -2529,6 +2593,8 @@ def show_help():
     /skills       - 列出所有可用的 Skills
     /memories     - 列出所有跨会话记忆
     /memories -d <name> - 删除指定记忆
+    /team         - 列出所有团队成员及状态
+    /inbox        - 读取并清空团队收件箱
     /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
     /help         - 显示此帮助信息
     /exit         - 退出程序（自动保存会话）
@@ -2548,6 +2614,7 @@ def show_help():
     - 支持通过 TodoWrite 工具管理任务列表
     - 支持连接和使用 MCP 服务器提供的工具
     - 智能体配置存放在 agents.json，提示词存放在 agents/ 目录
+    - 支持 Agent Team: spawn_teammate, send_message, broadcast 等团队协作工具
 
   🔹 角色扮演模式功能：
     - 使用角色扮演系统提示词与角色对话
@@ -2700,6 +2767,23 @@ def run_bot():
         print(f"❌ Telegram Bot 发生错误: {e}")
 
 
+def _drain_team_inbox(messages: list) -> None:
+    """Drain the lead's team inbox and inject messages into conversation."""
+    if not TEAM_MANAGER:
+        return
+    inbox = TEAM_MANAGER.bus.read_inbox("lead")
+    if not inbox:
+        return
+    notif_text = "\n".join(
+        f"[team:{msg.get('from', '?')}] {msg.get('content', '')}"
+        for msg in inbox
+    )
+    messages.append({
+        "role": "user",
+        "content": f"<team-inbox>\n{notif_text}\n</team-inbox>",
+    })
+
+
 def agent(prompt: str) -> str:
     """处理问题，添加到历史并获取回答"""
     global _interrupted
@@ -2721,12 +2805,21 @@ def agent(prompt: str) -> str:
         # 将用户新消息添加到消息列表
         messages.append({"role": "user", "content": prompt})
 
+        # In AGENT mode, merge team tools into the tools list
+        active_tools = TOOLS[:]
+        if current_mode == AGENT and AGENT_TEAM_ENABLED:
+            active_tools = TOOLS + TEAM_TOOLS
+
         while True:
             # 每轮模型调用前，排空后台任务通知
-            before_model_call(messages, BG_MANAGER)
+            drain_background_notifications(messages, BG_MANAGER)
+
+            # 每轮模型调用前，排空 team inbox 并注入 messages
+            if TEAM_MANAGER and AGENT_TEAM_ENABLED:
+                _drain_team_inbox(messages)
 
             content, reasoning_content, tool_calls = get_streaming_response(
-                messages, TOOLS
+                messages, active_tools
             )
 
             # 构建助手消息并添加到历史
@@ -3015,6 +3108,7 @@ def main():
     parser.add_argument("--ask", action="store_true", help="进入问答模式")
     parser.add_argument("-e", "--translate", action="store_true", help="进入翻译模式")
     parser.add_argument("--agent", action="store_true", help="进入智能体模式")
+    parser.add_argument("--agent-team", action="store_true", help="启用智能体团队模式（需配合 --agent 使用）")
     parser.add_argument("--role", type=str, help="进入角色扮演模式，指定角色ID")
     parser.add_argument(
         "-n",
@@ -3066,6 +3160,10 @@ def main():
     # 设置记忆模式
     global memory
     memory = not args.no_memory
+
+    # 设置 Agent Team 开关
+    global AGENT_TEAM_ENABLED
+    AGENT_TEAM_ENABLED = args.agent_team
 
     # 加载跨会话记忆（必须在 init_system_prompt 之前，否则记忆不会注入系统提示词）
     mem_count = MEMORY_MANAGER.load_all()

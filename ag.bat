@@ -1,2 +1,2 @@
 @echo off
-python ag
+python ag %*

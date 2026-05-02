@@ -170,7 +170,7 @@ class BackgroundManager:
         return stalled
 
 
-def before_model_call(messages: list, bg: BackgroundManager):
+def drain_background_notifications(messages: list, bg: BackgroundManager):
     """模型调用前的标准前置步骤：排空后台通知并注入 messages。
 
     Args:

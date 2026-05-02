@@ -8,7 +8,7 @@ import time
 import tempfile
 from pathlib import Path
 
-from util.background import BackgroundManager, before_model_call
+from util.background import BackgroundManager, drain_background_notifications
 
 
 class TestBackgroundManager:
@@ -153,7 +153,7 @@ class TestBeforeModelCall:
     def test_no_notifications_no_injection(self):
         """无通知时不注入消息"""
         messages = [{"role": "user", "content": "hello"}]
-        before_model_call(messages, self.bg)
+        drain_background_notifications(messages, self.bg)
         assert len(messages) == 1
 
     def test_injects_notification_as_user_message(self):
@@ -161,7 +161,7 @@ class TestBeforeModelCall:
         self.bg.run("echo done")
         time.sleep(1)
         messages = [{"role": "user", "content": "hello"}]
-        before_model_call(messages, self.bg)
+        drain_background_notifications(messages, self.bg)
         assert len(messages) == 2
         assert messages[1]["role"] == "user"
         assert "<background-results>" in messages[1]["content"]
@@ -172,7 +172,7 @@ class TestBeforeModelCall:
         self.bg.run("echo once")
         time.sleep(1)
         messages = []
-        before_model_call(messages, self.bg)
+        drain_background_notifications(messages, self.bg)
         assert len(messages) == 1
-        before_model_call(messages, self.bg)
+        drain_background_notifications(messages, self.bg)
         assert len(messages) == 1

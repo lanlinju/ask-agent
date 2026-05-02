@@ -20,6 +20,7 @@
 - 📁 **统一配置管理** - 支持全局配置目录 `~/.ask-agent/` 和项目本地配置
 - 🧠 **记忆系统** - 跨会话持久记忆
 - 🔗 **ACP 支持** - Agent Client Protocol，可在 Zed、JetBrains 等 IDE 中使用
+- 🧩 **Agent Team** - 持久化命名队友，独立线程运行，通过 JSONL 邮箱通信（`--agent-team` 启用）
 
 ## 使用示例截图
 
@@ -281,6 +282,8 @@ python ag
 | `/mcp` | 交互式选择并连接 MCP 服务器 |
 | `/mcp -l` | 列出所有可用的 MCP 服务器 |
 | `/bot` | 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN） |
+| `/team` | 列出所有团队成员及状态（需 `--agent-team`） |
+| `/inbox` | 读取并清空团队收件箱（需 `--agent-team`） |
 | `/help` | 显示帮助信息 |
 | `!command` | 执行shell命令（如 `!ls`, `!pwd`） |
 
@@ -397,7 +400,7 @@ ag -n
 ## 命令行选项
 
 ```
-usage: ag [-q] [-a] [-e] [-n] [--agent] [--acp] [--api-key API_KEY] [--log-level LOG_LEVEL] [query]
+usage: ag [-q] [-a] [-e] [-n] [--agent] [--agent-team] [--acp] [--api-key API_KEY] [--log-level LOG_LEVEL] [query]
 
 Ask Agent - DeepSeek 聊天客户端
 
@@ -409,6 +412,7 @@ optional arguments:
   -a, --after          管道模式中，回答后进入连续对话模式
   -e, --translate      进入翻译模式
   --agent              进入智能体模式
+  --agent-team         启用智能体团队模式（需配合 --agent 使用）
   --acp                以 ACP Agent 模式运行（用于 IDE 集成）
   -n, --no-memory      不记忆上下文，每次问答后只保留系统提示词
   --api-key API_KEY    API 密钥（临时覆盖配置文件中的设置，不推荐长期使用）
@@ -474,6 +478,7 @@ ag
 - 子智能体调用
 - 技能加载
 - MCP 服务器工具调用
+- Agent Team 团队协作（需 `--agent-team`）
 
 ### 角色扮演模式
 ```bash
@@ -1086,6 +1091,7 @@ ag 支持任何兼容 OpenAI API 格式的 Provider：
 - **智能体系统** - 支持多智能体配置，可快速切换不同智能体
 - **MCP 集成** - 支持 Model Context Protocol，可连接外部工具服务器
 - **ACP 集成** - 支持 Agent Client Protocol，可在 Zed/JetBrains 等 IDE 中使用
+- **Agent Team** - 持久化命名队友，独立线程运行，JSONL 邮箱通信
 
 ## 系统提示词
 
@@ -1411,6 +1417,103 @@ cp -r project/agents/* ~/.ask-agent/agents/
 - **explore** - 只读探索智能体，用于探索代码、查找文件、搜索
 - **code** - 完整功能智能体，用于实现功能和修复错误
 - **plan** - 规划智能体，用于设计实现策略
+
+## Agent Team（智能体团队）
+
+智能体团队模式支持创建持久化命名队友，每个队友在独立线程中运行自己的 agent loop，通过 JSONL 邮箱文件通信。
+
+### 与子智能体的区别
+
+| 机制 | 生命周期 | 适用场景 |
+|------|----------|----------|
+| 子智能体 (Task) | 一次性，执行完销毁 | "帮我查一下再回来汇报" |
+| Agent Team | 长期存在，可反复接任务 | "你以后长期负责测试方向" |
+
+### 启用方式
+
+```bash
+# 通过命令行参数启用
+ag --agent-team
+
+# 或在交互模式中使用（需启动时带 --agent-team）
+ag --agent-team
+```
+
+### 团队命令
+
+| 命令 | 说明 |
+|------|------|
+| `/team` | 列出所有团队成员及状态 |
+| `/inbox` | 读取并清空团队收件箱 |
+
+### 团队工具
+
+启用 Agent Team 后，智能体模式自动获得以下工具：
+
+| 工具 | 说明 |
+|------|------|
+| `spawn_teammate` | 创建持久化队友（name, role, prompt） |
+| `list_teammates` | 列出所有队友及状态 |
+| `send_message` | 向队友收件箱发送消息 |
+| `read_inbox` | 读取并清空自己的收件箱 |
+| `broadcast` | 向所有队友广播消息 |
+| `shutdown_teammate` | 请求队友关闭 |
+
+### 使用示例
+
+```bash
+ag --agent-team
+```
+
+```
+💬^ (Agent):
+Spawn a teammate named "alice" with role "coder" to create hello.py with print("Hello").
+
+> spawn_teammate
+Spawned 'alice' (role: coder)
+
+💬^ (Agent):
+/team
+
+Team: default
+  alice (coder): working
+
+💬^ (Agent):
+/inbox
+
+[
+  {
+    "type": "message",
+    "from": "alice",
+    "content": "Created hello.py with print('Hello').",
+    "timestamp": 1710000000.0
+  }
+]
+```
+
+### 数据结构
+
+```
+.team/
+├── config.json           # 团队名册
+└── inbox/
+    ├── alice.jsonl       # alice 的收件箱
+    ├── bob.jsonl         # bob 的收件箱
+    └── lead.jsonl        # lead（主智能体）的收件箱
+```
+
+`config.json` 示例：
+```json
+{
+  "team_name": "default",
+  "members": [
+    {"name": "alice", "role": "coder", "status": "idle"},
+    {"name": "bob", "role": "tester", "status": "working"}
+  ]
+}
+```
+
+> **注意：** `.team` 目录在程序退出时自动清理。
 
 ## 故障排查
 
