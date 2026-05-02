@@ -3108,10 +3108,19 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = agent(message_text)
     # 移除 <think>...</think> 标签及其内容
     response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
-    paragraphs = response.split("\n\n")
-    for para in paragraphs:
-        if para.strip():
-            await update.message.reply_text(para)
+
+    # 检查是否需要语音回复
+    voice_config = get_current_voice_config()
+
+    if voice_config:
+        # 文本 + 语音回复
+        await reply_with_voice(update, response, voice_config)
+    else:
+        # 仅文本回复
+        paragraphs = response.split("\n\n")
+        for para in paragraphs:
+            if para.strip():
+                await update.message.reply_text(para)
 
     # 等待所有待处理的异步任务（如图片发送）
     if _telegram_pending_tasks:
@@ -3119,6 +3128,61 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _telegram_pending_tasks = []
 
     print()
+
+
+def get_current_voice_config() -> Optional[dict]:
+    """获取当前角色的语音配置"""
+    global ROLE_MANAGER
+    if not ROLE_MANAGER or not ROLE_MANAGER.current_role:
+        return None
+    return ROLE_MANAGER.current_role.get_voice_config()
+
+
+async def reply_with_voice(update: Update, text: str, voice_config: dict):
+    """发送文本和语音回复
+
+    Args:
+        update: Telegram 更新对象
+        text: 回复文本
+        voice_config: 语音配置
+    """
+    from util.tts import text_to_speech, get_tts_api_config
+
+    # 先发送文本
+    paragraphs = text.split("\n\n")
+    for para in paragraphs:
+        if para.strip():
+            await update.message.reply_text(para)
+
+    # 发送语音
+    try:
+        print(f"\033[34m🎤 生成语音...\033[0m")
+
+        # 获取 TTS 模型名称
+        model = voice_config.get("model")
+
+        # 获取 TTS API 配置
+        api_config = get_tts_api_config(PROVIDER_CONFIG, model)
+
+        if not api_config:
+            print(f"\033[31m✗ TTS API 未配置，跳过语音\033[0m")
+            return
+
+        audio_bytes = text_to_speech(text, voice_config, api_config)
+
+        if audio_bytes:
+            # Telegram 语音消息需要 ogg 格式
+            await update.message.reply_voice(
+                audio_bytes,
+                caption="🎤 语音回复",
+            )
+            print(f"\033[32m✓ 语音已发送\033[0m")
+        else:
+            print(f"\033[31m✗ 语音生成失败\033[0m")
+
+    except Exception as e:
+        logger.error(f"发送语音失败: {e}")
+        print(f"\033[31m✗ 语音发送失败: {e}\033[0m")
 
 
 def run_bot():

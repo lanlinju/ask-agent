@@ -22,6 +22,7 @@
 - 🔗 **ACP 支持** - Agent Client Protocol，可在 Zed、JetBrains 等 IDE 中使用
 - 🧩 **Agent Team** - 持久化命名队友，独立线程运行，通过 JSONL 邮箱通信（`--agent-team` 启用）
 - 🖼️ **图片理解** - 支持图片识别和分析，通过 URL 或本地文件发送图片给模型
+- 🎤 **语音合成** - 角色扮演模式支持语音回复，可使用预置音色或克隆音色
 
 ## 使用示例截图
 
@@ -218,6 +219,8 @@ LOG_LEVEL=ERROR
  ├── command/          # 自定义命令目录
  │   ├── review.md
  │   └── explain.md
+ ├── voices/           # 语音样本目录（用于音色克隆）
+ │   └── nahida.mp3
  └── cache/            # 缓存目录
      ├── ask/
      ├── agent/
@@ -860,6 +863,121 @@ Ask Agent 支持角色扮演模式，可以与预设角色进行对话。
 
   每个角色的对话历史独立存储在 `~/.ask-agent/cache/role/<角色id>/` 目录下。
 
+  ### 角色语音配置
+
+  角色扮演模式支持语音回复功能，可以让角色"说话"。
+
+  **语音类型：**
+
+  | 类型 | 说明 | 必需字段 |
+  |------|------|----------|
+  | `preset` | 使用预置音色 | `voice_id` |
+  | `design` | 通过文本描述自定义音色 | `style`（音色描述） |
+  | `clone` | 基于音频样本克隆音色 | `sample`（音频文件路径） |
+
+  **语音配置字段：**
+
+  | 字段 | 类型 | 说明 |
+  |------|------|------|
+  | `enabled` | bool | 是否启用语音（默认：false） |
+  | `model` | string | TTS 模型 ID |
+  | `type` | string | 音色类型：`preset`、`design`、`clone` |
+  | `voice_id` | string | 预置音色 ID（preset 模式） |
+  | `sample` | string | 音频样本路径（clone 模式） |
+  | `style` | string | 音色描述（design 模式）或风格指令（可选） |
+
+  **配置示例：**
+
+  ```json
+  {
+    "roles": {
+      "frieren": {
+        "name": "芙莉莲",
+        "voice": {
+          "enabled": true,
+          "model": "mimo-v2.5-tts",
+          "type": "preset",
+          "voice_id": "冰糖"
+        }
+      },
+      "nahida": {
+        "name": "纳西妲",
+        "voice": {
+          "enabled": true,
+          "model": "mimo-v2.5-tts-voiceclone",
+          "type": "clone",
+          "sample": "~/.ask-agent/voices/nahida.mp3"
+        }
+      },
+      "custom": {
+        "name": "自定义角色",
+        "voice": {
+          "enabled": true,
+          "model": "mimo-v2.5-tts-voicedesign",
+          "type": "design",
+          "style": "温柔甜美的少女声线，语速适中"
+        }
+      }
+    }
+  }
+  ```
+
+  > **提示：** `model` 字段支持任何兼容 OpenAI TTS API 格式的模型，不限于 MiMo 系列。
+
+  **MiMo TTS 模型示例：**
+
+  | 模型 ID | 功能 | 音色来源 |
+  |---------|------|----------|
+  | `mimo-v2.5-tts` | 预置音色合成 | 预置音色列表 |
+  | `mimo-v2.5-tts-voicedesign` | 文本描述定制音色 | `style` 字段描述 |
+  | `mimo-v2.5-tts-voiceclone` | 音频样本克隆音色 | `sample` 字段路径 |
+
+  **MiMo 预置音色（mimo-v2.5-tts）：**
+
+  | 音色名 | Voice ID | 语言 | 性别 |
+  |--------|----------|------|------|
+  | 冰糖 | `冰糖` | 中文 | 女性 |
+  | 茉莉 | `茉莉` | 中文 | 女性 |
+  | 苏打 | `苏打` | 中文 | 男性 |
+  | 白桦 | `白桦` | 中文 | 男性 |
+  | Mia | `Mia` | 英文 | 女性 |
+  | Chloe | `Chloe` | 英文 | 女性 |
+  | Milo | `Milo` | 英文 | 男性 |
+  | Dean | `Dean` | 英文 | 男性 |
+
+  **语音配置字段：**
+
+  | 字段 | 类型 | 说明 |
+  |------|------|------|
+  | `enabled` | bool | 是否启用语音（默认：false） |
+  | `model` | string | TTS 模型名称 |
+  | `type` | string | 音色类型：`preset`（预置）、`design`（设计）、`clone`（克隆） |
+  | `voice_id` | string | 预置音色 ID（preset 模式） |
+  | `sample` | string | 音频样本路径（clone 模式） |
+  | `style` | string | 音色描述或风格指令（design 模式） |
+
+  **环境变量配置（`.env`）：**
+
+  ```bash
+  # TTS API 配置
+  TTS_API_KEY=your-tts-api-key
+  TTS_API_URL=https://api.xiaomimimo.com/v1
+  TTS_API_MODEL=mimo-v2.5-tts
+  ```
+
+  **音色克隆音频样本：**
+
+  将用于克隆的音频文件放在 `~/.ask-agent/voices/` 目录下：
+
+  ```
+  ~/.ask-agent/voices/
+  ├── nahida.mp3      # 纳西妲音色样本
+  ├── frieren.mp3     # 芙莉莲音色样本
+  └── ...
+  ```
+
+  > **注意：** 音频样本建议 10-30 秒清晰语音，支持 mp3 和 wav 格式。
+
 ## 智能体模式配置
 
 Ask Agent 支持多个智能体配置，可以快速切换不同的智能体。
@@ -986,6 +1104,9 @@ UEFI = Unified Extensible Firmware Interface（统一可扩展固件接口）
 - `DEEPSEEK_API_KEY` - DeepSeek API 密钥（如果在 providers.json 中使用 `env:DEEPSEEK_API_KEY`）
 - `OPENAI_API_KEY` - OpenAI API 密钥（如果在 providers.json 中使用 `env:OPENAI_API_KEY`）
 - `TELEGRAM_BOT_TOKEN` - Telegram Bot Token，用于远程控制（格式：`123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`）
+- `TTS_API_KEY` - TTS API 密钥（用于语音合成功能）
+- `TTS_API_URL` - TTS API 地址（如：`https://api.xiaomimimo.com/v1`）
+- `TTS_API_MODEL` - 默认 TTS 模型（如：`mimo-v2.5-tts`）
 - `LOG_LEVEL` - 可选，日志级别（默认：ERROR，可选：DEBUG, INFO, WARNING, ERROR, CRITICAL）
 
 **配置优先级**：
@@ -1009,6 +1130,11 @@ OPENAI_API_KEY=sk-openai-api-key-here
 
 # Telegram Bot Token（用于远程控制）
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
+
+# TTS API 配置（语音合成）
+TTS_API_KEY=your-tts-api-key-here
+TTS_API_URL=https://api.xiaomimimo.com/v1
+TTS_API_MODEL=mimo-v2.5-tts
 
 # 日志配置
 LOG_LEVEL=ERROR
@@ -1381,6 +1507,8 @@ Ask Agent 使用统一的配置管理系统，支持全局配置和项目本地�
  │   ├── review.md
  │   └── explain.md
  ├── command.json      # 自定义命令配置（可选）
+ ├── voices/           # 语音样本目录（用于音色克隆）
+ │   └── nahida.mp3
  └── cache/            # 全局缓存目录
      ├── ask/          # 问答模式会话
      ├── agent/        # 智能体模式会话
@@ -1676,3 +1804,4 @@ echo $OPENAI_API_KEY
 - [learn-claude-code](https://github.com/shareAI-lab/learn-claude-code)
 - [deepseek-guides-thinking-mode-tool-calls](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8)
 - [multimodal-understanding-image-understanding](https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/multimodal-understanding/image-understanding)
+- [speech-synthesis](https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/speech-synthesis-v2.5)

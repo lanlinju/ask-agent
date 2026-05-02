@@ -24,6 +24,7 @@ class RoleConfig:
     history_path: Optional[str] = None
     model: Optional[str] = None
     temperature: Optional[float] = None
+    voice: Optional[Dict[str, Any]] = None  # 语音配置
 
     @classmethod
     def from_dict(cls, role_id: str, config: Dict[str, Any]) -> "RoleConfig":
@@ -36,6 +37,7 @@ class RoleConfig:
             history_path=config.get("history_path"),
             model=config.get("model"),
             temperature=config.get("temperature"),
+            voice=config.get("voice"),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -51,7 +53,17 @@ class RoleConfig:
             data["model"] = self.model
         if self.temperature is not None:
             data["temperature"] = self.temperature
+        if self.voice:
+            data["voice"] = self.voice
         return data
+
+    def get_voice_config(self) -> Optional[Dict[str, Any]]:
+        """获取语音配置"""
+        if not self.voice:
+            return None
+        if not self.voice.get("enabled", False):
+            return None
+        return self.voice
 
 
 class RoleManager:
