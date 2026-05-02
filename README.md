@@ -522,31 +522,69 @@ Ask Agent 支持通过 Telegram Bot 远程控制，让你可以从手机发送�
 
 **1. 获取 Bot Token**
 
-- 打开 Telegram，搜索 @BotFather
-- 发送 `/newbot` 并按照提示创建机器人
-- 复制 HTTP API Token（格式：`123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`）
+1. 打开 Telegram 应用（手机或桌面版均可）
+2. 在搜索栏输入 `@BotFather` 并进入对话
+3. 发送命令 `/newbot`
+4. 按照提示输入机器人名称（显示名称，可随意填写）
+5. 输入机器人用户名（必须以 `bot` 结尾，如 `my_assistant_bot`）
+6. BotFather 会返回一个 HTTP API Token，格式如：`123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`
+7. 复制并保存此 Token
+
+> **提示：** 如果忘记 Token，可以向 BotFather 发送 `/mybots` 查看已创建的机器人。
 
 **2. 配置环境变量**
 
-在 `.env` 文件或系统环境变量中添加：
+在项目根目录的 `.env` 文件中添加：
 
 ```bash
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
 ```
 
+或设置系统环境变量：
+
+```bash
+# Linux/macOS
+export TELEGRAM_BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+
+# Windows PowerShell
+$env:TELEGRAM_BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+```
+
 **3. 启动 Bot**
 
 ```bash
-# 在交互模式中启动
+# 方式一：在交互模式中启动
 ag
+/bot
+
+# 方式二：直接启动（如果已配置默认智能体）
+ag --agent
 /bot
 ```
 
+启动成功后会显示：`机器人已启动！按 Ctrl+C 停止`
+
 ### 使用 Bot
 
-- 向 Bot 发送消息，智能体会自动处理你的任务
+**基本操作：**
+- 向 Bot 发送文本消息，智能体会自动处理你的任务
+- 发送图片，Bot 会自动识别图片内容（需模型支持图片理解）
 - 支持所有智能体模式的功能（代码编辑、文件操作等）
 - 处理结果会通过 Telegram 返回
+
+**支持的命令：**
+
+| 命令 | 说明 |
+|------|------|
+| `/start` | 显示欢迎信息 |
+| `/help` | 显示帮助信息 |
+| `/save` | 保存当前会话 |
+| `/exit` | 保存会话并退出 Bot |
+
+**注意事项：**
+- Bot 运行期间会持续监听消息，按 `Ctrl+C` 可停止
+- 建议使用智能体模式（`/agent`）以获得完整功能
+- 图片识别需要当前模型支持 `modalities.input` 包含 `"image"`
 
 ## ACP (Agent Client Protocol) 集成
 
