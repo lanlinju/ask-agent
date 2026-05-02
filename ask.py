@@ -14,6 +14,7 @@ import time
 import random
 import atexit
 import shutil
+import asyncio
 from dotenv import load_dotenv
 from pathlib import Path
 import platform
@@ -1045,6 +1046,10 @@ memory = True
 model_prompt = DEEPSEEK_MODEL
 # 标题是否已生成
 title_generated = False
+# Telegram Bot 上下文（用于发送图片等操作）
+_telegram_update: Optional[Update] = None
+_telegram_context: Optional[ContextTypes.DEFAULT_TYPE] = None
+_telegram_pending_tasks: List = []
 
 
 class TodoManager:
@@ -1481,6 +1486,27 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_image",
+            "description": "Send an image file to the user. Supports JPG, PNG, GIF, BMP, WebP, SVG formats.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the image file (relative or absolute)",
+                    },
+                    "caption": {
+                        "type": "string",
+                        "description": "Optional caption for the image",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]
 
 ONLY_BASH_TOOL = os.getenv("ONLY_BASH_TOOL", "disabled").lower()
@@ -1669,6 +1695,65 @@ def run_todo(items: list) -> str:
         return TODO.update(items)
     except Exception as e:
         return f"Error: {e}"
+
+
+def run_send_image(path: str, caption: str = "") -> str:
+    """Send an image file to the user.
+
+    Args:
+        path: Path to the image file (relative or absolute)
+        caption: Optional caption for the image
+
+    Returns:
+        Success or error message
+    """
+    global _telegram_update, _telegram_pending_tasks
+
+    try:
+        # Resolve the path
+        image_path = safe_path(path)
+        print(f"\033[34m→ Send Image {path}\033[0m")
+
+        # Check if file exists
+        if not image_path.exists():
+            return f"Error: Image file not found: {path}"
+
+        # Check if it's a file
+        if not image_path.is_file():
+            return f"Error: Path is not a file: {path}"
+
+        # Check if it's an image file (by extension)
+        image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'}
+        if image_path.suffix.lower() not in image_extensions:
+            return f"Error: File is not a supported image format: {image_path.suffix}"
+
+        # If in Telegram Bot mode, send via Telegram
+        if _telegram_update and _telegram_update.message:
+            import asyncio
+
+            async def send_photo():
+                with open(image_path, 'rb') as photo:
+                    await _telegram_update.message.reply_photo(
+                        photo=photo,
+                        caption=caption if caption else None
+                    )
+
+            # Schedule the async task
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If loop is already running (in bot mode), create a task
+                task = asyncio.ensure_future(send_photo())
+                _telegram_pending_tasks.append(task)
+            else:
+                loop.run_until_complete(send_photo())
+
+            return f"Image sent: {path}"
+        else:
+            # In CLI mode, just return the path info
+            return f"Image path: {image_path} (not in Telegram mode, cannot send)"
+
+    except Exception as e:
+        return f"Error sending image: {e}"
 
 
 def run_skill(skill_name: str) -> str:
@@ -1914,6 +1999,8 @@ def execute_tool(name: str, args: dict) -> str:
         return BG_MANAGER.run(args["command"], timeout=args.get("timeout", 300))
     if name == "check_background":
         return BG_MANAGER.check(args.get("task_id"))
+    if name == "send_image":
+        return run_send_image(args["path"], caption=args.get("caption", ""))
     # Agent Team tools
     if name in ("spawn_teammate", "list_teammates", "send_message", "read_inbox", "broadcast", "shutdown_teammate"):
         team = init_team_manager()
@@ -2732,8 +2819,14 @@ async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理接收到的文本消息"""
+    global _telegram_update, _telegram_context, _telegram_pending_tasks
     user = update.effective_user
     message_text = update.message.text
+
+    # 设置全局 Telegram 上下文
+    _telegram_update = update
+    _telegram_context = context
+    _telegram_pending_tasks = []
 
     # 打印到控制台
     print(
@@ -2750,6 +2843,12 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for para in paragraphs:
         if para.strip():
             await update.message.reply_text(para)
+
+    # 等待所有待处理的异步任务（如图片发送）
+    if _telegram_pending_tasks:
+        await asyncio.gather(*_telegram_pending_tasks)
+        _telegram_pending_tasks = []
+
     print()
 
 
