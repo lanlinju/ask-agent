@@ -1491,7 +1491,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "send_image",
-            "description": "Send an image file to the user. Supports JPG, PNG, GIF, BMP, WebP, SVG formats.",
+            "description": "Send an image file to the user via Telegram. Supports JPG, PNG, GIF, BMP, WebP formats.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1505,6 +1505,32 @@ TOOLS = [
                     },
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recognize_image",
+            "description": "Recognize and analyze image content. Use this when user asks to describe, analyze, or understand an image. Supports network URLs and local file paths.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "image_url": {
+                        "type": "string",
+                        "description": "Image URL (network URL like 'https://...' or local file path like './image.jpg')",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Question or instruction about the image (default: 'Describe this image in detail')",
+                    },
+                    "source_type": {
+                        "type": "string",
+                        "enum": ["url", "local"],
+                        "description": "Type of image source: 'url' for network URLs, 'local' for local files",
+                    },
+                },
+                "required": ["image_url", "source_type"],
             },
         },
     },
@@ -1699,7 +1725,7 @@ def run_todo(items: list) -> str:
 
 
 def run_send_image(path: str, caption: str = "") -> str:
-    """Send an image file to the user.
+    """Send an image file to the user via Telegram.
 
     Args:
         path: Path to the image file (relative or absolute)
@@ -1755,6 +1781,89 @@ def run_send_image(path: str, caption: str = "") -> str:
 
     except Exception as e:
         return f"Error sending image: {e}"
+
+
+def run_recognize_image(image_url: str, source_type: str, prompt: str = "Describe this image in detail") -> str:
+    """Recognize and analyze image content.
+
+    Args:
+        image_url: Image URL (network URL or local file path)
+        source_type: Type of image source: 'url' for network URLs, 'local' for local files
+        prompt: Question or instruction about the image
+
+    Returns:
+        Model response about the image
+    """
+    try:
+        print(f"\033[34m→ Recognize Image {image_url} (source: {source_type})\033[0m")
+
+        # Check if current model supports image input
+        if not current_model_supports_image_input():
+            error_msg = "Error: Current model does not support image input"
+            messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
+            return error_msg
+
+        if source_type == "url":
+            if not image_url.startswith(("http://", "https://")):
+                error_msg = f"Error: Invalid network URL: {image_url}"
+                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
+                return error_msg
+
+            multimodal_content = [
+                {"type": "image_url", "image_url": {"url": image_url}},
+                {"type": "text", "text": prompt}
+            ]
+            messages.append({"role": "user", "content": multimodal_content})
+            return f"Image recognized (URL): {image_url}"
+
+        elif source_type == "local":
+            from util.image import image_to_base64, get_image_mime_type, is_supported_image, validate_image_size
+
+            image_path = safe_path(image_url)
+
+            if not image_path.exists():
+                error_msg = f"Error: Local image file not found: {image_url}"
+                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
+                return error_msg
+
+            if not image_path.is_file():
+                error_msg = f"Error: Path is not a file: {image_url}"
+                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
+                return error_msg
+
+            if not is_supported_image(str(image_path)):
+                error_msg = f"Error: Unsupported image format: {image_path.suffix}"
+                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
+                return error_msg
+
+            if not validate_image_size(str(image_path), max_size_mb=50.0):
+                error_msg = f"Error: Image file too large (max 50MB): {image_url}"
+                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
+                return error_msg
+
+            base64_data = image_to_base64(str(image_path))
+            if not base64_data:
+                error_msg = f"Error: Failed to convert image to base64: {image_url}"
+                messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
+                return error_msg
+
+            mime_type = get_image_mime_type(str(image_path))
+            multimodal_content = [
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_data}"}},
+                {"type": "text", "text": prompt}
+            ]
+            messages.append({"role": "user", "content": multimodal_content})
+            return f"Image recognized (local): {image_url}"
+
+        else:
+            error_msg = f"Error: Invalid source_type: {source_type}. Must be 'url' or 'local'"
+            messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
+            return error_msg
+
+    except Exception as e:
+        error_msg = f"Error recognizing image: {e}"
+        messages.append({"role": "user", "content": f"[Image Error] {error_msg}"})
+        return error_msg
 
 
 def run_skill(skill_name: str) -> str:
@@ -2002,6 +2111,12 @@ def execute_tool(name: str, args: dict) -> str:
         return BG_MANAGER.check(args.get("task_id"))
     if name == "send_image":
         return run_send_image(args["path"], caption=args.get("caption", ""))
+    if name == "recognize_image":
+        return run_recognize_image(
+            args["image_url"],
+            args["source_type"],
+            prompt=args.get("prompt", "Describe this image in detail")
+        )
     # Agent Team tools
     if name in ("spawn_teammate", "list_teammates", "send_message", "read_inbox", "broadcast", "shutdown_teammate"):
         team = init_team_manager()
