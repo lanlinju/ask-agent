@@ -3177,89 +3177,15 @@ def agent_with_image(prompt: str, image_base64: str, mime_type: str = "image/jpe
     return content
 
 
-async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理接收到的图片消息"""
-    global _telegram_update, _telegram_context, _telegram_pending_tasks
-    user = update.effective_user
+async def send_response(update: Update, response: str):
+    """发送响应到 Telegram（文本 + 可选语音）
 
-    # 检查当前模型是否支持图片输入
-    if not current_model_supports_image_input():
-        model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
-        model_name = model_info.name if model_info else DEEPSEEK_MODEL
-        await update.message.reply_text(
-            f"❌ 当前模型 {model_name} 不支持图片理解\n"
-            f"请切换到支持图片输入的模型"
-        )
-        return
+    Args:
+        update: Telegram 更新对象
+        response: 模型回复文本
+    """
+    global _telegram_pending_tasks
 
-    # 设置全局 Telegram 上下文
-    _telegram_update = update
-    _telegram_context = context
-    _telegram_pending_tasks = []
-
-    # 获取图片说明（如果有）
-    caption = update.message.caption or "请描述这张图片的内容"
-
-    # 打印到控制台
-    print(
-        f"收到图片 | 用户: {user.username or user.first_name} (ID: {user.id}) | 说明: {caption}"
-    )
-
-    print(f"{BLUE}Telegram Bot (图片理解):{RESET}")
-
-    # 下载图片并转换为 Base64
-    image_base64 = await download_telegram_photo(update, context)
-
-    if not image_base64:
-        await update.message.reply_text("❌ 图片下载失败，请重试")
-        return
-
-    # 获取图片 MIME 类型
-    photo = update.message.photo[-1]
-    file = await context.bot.get_file(photo.file_id)
-    file_path = file.file_path or ""
-    mime_type = get_image_mime_type(file_path)
-
-    # 调用模型进行图片理解
-    response = agent_with_image(caption, image_base64, mime_type)
-
-    # 移除 <think>...</think> 标签及其内容
-    response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
-
-    # 按段落分割发送
-    paragraphs = response.split("\n\n")
-    for para in paragraphs:
-        if para.strip():
-            await update.message.reply_text(para)
-
-    # 等待所有待处理的异步任务
-    if _telegram_pending_tasks:
-        await asyncio.gather(*_telegram_pending_tasks)
-        _telegram_pending_tasks = []
-
-    print()
-
-
-async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理接收到的文本消息"""
-    global _telegram_update, _telegram_context, _telegram_pending_tasks
-    user = update.effective_user
-    message_text = update.message.text
-
-    # 设置全局 Telegram 上下文
-    _telegram_update = update
-    _telegram_context = context
-    _telegram_pending_tasks = []
-
-    # 打印到控制台
-    print(
-        f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}"
-    )
-
-    print(f"{BLUE}Telegram Bot:{RESET}")
-
-    # 获取回复并按段落分割发送
-    response = agent(message_text)
     # 移除 <think>...</think> 标签及其内容
     response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
 
@@ -3281,6 +3207,180 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.gather(*_telegram_pending_tasks)
         _telegram_pending_tasks = []
 
+
+def setup_telegram_context(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """设置 Telegram 全局上下文
+
+    Args:
+        update: Telegram 更新对象
+        context: Telegram 上下文
+    """
+    global _telegram_update, _telegram_context, _telegram_pending_tasks
+    _telegram_update = update
+    _telegram_context = context
+    _telegram_pending_tasks = []
+
+
+async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理接收到的图片消息"""
+    user = update.effective_user
+
+    # 检查当前模型是否支持图片输入
+    if not current_model_supports_image_input():
+        model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
+        model_name = model_info.name if model_info else DEEPSEEK_MODEL
+        await update.message.reply_text(
+            f"❌ 当前模型 {model_name} 不支持图片理解\n"
+            f"请切换到支持图片输入的模型"
+        )
+        return
+
+    # 设置全局 Telegram 上下文
+    setup_telegram_context(update, context)
+
+    # 获取图片说明（如果有）
+    caption = update.message.caption or "请描述这张图片的内容"
+
+    # 打印到控制台
+    print(f"收到图片 | 用户: {user.username or user.first_name} (ID: {user.id}) | 说明: {caption}")
+    print(f"{BLUE}Telegram Bot (图片理解):{RESET}")
+
+    # 下载图片并转换为 Base64
+    image_base64 = await download_telegram_photo(update, context)
+
+    if not image_base64:
+        await update.message.reply_text("❌ 图片下载失败，请重试")
+        return
+
+    # 获取图片 MIME 类型
+    photo = update.message.photo[-1]
+    file = await context.bot.get_file(photo.file_id)
+    file_path = file.file_path or ""
+    mime_type = get_image_mime_type(file_path)
+
+    # 调用模型进行图片理解
+    response = agent_with_image(caption, image_base64, mime_type)
+
+    # 发送响应
+    await send_response(update, response)
+    print()
+
+
+async def download_telegram_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bytes | None:
+    """下载 Telegram 语音并返回音频数据
+
+    Args:
+        update: Telegram 更新对象
+        context: Telegram 上下文
+
+    Returns:
+        audio_bytes，失败返回 None
+    """
+    try:
+        voice = update.message.voice
+        if not voice:
+            return None
+
+        file = await context.bot.get_file(voice.file_id)
+
+        # 下载语音到内存
+        voice_bytes = await file.download_as_bytearray()
+
+        # Telegram 语音默认是 OGG 格式
+        return bytes(voice_bytes)
+    except Exception as e:
+        logger.error(f"下载语音失败: {e}")
+        return None
+
+
+async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理接收到的语音消息"""
+    user = update.effective_user
+
+    # 检查当前模型是否支持音频输入
+    if not current_model_supports_audio_input():
+        model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
+        model_name = model_info.name if model_info else DEEPSEEK_MODEL
+        await update.message.reply_text(
+            f"❌ 当前模型 {model_name} 不支持音频理解\n"
+            f"请切换到支持音频输入的模型"
+        )
+        return
+
+    # 设置全局 Telegram 上下文
+    setup_telegram_context(update, context)
+
+    # 获取语音说明（如果有）
+    caption = "直接给出语音的内容" #update.message.caption or "请描述这个语音的内容"
+
+    # 打印到控制台
+    print(f"收到语音 | 用户: {user.username or user.first_name} (ID: {user.id})")
+    print(f"{BLUE}Telegram Bot (语音理解):{RESET}")
+
+    # 下载语音并转换为 Base64
+    voice_bytes = await download_telegram_voice(update, context)
+
+    if not voice_bytes:
+        await update.message.reply_text("❌ 语音下载失败，请重试")
+        return
+
+    audio_base64 = base64.b64encode(voice_bytes).decode('utf-8')
+
+    mime_type = 'audio/ogg'
+
+    # 调试信息
+    print(f"  音频大小: {len(voice_bytes)} bytes, MIME: {mime_type}")
+
+    # 使用独立上下文进行语音识别（不污染对话历史）
+    temp_messages = [
+        {"role": "system", "content": "你是一个语音识别助手。请将用户发送的语音内容转换为文字，只输出识别到的文字内容，不要添加任何解释。"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_audio", "input_audio": {"data": f"data:{mime_type};base64,{audio_base64}"}},
+                {"type": "text", "text": caption}
+            ]
+        }
+    ]
+
+    # 调用模型进行语音识别
+    content, recognized_text, _ = get_streaming_response(temp_messages, [], silent=True, useTools=False)
+
+    if not recognized_text:
+        await update.message.reply_text("❌ 语音识别失败")
+        return
+
+    # 打印识别结果
+    print(f"  识别结果: {recognized_text}")
+    
+    if content:
+        print(f"  Extra: {{content}}")
+
+    # 将识别结果作为用户消息发送给 agent 处理
+    response = agent(recognized_text)
+
+    # 发送响应
+    await send_response(update, response)
+    print()
+
+
+async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理接收到的文本消息"""
+    user = update.effective_user
+    message_text = update.message.text
+
+    # 设置全局 Telegram 上下文
+    setup_telegram_context(update, context)
+
+    # 打印到控制台
+    print(f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
+    print(f"{BLUE}Telegram Bot:{RESET}")
+
+    # 获取回复
+    response = agent(message_text)
+
+    # 发送响应
+    await send_response(update, response)
     print()
 
 
@@ -3398,6 +3498,7 @@ def run_bot():
     # 添加处理器 - 捕获所有以 / 开头的命令
     application.add_handler(MessageHandler(filters.COMMAND, bot_command))
     application.add_handler(MessageHandler(filters.PHOTO, reply_photo))
+    application.add_handler(MessageHandler(filters.VOICE, reply_voice))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_text))
 
     print("机器人已启动！按 Ctrl+C 停止")
