@@ -41,6 +41,10 @@ class ModelModalities:
         """是否支持图片输出"""
         return "image" in self.output
 
+    def supports_audio_input(self) -> bool:
+        """是否支持音频输入"""
+        return "audio" in self.input
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any] | None) -> "ModelModalities":
         """从字典创建 ModelModalities"""

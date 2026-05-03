@@ -1530,6 +1530,28 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "recognize_audio",
+            "description": "Recognize and analyze audio content. Use this when user asks to describe, transcribe, or understand audio. Supports network URLs and local file paths.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "audio_urls": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of audio URLs or local file paths (e.g. ['https://example.com/audio.mp3', './local.wav'])",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Question or instruction about the audio(s) (default: 'Describe the content of this audio')",
+                    },
+                },
+                "required": ["audio_urls"],
+            },
+        },
+    },
 ]
 
 ONLY_BASH_TOOL = os.getenv("ONLY_BASH_TOOL", "disabled").lower()
@@ -1867,6 +1889,121 @@ def run_recognize_image(image_urls: List[str], prompt: str = "Describe this imag
         return error_msg
 
 
+def run_recognize_audio(audio_urls: List[str], prompt: str = "Describe the content of this audio") -> str:
+    """Recognize and analyze audio content (supports multiple audios).
+
+    Args:
+        audio_urls: List of audio URLs or local file paths
+        prompt: Question or instruction about the audio(s)
+
+    Returns:
+        Model response about the audio(s)
+    """
+    try:
+        count = len(audio_urls)
+        print(f"\033[34m→ Recognize Audio\033[0m")
+
+        # Check if current model supports audio input
+        if not current_model_supports_audio_input():
+            error_msg = "Error: Current model does not support audio input"
+            messages.append({"role": "user", "content": f"[Audio Error] {error_msg}"})
+            return error_msg
+
+        if not audio_urls:
+            error_msg = "Error: No audio URLs provided"
+            messages.append({"role": "user", "content": f"[Audio Error] {error_msg}"})
+            return error_msg
+
+        # Supported audio extensions
+        supported_audio_extensions = {'.mp3', '.wav', '.flac', '.m4a', '.ogg'}
+
+        def is_supported_audio(file_path: str) -> bool:
+            ext = Path(file_path).suffix.lower()
+            return ext in supported_audio_extensions
+
+        def get_audio_mime_type(file_path: str) -> str:
+            ext = Path(file_path).suffix.lower()
+            mime_map = {
+                '.mp3': 'audio/mpeg',
+                '.wav': 'audio/wav',
+                '.flac': 'audio/flac',
+                '.m4a': 'audio/mp4',
+                '.ogg': 'audio/ogg',
+            }
+            return mime_map.get(ext, 'audio/mpeg')
+
+        def audio_to_base64(file_path: str) -> str:
+            """将音频文件转换为 Base64 编码"""
+            with open(file_path, 'rb') as f:
+                audio_bytes = f.read()
+            return base64.b64encode(audio_bytes).decode('utf-8')
+
+        multimodal_content = []
+        success = 0
+        errors = []
+
+        for url in audio_urls:
+            # Auto-detect source type
+            if url.startswith(("http://", "https://")):
+                multimodal_content.append({
+                    "type": "input_audio",
+                    "input_audio": {"data": url}
+                })
+                success += 1
+            else:
+                try:
+                    audio_path = safe_path(url)
+
+                    if not audio_path.exists():
+                        errors.append(f"{url} (not found)")
+                        continue
+
+                    if not audio_path.is_file():
+                        errors.append(f"{url} (not a file)")
+                        continue
+
+                    if not is_supported_audio(str(audio_path)):
+                        errors.append(f"{url} (unsupported format)")
+                        continue
+
+                    # Check file size (max 50MB for base64)
+                    file_size_mb = audio_path.stat().st_size / (1024 * 1024)
+                    if file_size_mb > 50:
+                        errors.append(f"{url} (too large: {file_size_mb:.1f}MB, max 50MB)")
+                        continue
+
+                    base64_data = audio_to_base64(str(audio_path))
+                    if not base64_data:
+                        errors.append(f"{url} (read failed)")
+                        continue
+
+                    mime_type = get_audio_mime_type(str(audio_path))
+                    multimodal_content.append({
+                        "type": "input_audio",
+                        "input_audio": {"data": f"data:{mime_type};base64,{base64_data}"}
+                    })
+                    success += 1
+
+                except Exception as e:
+                    errors.append(f"{url} ({e})")
+
+        # Add text prompt
+        multimodal_content.append({"type": "text", "text": prompt})
+
+        # Inject into messages
+        messages.append({"role": "user", "content": multimodal_content})
+
+        if errors:
+            print(f"\033[31m  Errors: {'; '.join(errors)}\033[0m")
+
+        return f"Recognized {success} audio(s)"
+
+    except Exception as e:
+        error_msg = f"Error recognizing audio: {e}"
+        messages.append({"role": "user", "content": f"[Audio Error] {error_msg}"})
+        return error_msg
+
+
 def run_skill(skill_name: str) -> str:
     """Load a skill and inject it into the conversation."""
     content = SKILLS.get_skill_content(skill_name)
@@ -2116,6 +2253,11 @@ def execute_tool(name: str, args: dict) -> str:
         return run_recognize_image(
             args["image_urls"],
             prompt=args.get("prompt", "Describe this image in detail")
+        )
+    if name == "recognize_audio":
+        return run_recognize_audio(
+            args["audio_urls"],
+            prompt=args.get("prompt", "Describe the content of this audio")
         )
     # Agent Team tools
     if name in ("spawn_teammate", "list_teammates", "send_message", "read_inbox", "broadcast", "shutdown_teammate"):
@@ -2948,6 +3090,18 @@ def current_model_supports_image_input() -> bool:
     model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
     if model_info and model_info.modalities:
         return model_info.modalities.supports_image_input()
+    return False
+
+
+def current_model_supports_audio_input() -> bool:
+    """检查当前模型是否支持音频输入
+
+    Returns:
+        当前模型是否支持音频输入
+    """
+    model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
+    if model_info and model_info.modalities:
+        return model_info.modalities.supports_audio_input()
     return False
 
 
