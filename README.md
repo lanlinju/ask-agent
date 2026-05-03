@@ -23,6 +23,7 @@
 - 🧩 **Agent Team** - 持久化命名队友，独立线程运行，通过 JSONL 邮箱通信（`--agent-team` 启用）
 - 🖼️ **图片理解** - 支持图片识别和分析，通过 URL 或本地文件发送图片给模型
 - 🎤 **语音合成** - 角色扮演模式支持语音回复，可使用预置音色或克隆音色
+- 🎙️ **语音识别** - Telegram Bot 支持语音消息识别，自动转文字并处理
 
 ## 使用示例截图
 
@@ -572,6 +573,7 @@ ag --agent
 **基本操作：**
 - 向 Bot 发送文本消息，智能体会自动处理你的任务
 - 发送图片，Bot 会自动识别图片内容（需模型支持图片理解）
+- 发送语音消息，Bot 会自动识别语音内容并处理（需模型支持音频理解）
 - 支持所有智能体模式的功能（代码编辑、文件操作等）
 - 处理结果会通过 Telegram 返回
 
@@ -588,6 +590,7 @@ ag --agent
 - Bot 运行期间会持续监听消息，按 `Ctrl+C` 可停止
 - 建议使用智能体模式（`/agent`）以获得完整功能
 - 图片识别需要当前模型支持 `modalities.input` 包含 `"image"`
+- 语音识别需要当前模型支持 `modalities.input` 包含 `"audio"`
 
 ## ACP (Agent Client Protocol) 集成
 
@@ -1164,6 +1167,7 @@ LOG_LEVEL=ERROR
 4. **角色扮演模式** - 与预设角色对话，每个角色独立对话历史
 5. **Shell命令集成** - 执行命令结果自动添加到对话历史
 6. **图片理解** - 支持识别和分析图片内容（需模型支持）
+7. **语音识别** - 支持语音消息识别和转文字（需模型支持）
 
 ### 图片理解
 
@@ -1199,6 +1203,40 @@ ag 支持图片识别和分析功能，可以通过 URL 或本地文件发送图
 ```
 
 **注意：** 只有配置了 `modalities.input` 包含 `"image"` 的模型才能使用图片识别功能。
+
+### 语音识别
+
+ag 支持语音识别功能，可以将语音消息转换为文字并处理。
+
+**使用方式：**
+
+1. **Telegram Bot 发送语音** - 直接向 Bot 发送语音消息，自动识别内容
+2. **智能体工具调用** - 使用 `recognize_audio` 工具分析音频
+
+**工具说明：**
+
+| 工具 | 功能 | 参数 |
+|------|------|------|
+| `recognize_audio` | 识别音频内容 | `audio_urls`, `prompt` |
+
+**recognize_audio 参数：**
+- `audio_urls`: 音频 URL 或本地路径列表
+- `prompt`: 对音频的问题或指令（默认: "Describe the content of this audio"）
+
+**示例：**
+```json
+{
+  "name": "recognize_audio",
+  "arguments": {
+    "audio_urls": ["https://example.com/audio.mp3"],
+    "prompt": "这个音频说了什么？"
+  }
+}
+```
+
+**支持的音频格式：** MP3、WAV、FLAC、M4A、OGG
+
+**注意：** 只有配置了 `modalities.input` 包含 `"audio"` 的模型才能使用语音识别功能。
 
 ## Provider 配置系统
 
@@ -1274,7 +1312,7 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
       "mimo-v2.5": {
         "name": "Mimo V2.5",
         "modalities": {
-          "input": ["text", "image"],
+          "input": ["text", "image", "audio"],
           "output": ["text"]
         }
       }
@@ -1283,7 +1321,7 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
 }
 ```
 
-只有配置了 `"image"` 输入模态的模型才能使用图片识别功能。
+只有配置了 `"image"` 输入模态的模型才能使用图片识别功能，配置了 `"audio"` 输入模态的模型才能使用语音识别功能。
 
 ### 环境变量引用
 
