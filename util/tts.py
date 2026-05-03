@@ -106,14 +106,18 @@ def text_to_speech(
     Args:
         text: 要转换的文本
         voice_config: 音色配置
-            - type: "preset" 或 "clone"
-            - voice_id: 预置音色 ID (preset 类型)
-            - sample: 音频样本路径 (clone 类型)
-            - style: 风格指令 (可选)
-        api_config: API 配置 (可选)
+            - type: 音色类型 "preset"（预置）、"design"（设计）、"clone"（克隆）
+            - voice_id: 预置音色 ID（preset 模式）
+            - sample: 音频样本路径（clone 模式）
+            - style: 音色描述（design 模式）或风格指令（可选）
+            - model: TTS 模型名称（可选，优先于 api_config）
+        api_config: API 配置（可选）
+            - base_url: API 地址
+            - api_key: API 密钥
+            - model: 默认 TTS 模型名称
 
     Returns:
-        音频字节数据，失败返回 None
+        音频字节数据（MP3 格式），失败返回 None
     """
     if api_config is None:
         api_config = get_tts_api_config()

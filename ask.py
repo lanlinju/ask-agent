@@ -3427,11 +3427,15 @@ def play_voice_in_terminal(text: str, voice_config: dict):
 
 
 def try_play_voice(response: str):
-    """尝试播放语音（终端模式）
+    """尝试播放语音（终端模式，仅角色扮演模式）
 
     Args:
         response: 模型回复文本
     """
+    # 仅在角色扮演模式下播放语音
+    if current_mode != ROLE:
+        return
+
     voice_config = get_current_voice_config()
     if not voice_config:
         return
