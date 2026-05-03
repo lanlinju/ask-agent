@@ -14,4 +14,4 @@ from util.image import (  # noqa: F401
     validate_image_size,
     SUPPORTED_IMAGE_EXTENSIONS,
 )
-from util.tts import text_to_speech, text_to_speech_stream  # noqa: F401
+from util.tts import text_to_speech, text_to_speech_stream, play_audio, text_to_speech_and_play  # noqa: F401

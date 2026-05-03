@@ -7,6 +7,7 @@ import base64
 import io
 import logging
 import os
+import platform
 import subprocess
 import tempfile
 from pathlib import Path
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 # 支持的音频格式
 SUPPORTED_FORMATS = ["wav", "mp3", "pcm", "pcm16"]
+
+# 临时音频文件目录
+TEMP_AUDIO_DIR = Path(tempfile.gettempdir()) / "ask-agent-audio"
 
 
 def get_tts_api_config(provider_config=None, model: str = None) -> Optional[dict]:
@@ -293,3 +297,186 @@ def text_to_speech_stream(
     # MiMo TTS 流式接口当前降级为兼容模式
     # 直接使用非流式接口
     return text_to_speech(text, voice_config, api_config)
+
+
+def save_audio_to_file(audio_bytes: bytes, filename: str = "tts_output.mp3") -> Optional[Path]:
+    """保存音频到临时文件
+
+    Args:
+        audio_bytes: 音频字节数据
+        filename: 文件名
+
+    Returns:
+        文件路径，失败返回 None
+    """
+    try:
+        TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = TEMP_AUDIO_DIR / filename
+
+        with open(file_path, "wb") as f:
+            f.write(audio_bytes)
+
+        return file_path
+    except Exception as e:
+        logger.error(f"保存音频文件失败: {e}")
+        return None
+
+
+def play_audio(audio_bytes: bytes, format: str = "mp3") -> bool:
+    """播放音频（终端模式）
+
+    Args:
+        audio_bytes: 音频字节数据
+        format: 音频格式
+
+    Returns:
+        是否播放成功
+    """
+    file_path = None
+    try:
+        # 保存到临时文件
+        file_path = save_audio_to_file(audio_bytes, f"tts_output.{format}")
+        if not file_path:
+            return False
+
+        # 根据系统选择播放器
+        system = platform.system()
+
+        if system == "Windows":
+            return _play_audio_windows(str(file_path))
+        elif system == "Darwin":
+            return _play_audio_macos(str(file_path))
+        else:
+            return _play_audio_linux(str(file_path))
+
+    except Exception as e:
+        logger.error(f"播放音频失败: {e}")
+        return False
+    finally:
+        # 清理临时文件
+        if file_path and file_path.exists():
+            try:
+                file_path.unlink()
+            except Exception:
+                pass
+
+# 参考：https://github.com/rany2/edge-tts/blob/master/src/edge_playback/win32_playback.py
+def _play_audio_windows(file_path: str) -> bool:
+    """Windows 下使用 MCI API 播放音频
+
+    Args:
+        file_path: 音频文件路径
+
+    Returns:
+        是否播放成功
+    """
+    try:
+        from ctypes import create_unicode_buffer, windll, wintypes
+
+        _get_short_path_name_w = windll.kernel32.GetShortPathNameW
+        _get_short_path_name_w.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.LPWSTR,
+            wintypes.DWORD,
+        ]
+        _get_short_path_name_w.restype = wintypes.DWORD
+
+        def get_short_path_name(long_name: str) -> str:
+            """获取 DOS 短路径名"""
+            output_buf_size = 0
+            while True:
+                output_buf = create_unicode_buffer(output_buf_size)
+                needed = _get_short_path_name_w(long_name, output_buf, output_buf_size)
+                if output_buf_size >= needed:
+                    return output_buf.value
+                output_buf_size = needed
+
+        mci_send_string_w = windll.winmm.mciSendStringW
+
+        def mci_send(msg: str) -> None:
+            """发送 MCI 命令"""
+            result = mci_send_string_w(msg, 0, 0, 0)
+            if result != 0:
+                logger.error(f"MCI 错误 {result}: {msg}")
+                raise Exception(f"MCI error {result}")
+
+        mp3_shortname = get_short_path_name(file_path)
+
+        mci_send("Close All")
+        mci_send(f'Open "{mp3_shortname}" Type MPEGVideo Alias theMP3')
+        mci_send("Play theMP3 Wait")
+        mci_send("Close theMP3")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Windows 音频播放失败: {e}")
+        return False
+
+
+def _play_audio_macos(file_path: str) -> bool:
+    """macOS 下播放音频
+
+    Args:
+        file_path: 音频文件路径
+
+    Returns:
+        是否播放成功
+    """
+    try:
+        subprocess.run(["afplay", file_path], check=True)
+        return True
+    except Exception as e:
+        logger.error(f"macOS 音频播放失败: {e}")
+        return False
+
+
+def _play_audio_linux(file_path: str) -> bool:
+    """Linux 下播放音频
+
+    Args:
+        file_path: 音频文件路径
+
+    Returns:
+        是否播放成功
+    """
+    players = ["mpv", "ffplay", "aplay", "paplay"]
+    for player in players:
+        try:
+            if player == "ffplay":
+                subprocess.run(
+                    [player, "-nodisp", "-autoexit", file_path],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                subprocess.run([player, file_path], check=True)
+            return True
+        except FileNotFoundError:
+            continue
+
+    logger.warning("未找到可用的音频播放器")
+    return False
+
+
+def text_to_speech_and_play(
+    text: str,
+    voice_config: dict,
+    api_config: Optional[dict] = None,
+) -> bool:
+    """将文本转换为语音并播放（终端模式）
+
+    Args:
+        text: 要转换的文本
+        voice_config: 音色配置
+        api_config: API 配置
+
+    Returns:
+        是否成功播放
+    """
+    audio_bytes = text_to_speech(text, voice_config, api_config)
+    if not audio_bytes:
+        return False
+
+    return play_audio(audio_bytes)

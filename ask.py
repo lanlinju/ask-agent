@@ -3138,6 +3138,56 @@ def get_current_voice_config() -> Optional[dict]:
     return ROLE_MANAGER.current_role.get_voice_config()
 
 
+def play_voice_in_terminal(text: str, voice_config: dict):
+    """在终端模式下播放语音
+
+    Args:
+        text: 要转换为语音的文本
+        voice_config: 语音配置
+    """
+    from util.tts import text_to_speech_and_play, get_tts_api_config
+
+    try:
+        print(f"\033[34m🎤 生成语音...\033[0m")
+
+        # 获取 TTS 模型名称
+        model = voice_config.get("model")
+
+        # 获取 TTS API 配置
+        api_config = get_tts_api_config(PROVIDER_CONFIG, model)
+
+        if not api_config:
+            print(f"\033[31m✗ TTS API 未配置，跳过语音\033[0m")
+            return
+
+        success = text_to_speech_and_play(text, voice_config, api_config)
+
+        if success:
+            print(f"\033[32m✓ 语音播放完成\033[0m")
+        else:
+            print(f"\033[31m✗ 语音播放失败\033[0m")
+
+    except Exception as e:
+        logger.error(f"语音播放失败: {e}")
+        print(f"\033[31m✗ 语音播放失败: {e}\033[0m")
+
+
+def try_play_voice(response: str):
+    """尝试播放语音（终端模式）
+
+    Args:
+        response: 模型回复文本
+    """
+    voice_config = get_current_voice_config()
+    if not voice_config:
+        return
+
+    # 清理响应文本
+    clean_response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
+    if clean_response.strip():
+        play_voice_in_terminal(clean_response.strip(), voice_config)
+
+
 async def reply_with_voice(update: Update, text: str, voice_config: dict):
     """发送文本和语音回复
 
@@ -3475,7 +3525,8 @@ def chat_loop():
 
         _print_prompt()
         try:
-            agent(user_input)
+            response = agent(user_input)
+            try_play_voice(response)
             sanitize_memory()
             generate_title()
             _print_newline()

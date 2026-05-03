@@ -962,7 +962,7 @@ Ask Agent 支持角色扮演模式，可以与预设角色进行对话。
   # TTS API 配置
   TTS_API_KEY=your-tts-api-key
   TTS_API_URL=https://api.xiaomimimo.com/v1
-  TTS_API_MODEL=mimo-v2.5-tts
+  TTS_API_MODEL=mimo-v2.5-tts-voiceclone
   ```
 
   **音色克隆音频样本：**
@@ -1106,7 +1106,7 @@ UEFI = Unified Extensible Firmware Interface（统一可扩展固件接口）
 - `TELEGRAM_BOT_TOKEN` - Telegram Bot Token，用于远程控制（格式：`123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`）
 - `TTS_API_KEY` - TTS API 密钥（用于语音合成功能）
 - `TTS_API_URL` - TTS API 地址（如：`https://api.xiaomimimo.com/v1`）
-- `TTS_API_MODEL` - 默认 TTS 模型（如：`mimo-v2.5-tts`）
+- `TTS_API_MODEL` - 默认 TTS 模型（如：`mimo-v2.5-tts-voiceclone`）
 - `LOG_LEVEL` - 可选，日志级别（默认：ERROR，可选：DEBUG, INFO, WARNING, ERROR, CRITICAL）
 
 **配置优先级**：
@@ -1134,7 +1134,7 @@ TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
 # TTS API 配置（语音合成）
 TTS_API_KEY=your-tts-api-key-here
 TTS_API_URL=https://api.xiaomimimo.com/v1
-TTS_API_MODEL=mimo-v2.5-tts
+TTS_API_MODEL=mimo-v2.5-tts-voiceclone
 
 # 日志配置
 LOG_LEVEL=ERROR
