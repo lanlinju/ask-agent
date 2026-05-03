@@ -3136,49 +3136,6 @@ async def download_telegram_photo(update: Update, context: ContextTypes.DEFAULT_
         return None
 
 
-def agent_with_image(prompt: str, image_base64: str, mime_type: str = "image/jpeg") -> str:
-    """处理包含图片的问题，添加到历史并获取回答
-
-    Args:
-        prompt: 用户文本提示
-        image_base64: Base64 编码的图片数据
-        mime_type: 图片 MIME 类型
-
-    Returns:
-        模型回复内容
-    """
-    global _interrupted
-    _interrupted = False
-
-    # 构建多模态消息内容
-    multimodal_content = [
-        {
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:{mime_type};base64,{image_base64}"
-            }
-        },
-        {
-            "type": "text",
-            "text": prompt
-        }
-    ]
-
-    # 将用户新消息添加到消息列表（使用多模态格式）
-    messages.append({"role": "user", "content": multimodal_content})
-
-    # 获取回复
-    content, reasoning_content, tool_calls = get_streaming_response(
-        messages, TOOLS, silent=False, useTools=False
-    )
-
-    # 构建助手消息并添加到历史
-    assistant_msg = {"role": "assistant", "content": content}
-    messages.append(assistant_msg)
-
-    return content
-
-
 async def send_response(update: Update, response: str):
     """发送响应到 Telegram（文本 + 可选语音）
 
@@ -3260,11 +3217,37 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_path = file.file_path or ""
     mime_type = get_image_mime_type(file_path)
 
+    # 使用独立上下文进行图片理解（不污染对话历史）
+    temp_messages = [
+        {"role": "system", "content": "你是一个图片识别助手。请详细描述图片的内容，然后回答用户的问题。"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}},
+                {"type": "text", "text": "请描述这张图片的内容"}
+            ]
+        }
+    ]
+
     # 调用模型进行图片理解
-    response = agent_with_image(caption, image_base64, mime_type)
+    content, image_description, _ = get_streaming_response(temp_messages, [], silent=True, useTools=False)
+
+    if not content:
+        await update.message.reply_text("❌ 图片理解失败")
+        return
+
+    # 打印识别结果
+    print(f"  图片描述: {content}")
+    
+    # 构建助手消息并添加到历史
+    messages.append({"role": "user", "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"})
+
+    # 将图片描述作为用户消息发送给 agent 处理
+    response = agent(caption)
 
     # 发送响应
-    await send_response(update, response)
+    # await send_response(update, response)
+    await update.message.reply_text(response)
     print()
 
 
