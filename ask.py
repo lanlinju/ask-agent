@@ -2442,6 +2442,8 @@ def _get_streaming_response(
     data = {
         "model": DEEPSEEK_MODEL,
         "messages": messages,
+        "tools": tools,
+        "tool_choice": "auto" if useTools else "none",
         "stream": True,
         "thinking": {"type": get_thinking_mode()},
     }
@@ -2454,10 +2456,10 @@ def _get_streaming_response(
     if re.search(r"googleapis\.com", DEEPSEEK_API_URL):
         data.pop("thinking", None)
         data.pop("reasoning_effort", None)
-        
-    if useTools and current_mode in (AGENT, ROLE):
-        data["tools"] = tools
-        data["tool_choice"] = "auto"
+
+    if current_mode in (ASK, TRANSLATE):
+        data.pop("tools", None) 
+        data.pop("tool_choice", None)    
 
     collected_content = ""
     tool_calls_collected = []
