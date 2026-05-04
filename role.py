@@ -81,18 +81,26 @@ class RoleManager:
         Args:
             roles_dir: 角色目录，默认为 ./roles 或 ~/.ask-agent/roles
             cache_dir: 缓存目录，默认为 ~/.ask-agent/cache
-            config_file: 配置文件路径，默认为 ~/.ask-agent/roles.json
+            config_file: 配置文件路径，默认查找 ./roles.json 或 ~/.ask-agent/roles.json
         """
         base_dir = Path.cwd()
         self.cache_dir = cache_dir or (base_dir / "cache")
         self.role_cache_dir = self.cache_dir / "role"
         self.role_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # 使用 ConfigPathManager 查找配置文件 - 固定使用用户目录
+        # 使用 ConfigPathManager 查找配置文件 - 优先项目目录，备选用户目录
         if config_file is None:
             config_manager = ConfigPathManager("roles.json")
-            self.config_file = config_manager.user_dir_path
-            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            found = config_manager.find_config()
+            if found:
+                self.config_file = found
+            else:
+                # 如果都不存在，检查项目目录是否有 roles 目录，有则保存到项目目录
+                if (base_dir / "roles").exists():
+                    self.config_file = base_dir / "roles.json"
+                else:
+                    self.config_file = config_manager.user_dir_path
+                    self.config_file.parent.mkdir(parents=True, exist_ok=True)
         else:
             self.config_file = Path(config_file)
 

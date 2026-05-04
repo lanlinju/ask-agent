@@ -217,7 +217,7 @@ LOG_LEVEL=ERROR
  | 配置文件 | 存储位置 | 查找规则 |
  |----------|---------|---------|
  | `config.json` | `~/.ask-agent/config.json` | 固定存储在用户目录 |
- | `roles.json` | `~/.ask-agent/roles.json` | 固定存储在用户目录 |
+ | `roles.json` | `./roles.json` 或 `~/.ask-agent/roles.json` | 优先项目目录，备选用户目录 |
  | `agents.json` | `./agents.json` | 优先项目目录，备选用户目录 |
  | `providers.json` | `~/.ask-agent/providers.json` | 优先用户目录，备选项目目录 |
  | `command.json` | 当前目录 `command.json` | 优先项目目录，备选用户目录 |
@@ -1635,7 +1635,7 @@ Ask Agent 使用统一的配置管理系统，支持全局配置和项目本地�
 | 配置文件 | 查找顺序 |
 |----------|---------|
 | `config.json` | 固定使用 `~/.ask-agent/config.json` |
-| `roles.json` | 固定使用 `~/.ask-agent/roles.json` |
+| `roles.json` | 1. 项目目录 `roles.json`<br>2. `~/.ask-agent/roles.json` |
 | `agents.json` | 1. 项目目录 `agents.json`<br>2. `~/.ask-agent/agents.json` |
 | `providers.json` | 1. `~/.ask-agent/providers.json`<br>2. 项目目录 `providers.json` |
 | `command.json` | 1. 项目目录 `command.json`<br>2. `~/.ask-agent/command.json` |
