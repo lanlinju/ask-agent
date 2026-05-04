@@ -2355,56 +2355,6 @@ def stat_token(data: Dict):
             total_tokens,
         )
 
-_interrupted = False
-_streaming_response = None
-
-def _close_streaming_response():
-    """Close the active streaming response to interrupt a long-running request."""
-    global _streaming_response
-    if _streaming_response is not None:
-        try:
-            _streaming_response.close()
-        except Exception:
-            pass
-        _streaming_response = None
-
-def _start_esc_listener(stop_event: threading.Event):
-    """监听 ESC 键。用 cbreak 模式：逐字符读取，保留输出处理(换行正常)。"""
-    global _interrupted
-    if sys.platform == "win32":
-        import msvcrt
-
-        while not stop_event.is_set():
-            if msvcrt.kbhit():
-                if msvcrt.getwch() == "\x1b":
-                    _interrupted = True
-                    _close_streaming_response()
-                    break
-            time.sleep(0.05)
-    else:
-        import tty
-        import termios
-        import select
-
-        fd = sys.stdin.fileno()
-        old = termios.tcgetattr(fd)
-        new = termios.tcgetattr(fd)
-        # cbreak: 禁用 ICANON(逐字符读取) + ECHO(不回显)
-        # 保留 ISIG(Ctrl+C 生效) + 所有输出处理(ONLCR 换行正常)
-        new[3] &= ~(termios.ICANON | termios.ECHO)
-        try:
-            termios.tcsetattr(fd, termios.TCSANOW, new)
-            while not stop_event.is_set():
-                r, _, _ = select.select([fd], [], [], 0.1)
-                if r:
-                    ch = os.read(fd, 1)
-                    if ch == b"\x1b":
-                        _interrupted = True
-                        _close_streaming_response()
-                        break
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
 
 def backoff_delay(attempt: int) -> float:
     """Exponential backoff with jitter: base * 2^attempt + random(0, 1)."""
@@ -2498,8 +2448,6 @@ def _get_streaming_response(
         stream=True,
         timeout=(10, 30),
     ) as response:
-        global _streaming_response
-        _streaming_response = response
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ("", "", [])
@@ -2507,9 +2455,6 @@ def _get_streaming_response(
         for chunk in response.iter_lines(decode_unicode=True):
             if not chunk:
                 continue
-            # ESC interrupt check
-            if _interrupted:
-                break
             if not chunk.startswith("data:"):
                 continue
             if chunk == "data: [DONE]":
@@ -3025,8 +2970,7 @@ def _kill_proc(proc: subprocess.Popen):
 
 
 def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
-    """执行shell命令并返回输出，支持ESC中断"""
-    global _interrupted
+    """执行shell命令并返回输出"""
     try:
         # Windows 上使用 PowerShell，其他系统使用默认 shell
         if platform.system() == "Windows":
@@ -3048,15 +2992,17 @@ def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
                 stderr=subprocess.PIPE,
                 text=True,
             )
+
         timeout_sec = timeout or 10
-        
-        # 使用 communicate 方法等待进程结束，更可靠
+
         try:
             stdout, stderr = proc.communicate(timeout=timeout_sec)
             return (stdout + stderr).strip()
         except subprocess.TimeoutExpired:
             _kill_proc(proc)
             return f"Warning: Command timed out after {timeout_sec}s"
+    except KeyboardInterrupt:
+        raise
     except Exception as e:
         return f"Error: {e}"
 
@@ -3578,16 +3524,6 @@ def _drain_team_inbox(messages: list) -> None:
 
 def agent(prompt: str) -> str:
     """处理问题，添加到历史并获取回答"""
-    global _interrupted
-    _interrupted = False
-
-    # 启动ESC监听线程，持续到整个agent()调用结束
-    _esc_stop = threading.Event()
-    t = None
-    if sys.stdin.isatty():
-        t = threading.Thread(target=_start_esc_listener, args=(_esc_stop,), daemon=True)
-        t.start()
-
     # 记录当前问题的工具调用轮次
     sub_turn = 1
     # 记录本轮推理开始时的消息索引
@@ -3625,9 +3561,8 @@ def agent(prompt: str) -> str:
             messages.append(assistant_msg)
             logger.debug("添加助手回复: %s", assistant_msg)
 
-            # 如果没有工具调用或者esc中断，结束循环
-            if not tool_calls or _interrupted:
-                _interrupted = False
+            # 如果没有工具调用，结束循环
+            if not tool_calls:
                 return content
 
             for tool_call in tool_calls:
@@ -3657,15 +3592,15 @@ def agent(prompt: str) -> str:
                 }
 
                 logger.debug("Add tool output: %s", tool_result)
-                # 将工具执行结果添加到消息列表
                 messages.append(tool_result)
 
             sub_turn += 1
-    finally:
-        # cleanup_reasoning_content(messages, reasoning_start_index, sub_turn)
-        _esc_stop.set()
-        if t is not None:
-            t.join(timeout=0.5)
+    except KeyboardInterrupt:
+        print("\n⚠️ Task execution interrupted by user")
+        # 保留已有的内容返回
+        if messages and messages[-1].get("role") == "assistant":
+            return messages[-1].get("content", "")
+        return ""
 
 
 def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round: int):
