@@ -1167,10 +1167,19 @@ def init_system_prompt(
 
 
 def clear_history():
-    """清除对话历史，保留系统提示词"""
+    """清除对话历史，重新装载系统提示词"""
     global title_generated
-    messages[:] = messages[:1]
+
+    # 清除全部消息
+    messages.clear()
     title_generated = False
+
+    # 重新构建系统提示词
+    role_id = get_current_role_id()
+    agent_id = get_current_agent_id()
+    builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
+    system_prompt = builder.build()
+    messages.append({"role": "system", "content": system_prompt})
 
 
 TOOLS = [
