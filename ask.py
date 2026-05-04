@@ -3526,10 +3526,7 @@ async def reply_with_voice(update: Update, text: str, voice_config: dict):
 
         if audio_bytes:
             # Telegram 语音消息需要 ogg 格式
-            await update.message.reply_voice(
-                audio_bytes,
-                caption="🎤 语音回复",
-            )
+            await update.message.reply_voice(audio_bytes)
             print(f"\033[32m✓ 语音已发送\033[0m")
         else:
             print(f"\033[31m✗ 语音生成失败\033[0m")
