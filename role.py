@@ -293,6 +293,66 @@ class RoleManager:
             return self.current_role.role_id
         return self.default_role
 
+    def toggle_voice(self, enabled: bool) -> str:
+        """启用或禁用当前角色的语音
+
+        Args:
+            enabled: 是否启用语音
+
+        Returns:
+            操作结果消息
+        """
+        if not self.current_role:
+            return "❌ 当前没有选择角色"
+
+        role = self.current_role
+        if not role.voice:
+            return f"❌ 角色 {role.name} 没有配置语音"
+
+        # 更新配置
+        role.voice["enabled"] = enabled
+        status = "启用" if enabled else "禁用"
+
+        # 保存配置
+        self.save_config()
+
+        return f"✅ 已{status}角色 {role.name} 的语音功能"
+
+    def get_voice_status(self) -> str:
+        """获取当前角色的语音状态
+
+        Returns:
+            语音状态信息
+        """
+        if not self.current_role:
+            return "❌ 当前没有选择角色"
+
+        role = self.current_role
+        voice_config = role.voice
+
+        lines = [f"\n🎤 角色语音状态: {role.name}"]
+
+        if not voice_config:
+            lines.append("   未配置语音")
+            return "\n".join(lines)
+
+        enabled = voice_config.get("enabled", False)
+        status = "✅ 已启用" if enabled else "❌ 已禁用"
+        lines.append(f"   状态: {status}")
+
+        if voice_config.get("model"):
+            lines.append(f"   模型: {voice_config['model']}")
+        if voice_config.get("type"):
+            lines.append(f"   类型: {voice_config['type']}")
+        if voice_config.get("voice_id"):
+            lines.append(f"   音色: {voice_config['voice_id']}")
+        if voice_config.get("sample"):
+            lines.append(f"   样本: {voice_config['sample']}")
+        if voice_config.get("style"):
+            lines.append(f"   风格: {voice_config['style']}")
+
+        return "\n".join(lines)
+
     def reload(self):
         """重新加载配置和角色"""
         self.roles.clear()

@@ -2771,6 +2771,19 @@ def command(command: str):
         list_roles_interactive()
         return
 
+    # 语音控制命令: /voice enable, /voice disable
+    if command == "/voice" or command.startswith("/voice "):
+        parts = command.split(maxsplit=1)
+        arg = parts[1].strip().lower() if len(parts) > 1 else ""
+
+        if arg == "enable":
+            toggle_voice(True)
+        elif arg == "disable":
+            toggle_voice(False)
+        else:
+            show_voice_status()
+        return
+
     # 创建新会话
     if command == "/new":
         save_current_session()
@@ -2937,6 +2950,9 @@ def show_help():
     /role <name>  - 进入指定角色
     /role -l      - 列出所有可用角色
     /roles        - 交互式选择角色
+    /voice        - 显示当前角色语音状态
+    /voice enable - 启用角色语音
+    /voice disable- 禁用角色语音
     /model        - 交互式选择模型
     /model <id>   - 切换到指定ID的模型
     /model -l     - 列出所有可用模型
@@ -3375,6 +3391,42 @@ def get_current_voice_config() -> Optional[dict]:
     if not ROLE_MANAGER or not ROLE_MANAGER.current_role:
         return None
     return ROLE_MANAGER.current_role.get_voice_config()
+
+
+def toggle_voice(enabled: bool):
+    """启用或禁用当前角色的语音
+
+    Args:
+        enabled: 是否启用语音
+    """
+    global ROLE_MANAGER
+
+    if current_mode != ROLE:
+        print("❌ 请先进入角色扮演模式: /role\n")
+        return
+
+    if not ROLE_MANAGER:
+        print("❌ 当前没有选择角色\n")
+        return
+
+    result = ROLE_MANAGER.toggle_voice(enabled)
+    print(f"{result}\n")
+
+
+def show_voice_status():
+    """显示当前角色的语音状态"""
+    global ROLE_MANAGER
+
+    if current_mode != ROLE:
+        print("❌ 请先进入角色扮演模式: /role\n")
+        return
+
+    if not ROLE_MANAGER:
+        print("❌ 当前没有选择角色\n")
+        return
+
+    result = ROLE_MANAGER.get_voice_status()
+    print(f"{result}\n")
 
 
 def play_voice_in_terminal(text: str, voice_config: dict):

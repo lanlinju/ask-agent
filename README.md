@@ -298,16 +298,21 @@ python ag
 | `/role <name>` | 进入指定角色 |
 | `/role -l` | 列出所有可用角色 |
 | `/roles` | 交互式选择角色 |
+| `/voice` | 显示当前角色语音状态 |
+| `/voice enable` | 启用角色语音 |
+| `/voice disable` | 禁用角色语音 |
 | `/model` | 交互式选择模型 |
 | `/model <id>` | 切换到指定ID的模型 |
 | `/model -l` | 列出所有可用模型 |
 | `/new` | 创建新会话（清空对话历史） |
-| `/clear` | 清除当前对话历史（保留系统提示词） |
+| `/clear` | 清除当前对话历史 |
 | `/compact` | 压缩对话历史，将前 3/4 的消息压缩为摘要 |
 | `/session` | 列出当前模式的所有会话 |
 | `/load <id>` | 加载指定会话（使用 `/session` 查看 ID） |
 | `/skills` | 列出所有可用的 Skills |
 | `/commands` | 列出所有自定义命令 |
+| `/memories` | 列出所有跨会话记忆 |
+| `/memories -d <name>` | 删除指定记忆 |
 | `/mcp` | 交互式选择并连接 MCP 服务器 |
 | `/mcp -l` | 列出所有可用的 MCP 服务器 |
 | `/bot` | 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN） |
