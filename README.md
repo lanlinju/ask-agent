@@ -105,15 +105,15 @@ export PATH="$HOME/.local/bin:$PATH"
       "enabled": true,
       "options": {
         "baseURL": "https://api.deepseek.com/v1",
-        "apiKey": "env:DEEPSEEK_API_KEY",
-        "thinking": "disabled"
+        "apiKey": "your_api_key_here",
       },
       "models": {
-        "deepseek-chat": {
-          "name": "DeepSeek Chat"
+        "deepseek-v4-flash": {
+          "name": "DeepSeek V4 Flash",
+          "thinking": "enabled"
         },
-        "deepseek-reasoner": {
-          "name": "DeepSeek Reasoner"
+        "deepseek-v4-pro": {
+          "name": "DeepSeek V4 Pro"
         }
       }
     },
@@ -122,7 +122,7 @@ export PATH="$HOME/.local/bin:$PATH"
       "enabled": true,
       "options": {
         "baseURL": "https://api.openai.com/v1",
-        "apiKey": "env:OPENAI_API_KEY"
+        "apiKey": "your_api_key_here"
       },
       "models": {
         "gpt-4o": {
@@ -130,6 +130,30 @@ export PATH="$HOME/.local/bin:$PATH"
         },
         "gpt-4-turbo": {
           "name": "GPT-4 Turbo"
+        }
+      }
+    },
+    "mimo": {
+      "name": "MiMo",
+      "enabled": true,
+      "options": {
+        "baseURL": "https://api.xiaomimimo.com/v1",
+        "apiKey": "env:MIMO_API_KEY",
+        "thinking": "enabled"
+      },
+      "models": {
+        "mimo-v2.5": {
+          "name": "Mimo V2.5",
+          "modalities": {
+            "input": ["text", "image", "audio"],
+            "output": ["text"]
+          }
+        },
+        "mimo-v2.5-pro": {
+          "name": "Mimo V2.5 Pro"
+        },
+        "mimo-v2.5-tts-voiceclone": {
+          "name": "Mimo V2.5 TTS VoiceClone"
         }
       }
     }
@@ -1296,6 +1320,25 @@ ag 支持多个 AI Provider，通过 `providers.json` 配置文件统一管理�
 - `modalities`: 模型支持的模态类型（可选）
   - `input`: 支持的输入类型，如 `["text", "image"]`
   - `output`: 支持的输出类型，如 `["text", "image"]`
+- `thinking`: 模型级 thinking 配置（可选，覆盖 Provider 级设置）
+
+**模型级 thinking 配置示例：**
+
+```json
+{
+  "models": {
+    "deepseek-v4-flash": {
+      "name": "DeepSeek V4 Flash",
+      "thinking": "disabled"
+    },
+    "deepseek-reasoner": {
+      "name": "DeepSeek Reasoner"
+    }
+  }
+}
+```
+
+**thinking 配置优先级：** 模型级 > Provider 级 > 全局级
 
 **图片理解配置示例：**
 

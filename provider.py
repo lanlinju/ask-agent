@@ -64,6 +64,7 @@ class ModelInfo:
     name: str  # 模型显示名称
     provider_id: str  # 所属 provider ID
     modalities: ModelModalities = None  # 模型支持的模态类型
+    thinking: Optional[str] = None  # 模型级 thinking 配置（"enabled" or "disabled"）
 
     def __post_init__(self):
         if self.modalities is None:
@@ -140,6 +141,7 @@ class Provider:
                 name=model_config.get("name", model_id),
                 provider_id=provider_id,
                 modalities=modalities,
+                thinking=model_config.get("thinking"),  # 模型级 thinking 配置
             )
 
         return cls(
@@ -356,12 +358,15 @@ class ProviderConfig:
         if not model_info:
             return None
 
+        # thinking 优先级：模型级 > provider 级 > 全局级
+        thinking = model_info.thinking or provider.options.thinking or self.thinking
+
         return {
             "base_url": provider.options.base_url,
             "api_key": provider.options.resolve_api_key(),
             "model": model_info.id,
             "provider": provider.id,
-            "thinking": provider.options.thinking,  # 每个 provider 的 thinking 设置
+            "thinking": thinking,
             "reasoning_effort": self.reasoning_effort,  # 全局 reasoning_effort 设置
             "timeout": provider.options.timeout,
             "max_retries": provider.options.max_retries,
