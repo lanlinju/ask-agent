@@ -3354,17 +3354,15 @@ async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     # 调用模型进行语音识别
-    content, recognized_text, _ = get_streaming_response(temp_messages, [], silent=True, useTools=False)
-
+    content, reasoning, _ = get_streaming_response(temp_messages, [], silent=True, useTools=False)
+    
+    recognized_text =  content if content else reasoning
+    # 打印识别结果
+    print(f"  识别结果: {recognized_text}")
+        
     if not recognized_text:
         await update.message.reply_text("❌ 语音识别失败")
         return
-
-    # 打印识别结果
-    print(f"  识别结果: {recognized_text}")
-    
-    if content:
-        print(f"  Extra: {{content}}")
 
     # 将识别结果作为用户消息发送给 agent 处理
     response = agent(recognized_text)
