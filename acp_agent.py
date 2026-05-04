@@ -150,6 +150,8 @@ class AskAgentACP(Agent):
         self._cancelled: set[str] = set()
         self._current_process: subprocess.Popen | None = None
         self._process_lock = asyncio.Lock()
+        self._streaming_response = None
+        self._current_task: asyncio.Task | None = None  # 当前正在执行的任务
 
     # ── Helpers ──────────────────────────────────────────────────────
 
@@ -377,7 +379,6 @@ class AskAgentACP(Agent):
         collected = ""
         tool_calls_collected = []
         reasoning = ""
-        in_think = False
 
         with _requests.post(
             f"{_ask.DEEPSEEK_API_URL}/v1/chat/completions",
@@ -386,7 +387,7 @@ class AskAgentACP(Agent):
             stream=True,
             timeout=(10, 30),
         ) as response:
-            _ask._streaming_response = response
+            self._streaming_response = response
             if response.status_code != 200:
                 yield ("text", f"Error: {response.status_code}")
                 yield ("done", ("", "", []))
@@ -396,8 +397,6 @@ class AskAgentACP(Agent):
             for chunk in response.iter_lines(decode_unicode=True):
                 if not chunk:
                     continue
-                if _ask._interrupted:
-                    break
                 if not chunk.startswith("data:"):
                     continue
                 if chunk == "data: [DONE]":
@@ -406,8 +405,6 @@ class AskAgentACP(Agent):
                     obj = json.loads(chunk[6:])
                     if not obj["choices"]:
                         continue
-                    # if obj["choices"][0]["finish_reason"] is not None:
-                    #     continue
                     delta = obj["choices"][0].get("delta")
                     if not delta:
                         continue
@@ -416,29 +413,15 @@ class AskAgentACP(Agent):
                         reasoning += delta["reasoning_content"]
                         yield ("thought", delta["reasoning_content"])
                     elif delta.get("content"):
-                        content = delta["content"]
-                        # if "<think>" in content:
-                        #     in_think = True
-                        #     # content = content.replace("<think>", "")
-                        # if "</think>" in content:
-                        #     in_think = False
-                        #     # content = content.replace("</think>", "")
-                        #     collected += content
-                        #     yield ("thought", content)
-                        #     continue
-                        # if in_think:
-                        #     collected += content
-                        #     yield ("thought", content)
-                        #     continue
-                        collected += content
-                        yield ("text", content)
+                        collected += delta["content"]
+                        yield ("text", delta["content"])
                     elif delta.get("tool_calls"):
                         for tc in delta["tool_calls"]:
                             tool_calls_collected.append(tc)
                 except json.JSONDecodeError:
                     continue
 
-        _ask._streaming_response = None
+        self._streaming_response = None
         tool_calls = merge_arguments(tool_calls_collected)
         yield ("done", (collected, reasoning, tool_calls))
 
@@ -491,9 +474,27 @@ class AskAgentACP(Agent):
         if name == "bash":
             return await self._execute_bash(args.get("command", ""), args.get("timeout"))
 
-        # Default: local execution (fs fallback)
+        # Default: local execution with cancellation support
         _acp_debug.info("TOOL: > %s args=%s", name, str(args)[:300])
-        return await asyncio.to_thread(execute_tool, name, args)
+        
+        # 创建可取消的 task
+        task = asyncio.current_task()
+        self._current_task = task
+        
+        try:
+            # 在线程池中执行，支持超时
+            result = await asyncio.wait_for(
+                asyncio.to_thread(execute_tool, name, args),
+                timeout=60  # 默认60秒超时
+            )
+            return result
+        except asyncio.TimeoutError:
+            return f"Error: Tool '{name}' timed out after 60s"
+        except asyncio.CancelledError:
+            _acp_debug.info("TOOL: %s cancelled", name)
+            return f"Error: Tool '{name}' was cancelled"
+        finally:
+            self._current_task = None
 
     async def _execute_bash(self, command: str, timeout: int | None = None) -> str:
         """Execute bash command with cancellation support using Popen."""
@@ -633,8 +634,6 @@ class AskAgentACP(Agent):
         sub_turn = 1
 
         while True:
-            _ask._interrupted = False
-
             if session_id in self._cancelled:
                 self._cancelled.discard(session_id)
                 return PromptResponse(stop_reason="cancelled")
@@ -673,14 +672,12 @@ class AskAgentACP(Agent):
             }
             if tool_calls:
                 assistant_msg["tool_calls"] = tool_calls
-                # 思考模式下，有工具调用时须回传 reasoning_content
                 assistant_msg["reasoning_content"] = reasoning_content
-            if sub_turn > 1 and not tool_calls: # 工具调用结束时，此时tool_calls=[]，需要额外判定追加 reasoning_content
+            if sub_turn > 1 and not tool_calls:
                 assistant_msg["reasoning_content"] = reasoning_content      
             sess_msgs.append(assistant_msg)
 
-            if not tool_calls or _ask._interrupted:
-                _ask._interrupted = False
+            if not tool_calls:
                 return PromptResponse(stop_reason="end_turn")
 
             for tc in tool_calls:
@@ -755,12 +752,21 @@ class AskAgentACP(Agent):
     # ── Cancellation ────────────────────────────────────────────────
 
     async def cancel(self, session_id: str, **kwargs: Any) -> None:
-        import ask as _ask
-
         logger.info("ACP cancel: session=%s", session_id)
         self._cancelled.add(session_id)
-        _ask._interrupted = True
-        _ask._close_streaming_response()
+
+        # Cancel current task if exists
+        if self._current_task and not self._current_task.done():
+            _acp_debug.info("CANCEL: cancelling current task")
+            self._current_task.cancel()
+
+        # Close streaming response if active
+        if self._streaming_response:
+            try:
+                self._streaming_response.close()
+            except Exception:
+                pass
+            self._streaming_response = None
 
         # Kill any running subprocess
         async with self._process_lock:
