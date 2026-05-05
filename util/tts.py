@@ -360,7 +360,7 @@ def play_audio(audio_bytes: bytes, format: str = "mp3") -> bool:
 def _play_audio_windows(file_path: str) -> bool:
     """Windows 下播放音频
 
-    WAV 文件使用 PlaySound API，MP3 文件使用 MCI API（临时清理 PATH 避免 ffmpeg DLL 冲突）。
+    WAV 文件使用 PlaySound API，MP3 文件使用 MCI API。
 
     Args:
         file_path: 音频文件路径
