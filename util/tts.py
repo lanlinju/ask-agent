@@ -206,13 +206,6 @@ def text_to_speech(
             return None
 
         mp3_bytes = base64.b64decode(audio_data)
-
-        # 转换为 ogg 格式 (Telegram 语音消息需要)
-        ogg_bytes = convert_audio_format(mp3_bytes, "mp3", "ogg")
-        if ogg_bytes:
-            return ogg_bytes
-
-        # 如果转换失败，返回原始 mp3
         return mp3_bytes
 
     except Exception as e:
@@ -364,9 +357,48 @@ def play_audio(audio_bytes: bytes, format: str = "mp3") -> bool:
             except Exception:
                 pass
 
-# 参考：https://github.com/rany2/edge-tts/blob/master/src/edge_playback/win32_playback.py
 def _play_audio_windows(file_path: str) -> bool:
-    """Windows 下使用 MCI API 播放音频
+    """Windows 下播放音频
+
+    WAV 文件使用 PlaySound API，MP3 文件使用 MCI API（临时清理 PATH 避免 ffmpeg DLL 冲突）。
+
+    Args:
+        file_path: 音频文件路径
+
+    Returns:
+        是否播放成功
+    """
+    ext = Path(file_path).suffix.lower()
+    if ext == ".wav":
+        return _play_audio_windows_playsound(file_path)
+    else:
+        return _play_audio_windows_mci(file_path)
+
+
+def _play_audio_windows_playsound(file_path: str) -> bool:
+    """Windows 下使用 PlaySound API 播放 WAV
+
+    Args:
+        file_path: WAV 文件路径
+
+    Returns:
+        是否播放成功
+    """
+    try:
+        from ctypes import windll
+
+        SND_FILENAME = 0x00020000
+        SND_NODEFAULT = 0x00000002
+        flags = SND_FILENAME | SND_NODEFAULT
+        windll.winmm.PlaySoundW(file_path, None, flags)
+        return True
+    except Exception as e:
+        logger.error(f"PlaySound 播放失败: {e}")
+        return False
+
+# 参考：https://github.com/rany2/edge-tts/blob/master/src/edge_playback/win32_playback.py
+def _play_audio_windows_mci(file_path: str) -> bool:
+    """Windows 下使用 MCI API 播放 MP3
 
     Args:
         file_path: 音频文件路径
@@ -414,7 +446,7 @@ def _play_audio_windows(file_path: str) -> bool:
         return True
 
     except Exception as e:
-        logger.error(f"Windows 音频播放失败: {e}")
+        logger.error(f"MCI 播放失败: {e}")
         return False
 
 
