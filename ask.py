@@ -2512,9 +2512,13 @@ def get_streaming_response(
     for attempt in range(MAX_RETRIES + 1):
         try:
             return _get_streaming_response(messages, tools, silent, useTools)
-        except (requests.exceptions.ChunkedEncodingError, requests.exceptions.StreamConsumedError):
-            # 流被中断关闭时可能抛出这些异常，不重试
-            logger.debug("Stream interrupted")
+        except (requests.exceptions.ChunkedEncodingError, 
+                requests.exceptions.StreamConsumedError,
+                requests.exceptions.ConnectionError,
+                AttributeError):
+            # 流被中断关闭时可能抛出这些异常
+            # 返回空内容，由调用方检查中断状态
+            print("Stream interrupted")
             return ("", "", [])
         except RequestException as e:
             if attempt < MAX_RETRIES:
@@ -3727,6 +3731,10 @@ def agent(prompt: str) -> str:
             content, reasoning_content, tool_calls = get_streaming_response(
                 messages, active_tools
             )
+
+            # 如果被中断且没有内容，直接返回
+            if _interrupt_ctrl.is_interrupted and not content and not tool_calls:
+                return ""
 
             # 构建助手消息并添加到历史
             assistant_msg = {"role": "assistant", "content": content}
