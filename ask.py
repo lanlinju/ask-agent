@@ -1651,15 +1651,24 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
 def run_glob(pattern: str, path: str | None = None) -> str:
     """Find files matching a glob pattern."""
     try:
+        # 检查是否被中断
+        _interrupt_ctrl.check()
+
         base = safe_path(path) if path else WORKDIR
         print(f"\033[34m✱ Glob {pattern} in {base.relative_to(WORKDIR) or '.'}\033[0m")
-        matches = sorted(
-            str(p.relative_to(WORKDIR)) for p in base.glob(pattern) if p.is_file()
-        )
+        matches = []
+        for p in base.glob(pattern):
+            # 每处理一个文件检查一次中断
+            _interrupt_ctrl.check()
+            if p.is_file():
+                matches.append(str(p.relative_to(WORKDIR)))
+        matches.sort()
         if not matches:
             return "(no matches)"
         logger.debug("Glob matches: %s", matches)
         return f"{len(matches)} matches\n" + "\n".join(matches)
+    except InterruptedError:
+        return "Glob interrupted by user (ESC)"
     except Exception as e:
         return f"Error: {e}"
 
@@ -1667,6 +1676,9 @@ def run_glob(pattern: str, path: str | None = None) -> str:
 def run_grep(pattern: str, path: str | None = None, include: str | None = None) -> str:
     """Search file contents using a regex pattern."""
     try:
+        # 检查是否被中断
+        _interrupt_ctrl.check()
+
         base = safe_path(path) if path else WORKDIR
         print(
             f'\033[34m✱ Grep "{pattern}" in {base.relative_to(WORKDIR) or "."}\033[0m'
@@ -1682,6 +1694,9 @@ def run_grep(pattern: str, path: str | None = None, include: str | None = None) 
             files = sorted(p for p in base.rglob("*") if p.is_file())
 
         for fp in files:
+            # 每处理一个文件检查一次中断
+            _interrupt_ctrl.check()
+
             if not fp.is_file():
                 continue
             try:
@@ -1698,6 +1713,8 @@ def run_grep(pattern: str, path: str | None = None, include: str | None = None) 
             return "(no matches)"
         logger.debug("Grep matches: %s", results)
         return f"{len(results)} matches\n" + "\n".join(results)
+    except InterruptedError:
+        return "Grep interrupted by user (ESC)"
     except Exception as e:
         return f"Error: {e}"
 
@@ -2356,6 +2373,128 @@ def stat_token(data: Dict):
         )
 
 
+class InterruptController:
+    """统一的中断控制器
+
+    提供统一的中断机制，支持：
+    - ESC 键中断
+    - HTTP 请求中断
+    - 子进程中断
+    - 工具执行中断
+    """
+
+    def __init__(self):
+        self._event = threading.Event()
+        self._processes: List[subprocess.Popen] = []
+        self._streaming_response = None
+        self._lock = threading.Lock()
+
+    @property
+    def is_interrupted(self) -> bool:
+        """是否被中断"""
+        return self._event.is_set()
+
+    def interrupt(self):
+        """触发中断"""
+        self._event.set()
+        self._close_streaming()
+        self._kill_processes()
+
+    def reset(self):
+        """重置中断状态"""
+        self._event.clear()
+        with self._lock:
+            self._processes.clear()
+            self._streaming_response = None
+
+    def check(self):
+        """检查是否中断，如果中断则抛出异常"""
+        if self._event.is_set():
+            raise InterruptedError("Operation interrupted by user")
+
+    def register_process(self, proc: subprocess.Popen):
+        """注册子进程，以便中断时 kill"""
+        with self._lock:
+            self._processes.append(proc)
+
+    def unregister_process(self, proc: subprocess.Popen):
+        """取消注册子进程"""
+        with self._lock:
+            if proc in self._processes:
+                self._processes.remove(proc)
+
+    def register_streaming(self, response):
+        """注册流式响应，以便中断时关闭"""
+        self._streaming_response = response
+
+    def unregister_streaming(self):
+        """取消注册流式响应"""
+        self._streaming_response = None
+
+    def _close_streaming(self):
+        """关闭流式响应"""
+        if self._streaming_response is not None:
+            try:
+                self._streaming_response.close()
+            except Exception:
+                pass
+            self._streaming_response = None
+
+    def _kill_processes(self):
+        """终止所有注册的子进程"""
+        with self._lock:
+            for proc in self._processes[:]:
+                try:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+                except Exception:
+                    pass
+            self._processes.clear()
+
+
+# 全局中断控制器
+_interrupt_ctrl = InterruptController()
+
+
+def _start_esc_listener(stop_event: threading.Event):
+    """监听 ESC 键。用 cbreak 模式：逐字符读取，保留输出处理(换行正常)。"""
+    if sys.platform == "win32":
+        import msvcrt
+
+        while not stop_event.is_set():
+            if msvcrt.kbhit():
+                if msvcrt.getwch() == "\x1b":
+                    _interrupt_ctrl.interrupt()
+                    break
+            time.sleep(0.05)
+    else:
+        import tty
+        import termios
+        import select
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        new = termios.tcgetattr(fd)
+        # cbreak: 禁用 ICANON(逐字符读取) + ECHO(不回显)
+        # 保留 ISIG(Ctrl+C 生效) + 所有输出处理(ONLCR 换行正常)
+        new[3] &= ~(termios.ICANON | termios.ECHO)
+        try:
+            termios.tcsetattr(fd, termios.TCSANOW, new)
+            while not stop_event.is_set():
+                r, _, _ = select.select([fd], [], [], 0.1)
+                if r:
+                    ch = os.read(fd, 1)
+                    if ch == b"\x1b":
+                        _interrupt_ctrl.interrupt()
+                        break
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
 def backoff_delay(attempt: int) -> float:
     """Exponential backoff with jitter: base * 2^attempt + random(0, 1)."""
     delay = min(BACKOFF_BASE_DELAY * (2 ** attempt), BACKOFF_MAX_DELAY)
@@ -2373,6 +2512,10 @@ def get_streaming_response(
     for attempt in range(MAX_RETRIES + 1):
         try:
             return _get_streaming_response(messages, tools, silent, useTools)
+        except (requests.exceptions.ChunkedEncodingError, requests.exceptions.StreamConsumedError):
+            # 流被中断关闭时可能抛出这些异常，不重试
+            logger.debug("Stream interrupted")
+            return ("", "", [])
         except RequestException as e:
             if attempt < MAX_RETRIES:
                 delay = backoff_delay(attempt)
@@ -2448,6 +2591,9 @@ def _get_streaming_response(
         stream=True,
         timeout=(10, 30),
     ) as response:
+        # 注册流式响应到中断控制器
+        _interrupt_ctrl.register_streaming(response)
+
         if response.status_code != 200:
             print(f"❌ API错误: {response.status_code} {response.text}")
             return ("", "", [])
@@ -2455,6 +2601,9 @@ def _get_streaming_response(
         for chunk in response.iter_lines(decode_unicode=True):
             if not chunk:
                 continue
+            # 检查是否被中断
+            if _interrupt_ctrl.is_interrupted:
+                break
             if not chunk.startswith("data:"):
                 continue
             if chunk == "data: [DONE]":
@@ -2531,6 +2680,8 @@ def _get_streaming_response(
             except json.JSONDecodeError:
                 continue
 
+    # 取消注册流式响应
+    _interrupt_ctrl.unregister_streaming()
     _streaming_response = None
     return (collected_content, reasoning_content, merge_arguments(tool_calls_collected))
 
@@ -2972,6 +3123,9 @@ def _kill_proc(proc: subprocess.Popen):
 def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
     """执行shell命令并返回输出"""
     try:
+        # 检查是否已中断
+        _interrupt_ctrl.check()
+
         # Windows 上使用 PowerShell，其他系统使用默认 shell
         if platform.system() == "Windows":
             proc = subprocess.Popen(
@@ -2993,6 +3147,9 @@ def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
                 text=True,
             )
 
+        # 注册进程到中断控制器
+        _interrupt_ctrl.register_process(proc)
+
         timeout_sec = timeout or 10
 
         try:
@@ -3001,6 +3158,11 @@ def execute_cmd(cmd: str, timeout: Optional[int] = None) -> str:
         except subprocess.TimeoutExpired:
             _kill_proc(proc)
             return f"Warning: Command timed out after {timeout_sec}s"
+        finally:
+            # 取消注册进程
+            _interrupt_ctrl.unregister_process(proc)
+    except InterruptedError:
+        return "Command interrupted by user (ESC)"
     except KeyboardInterrupt:
         raise
     except Exception as e:
@@ -3526,6 +3688,16 @@ def _drain_team_inbox(messages: list) -> None:
 
 def agent(prompt: str) -> str:
     """处理问题，添加到历史并获取回答"""
+    # 重置中断控制器
+    _interrupt_ctrl.reset()
+
+    # 启动ESC监听线程，持续到整个agent()调用结束
+    _esc_stop = threading.Event()
+    t = None
+    if sys.stdin.isatty():
+        t = threading.Thread(target=_start_esc_listener, args=(_esc_stop,), daemon=True)
+        t.start()
+
     # 记录当前问题的工具调用轮次
     sub_turn = 1
     # 记录本轮推理开始时的消息索引
@@ -3541,6 +3713,10 @@ def agent(prompt: str) -> str:
             active_tools = TOOLS + TEAM_TOOLS
 
         while True:
+            # 检查是否被中断
+            if _interrupt_ctrl.is_interrupted:
+                break
+
             # 每轮模型调用前，排空后台任务通知
             drain_background_notifications(messages, BG_MANAGER)
 
@@ -3563,11 +3739,21 @@ def agent(prompt: str) -> str:
             messages.append(assistant_msg)
             logger.debug("添加助手回复: %s", assistant_msg)
 
-            # 如果没有工具调用，结束循环
-            if not tool_calls:
+            # 如果没有工具调用或者被中断，结束循环
+            if not tool_calls or _interrupt_ctrl.is_interrupted:
                 return content
 
             for tool_call in tool_calls:
+                # 检查是否被中断
+                if _interrupt_ctrl.is_interrupted:
+                    # 添加中断标记的工具结果
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "content": "[Interrupted by user]",
+                    })
+                    break
+
                 name = tool_call["function"]["name"]
                 args = json.loads(tool_call["function"]["arguments"])
                 logger.info("执行工具: %s, 参数: %s", name, args)
@@ -3603,6 +3789,11 @@ def agent(prompt: str) -> str:
         if messages and messages[-1].get("role") == "assistant":
             return messages[-1].get("content", "")
         return ""
+    finally:
+        # 停止 ESC 监听线程
+        _esc_stop.set()
+        if t is not None:
+            t.join(timeout=0.5)
 
 
 def cleanup_reasoning_content(messages: list, start_index: int, tool_call_round: int):
