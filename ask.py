@@ -3715,48 +3715,67 @@ def _is_markdown(text: str) -> bool:
     return bool(_MARKDOWN_RE.search(text))
 
 
+async def handle_qq_command(user_openid: str, message_text: str) -> bool:
+    """处理QQ命令，返回True表示已处理"""
+    global _qq_bot
+
+    cmd = message_text.split()[0]
+
+    if cmd == "/start":
+        await _qq_bot.send_text(user_openid, "欢迎！使用/exit命令退出QQ Bot，/save命令保存聊天会话")
+        return True
+
+    if cmd == "/exit" or cmd == "/save":
+        save_current_session()
+        save_config(current_mode)
+        await _qq_bot.send_text(user_openid, "会话已保存")
+        if cmd == "/exit":
+            sys.exit(0)
+        return True
+
+    if cmd == "/help":
+        await _qq_bot.send_markdown(user_openid, show_help())
+        return True
+
+    if cmd == "/new":
+        save_current_session()
+        init_system_prompt(current_mode)
+        await _qq_bot.send_text(user_openid, "✅ 已创建新会话")
+        return True
+
+    if cmd == "/clear":
+        clear_history()
+        await _qq_bot.send_text(user_openid, "✅ 已清除对话历史")
+        return True
+
+    # 其他命令交给 command() 统一处理
+    try:
+        command(message_text)
+        await _qq_bot.send_text(user_openid, f"执行命令: {message_text}")
+    except Exception as e:
+        await _qq_bot.send_text(user_openid, f"命令执行失败: {e}")
+    return True
+
+
 async def handle_qq_message(message):
     """处理QQ消息"""
     global _qq_current_openid
-    
+
     user_openid = message.openid
     message_text = message.content
-    
+
     # 设置当前QQ上下文
     _qq_current_openid = user_openid
-    
+
     # 打印到控制台
     print(f"收到QQ消息 | 用户: {user_openid} | 内容: {message_text}")
     print(f"{BLUE}QQ Bot:{RESET}")
-    
+
     # 处理命令
     if message_text.startswith("/"):
-        cmd = message_text.split()[0]
-        if cmd == "/start":
-            await _qq_bot.send_text(user_openid, "欢迎！使用/exit命令退出QQ Bot，/save命令保存聊天会话")
-            return
-        elif cmd == "/exit" or cmd == "/save":
-            save_current_session()
-            save_config(current_mode)
-            await _qq_bot.send_text(user_openid, "会话已保存")
-            if cmd == "/exit":
-                import sys
-                sys.exit(0)
-            return
-        elif cmd == "/help":
-            help_text = show_help()
-            await _qq_bot.send_markdown(user_openid, help_text)
-            return
-        elif cmd == "/new":
-            save_current_session()
-            init_system_prompt(current_mode)
-            await _qq_bot.send_text(user_openid, "✅ 已创建新会话")
-            return
-        elif cmd == "/clear":
-            clear_history()
-            await _qq_bot.send_text(user_openid, "✅ 已清除对话历史")
-            return
-    
+        await handle_qq_command(user_openid, message_text)
+        return
+
     # 获取回复
     response = agent(message_text)
     
@@ -3829,7 +3848,10 @@ def run_qq_bot():
                 await stop_qq_bot()
     
     # 运行异步主函数
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass  # 已在 main() 中处理，这里仅阻止进程退出
 
 
 def _drain_team_inbox(messages: list) -> None:
