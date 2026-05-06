@@ -60,7 +60,7 @@ cd ask-agent
 pip install -r requirements.txt
 
 # 方式二：单独安装依赖
-pip install python-dotenv requests python-telegram-bot prompt-toolkit websockets
+pip install python-dotenv requests python-telegram-bot prompt-toolkit websockets silk-python
 ```
 
 3. 启动程序

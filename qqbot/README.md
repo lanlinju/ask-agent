@@ -261,6 +261,25 @@ Authorization: QQBot {access_token}
 }
 ```
 
+#### attachment content_type 说明
+
+| content_type | 类型 | 附加字段 |
+|-------------|------|----------|
+| `image/jpeg` | JPEG 图片 | `width`, `height` |
+| `image/png` | PNG 图片 | `width`, `height` |
+| `image/gif` | GIF 图片 | `width`, `height` |
+| `voice` | 语音 | `voice_wav_url`（WAV 链接）、`asr_refer_text`（ASR 参考结果） |
+| `video/mp4` | 视频 | — |
+| `file` | 文件 | — |
+
+**语音附件特殊字段**：
+- `voice_wav_url`：WAV 格式语音链接（优先使用，模型兼容性最好）
+- `asr_refer_text`：QQ 服务端语音识别结果（可直接使用，无需模型转写）
+- `url`：原始语音链接（SILK V3 格式，需 `silk-python` 解码后才能被模型识别）
+
+**SILK 语音格式**：QQ 语音底层使用 SILK V3 编码（文件头 `#!SILK_V3`），不是通用音频格式。
+模型 API 仅支持 mp3/flac/m4a/wav/ogg，需要先用 `silk-python` 解码为 PCM 再转 WAV。
+
 #### RESUME（恢复会话）
 
 ```json
