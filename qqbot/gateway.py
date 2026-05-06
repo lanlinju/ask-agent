@@ -68,6 +68,7 @@ class QQGateway:
 
     async def _connect(self) -> None:
         """连接到Gateway"""
+        self.reconnect_timer = None
         try:
             token = await self.auth.get_access_token()
             logger.info("正在获取 Gateway URL...")
@@ -105,7 +106,7 @@ class QQGateway:
                 except Exception as e:
                     logger.error(f"处理QQ gateway消息错误: {e}")
         except websockets.exceptions.ConnectionClosed:
-            logger.warning("QQ gateway连接关闭，正在重连...")
+            print("⚠️ QQ Gateway 连接已断开，正在重连...")
             self._cleanup_heartbeat()
             self._schedule_reconnect()
         except Exception as e:
@@ -215,11 +216,17 @@ class QQGateway:
         async def heartbeat():
             while True:
                 await asyncio.sleep(interval)
-                if self.socket:
+                if not self.socket:
+                    break
+                try:
                     await self.socket.send(json.dumps({
                         "op": OP_HEARTBEAT,
                         "d": self.seq
                     }))
+                except Exception as e:
+                    print(f"⚠️ QQ 心跳发送失败: {e}，触发重连")
+                    self._schedule_reconnect()
+                    break
 
         self.heartbeat_timer = asyncio.create_task(heartbeat())
 
@@ -254,23 +261,40 @@ class QQGateway:
 
     async def _reconnect_now(self) -> None:
         """立即重连"""
-        logger.info("正在断开并重连...")
+        print("🔄 QQ Gateway 正在立即重连...")
         if self.socket:
-            await self.socket.close()
+            try:
+                await self.socket.close()
+            except Exception:
+                pass
+        self.socket = None
         self._cleanup_heartbeat()
-        self._schedule_reconnect()
+        self.reconnect_timer = None
+        await self._connect()
 
     def _schedule_reconnect(self) -> None:
         """计划重连"""
         if self.reconnect_timer:
             return
 
+        print("🔄 QQ Gateway 3秒后重连...")
+
         async def reconnect():
-            await asyncio.sleep(3)
             try:
+                await asyncio.sleep(3)
+                print("🔄 QQ Gateway 正在重连...")
+                # 清理旧连接状态
+                if self.socket:
+                    try:
+                        await self.socket.close()
+                    except Exception:
+                        pass
+                    self.socket = None
                 await self._connect()
+                print("✅ QQ Gateway 重连成功")
             except Exception as e:
-                logger.error(f"QQ gateway重连失败: {e}")
+                print(f"❌ QQ Gateway 重连失败: {e}，3秒后重试")
+                self.reconnect_timer = None
                 self._schedule_reconnect()
 
         self.reconnect_timer = asyncio.create_task(reconnect())
