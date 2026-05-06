@@ -3610,7 +3610,7 @@ async def reply_with_voice(update: Update, text: str, voice_config: dict):
         text: 回复文本
         voice_config: 语音配置
     """
-    from util.tts import text_to_speech, get_tts_api_config
+    from util.tts import text_to_speech, get_tts_api_config, strip_parentheses
 
     # 先发送文本
     paragraphs = text.split("\n\n")
@@ -3632,7 +3632,11 @@ async def reply_with_voice(update: Update, text: str, voice_config: dict):
             print(f"\033[31m✗ TTS API 未配置，跳过语音\033[0m")
             return
 
-        audio_bytes = text_to_speech(text, voice_config, api_config)
+        # 去掉括号内容后再生成语音
+        tts_text = strip_parentheses(text)
+        if not tts_text:
+            return
+        audio_bytes = text_to_speech(tts_text, voice_config, api_config)
 
         if audio_bytes:
             from util.tts import convert_audio_format

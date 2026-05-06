@@ -8,6 +8,7 @@ import io
 import logging
 import os
 import platform
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -496,6 +497,13 @@ def _play_audio_linux(file_path: str) -> bool:
     return False
 
 
+def strip_parentheses(text: str) -> str:
+    """去除文本中括号及其内容（半角和全角）"""
+    text = re.sub(r'\([^)]*\)', '', text)
+    text = re.sub(r'（[^）]*）', '', text)
+    return text.strip()
+
+
 def text_to_speech_and_play(
     text: str,
     voice_config: dict,
@@ -511,6 +519,9 @@ def text_to_speech_and_play(
     Returns:
         是否成功播放
     """
+    text = strip_parentheses(text)
+    if not text:
+        return False
     audio_bytes = text_to_speech(text, voice_config, api_config)
     if not audio_bytes:
         return False
