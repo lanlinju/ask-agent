@@ -3695,6 +3695,26 @@ def run_bot():
         print(f"❌ Telegram Bot 发生错误: {e}")
 
 
+_MARKDOWN_RE = re.compile(
+    r"(?:"
+    r"\*\*.*?\*\*"          # **bold**
+    r"|`[^`]+`"             # `code`
+    r"|```[\s\S]*?```"      # code block
+    r"|^#{1,6}\s"           # heading (at line start)
+    r"|^\s*[-*+]\s"         # unordered list
+    r"|^\s*\d+\.\s"         # ordered list
+    r"|^\s*>\s"             # blockquote
+    r"|\[.+?\]\(.+?\)"      # [link](url)
+    r")",
+    re.MULTILINE,
+)
+
+
+def _is_markdown(text: str) -> bool:
+    """检测文本是否包含 Markdown 语法"""
+    return bool(_MARKDOWN_RE.search(text))
+
+
 async def handle_qq_message(message):
     """处理QQ消息"""
     global _qq_current_openid
@@ -3743,12 +3763,17 @@ async def handle_qq_message(message):
     # 移除 <think>...</think> 标签及其内容
     response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
     
-    # 发送响应
+    # markdown 整体发送，纯文本按段落拆分
     try:
-        await _qq_bot.send_markdown(user_openid, response)
+        if _is_markdown(response):
+            await _qq_bot.send_markdown(user_openid, response)
+        else:
+            for para in response.split("\n\n"):
+                para = para.strip()
+                if para:
+                    await _qq_bot.send_text(user_openid, para)
     except Exception as e:
         logger.error(f"发送QQ消息失败: {e}")
-        # 回退到文本发送
         await _qq_bot.send_text(user_openid, response)
     
     print()

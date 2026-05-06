@@ -625,7 +625,7 @@ ag --agent
 
 ## QQ Bot 集成
 
-Ask Agent 支持通过 QQ 单聊远程控制智能体，参考 [Codex-QQBot](https://github.com/lanlinju/Codex-QQBot) 实现。
+Ask Agent 支持通过 QQ Bot远程控制智能体。
 
 ### 设置步骤
 
@@ -633,7 +633,7 @@ Ask Agent 支持通过 QQ 单聊远程控制智能体，参考 [Codex-QQBot](htt
 
 1. 前往 [QQ 开放平台](https://q.qq.com) 注册并创建机器人
 2. 获取 AppID 和 AppSecret
-3. 在机器人后台开启「单聊消息」事件权限
+
 
 **2. 配置环境变量**
 
