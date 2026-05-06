@@ -13,6 +13,7 @@
 - 🧩 **可扩展技能** - 通过 Skills 加载领域知识
 - 🔌 **MCP 支持** - 集成 Model Context Protocol，支持外部工具
 - 📱 **Telegram Bot 集成** - 支持通过 Telegram Bot 远程控制智能体
+- 🐧 **QQ Bot 集成** - 支持通过 QQ Bot 远程控制智能体
 - 🎭 **角色扮演模式** - 支持角色扮演对话，每个角色独立对话历史
 - 🎯 **多 Provider 支持** - 支持多个 AI Provider（OpenAI、DeepSeek 等）
 - 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
@@ -59,7 +60,7 @@ cd ask-agent
 pip install -r requirements.txt
 
 # 方式二：单独安装依赖
-pip install python-dotenv requests python-telegram-bot prompt-toolkit
+pip install python-dotenv requests python-telegram-bot prompt-toolkit websockets
 ```
 
 3. 启动程序
@@ -316,6 +317,7 @@ python ag
 | `/mcp` | 交互式选择并连接 MCP 服务器 |
 | `/mcp -l` | 列出所有可用的 MCP 服务器 |
 | `/bot` | 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN） |
+| `/qqbot` | 启动 QQ Bot（需设置 QQ_APP_ID 和 QQ_APP_SECRET） |
 | `/team` | 列出所有团队成员及状态（需 `--agent-team`） |
 | `/inbox` | 读取并清空团队收件箱（需 `--agent-team`） |
 | `/help` | 显示帮助信息 |
@@ -620,6 +622,76 @@ ag --agent
 - 建议使用智能体模式（`/agent`）以获得完整功能
 - 图片识别需要当前模型支持 `modalities.input` 包含 `"image"`
 - 语音识别需要当前模型支持 `modalities.input` 包含 `"audio"`
+
+## QQ Bot 集成
+
+Ask Agent 支持通过 QQ 单聊远程控制智能体，参考 [Codex-QQBot](https://github.com/lanlinju/Codex-QQBot) 实现。
+
+### 设置步骤
+
+**1. 创建 QQ 机器人**
+
+1. 前往 [QQ 开放平台](https://q.qq.com) 注册并创建机器人
+2. 获取 AppID 和 AppSecret
+3. 在机器人后台开启「单聊消息」事件权限
+
+**2. 配置环境变量**
+
+在项目根目录的 `.env` 文件中添加：
+
+```bash
+QQ_APP_ID=1903967151
+QQ_APP_SECRET=c9UbVSEm6IG4ez52
+```
+
+或设置系统环境变量：
+
+```bash
+# Linux/macOS
+export QQ_APP_ID="your_app_id"
+export QQ_APP_SECRET="your_app_secret"
+
+# Windows PowerShell
+$env:QQ_APP_ID="your_app_id"
+$env:QQ_APP_SECRET="your_app_secret"
+```
+
+**3. 启动 Bot**
+
+```bash
+# 方式一：在交互模式中启动
+ag
+/qqbot
+
+# 方式二：直接启动（如果已配置默认智能体）
+ag --agent
+/qqbot
+```
+
+启动成功后会显示：`QQ Bot已启动！按 Ctrl+C 停止`
+
+### 使用 Bot
+
+**基本操作：**
+- 向 Bot 发送文本消息，智能体会自动处理你的任务
+- 支持所有智能体模式的功能（代码编辑、文件操作等）
+- 处理结果会通过 QQ 返回（支持 Markdown 格式）
+
+**支持的命令：**
+
+| 命令 | 说明 |
+|------|------|
+| `/start` | 显示欢迎信息 |
+| `/help` | 显示帮助信息 |
+| `/save` | 保存当前会话 |
+| `/exit` | 保存会话并退出 Bot |
+| `/new` | 创建新会话 |
+| `/clear` | 清除对话历史 |
+
+**注意事项：**
+- Bot 运行期间会持续监听消息，按 `Ctrl+C` 可停止
+- 建议使用智能体模式（`/agent`）以获得完整功能
+- 模块详细文档见 [qqbot/README.md](qqbot/README.md)
 
 ## ACP (Agent Client Protocol) 集成
 
@@ -1136,6 +1208,8 @@ UEFI = Unified Extensible Firmware Interface（统一可扩展固件接口）
 - `DEEPSEEK_API_KEY` - DeepSeek API 密钥（如果在 providers.json 中使用 `env:DEEPSEEK_API_KEY`）
 - `OPENAI_API_KEY` - OpenAI API 密钥（如果在 providers.json 中使用 `env:OPENAI_API_KEY`）
 - `TELEGRAM_BOT_TOKEN` - Telegram Bot Token，用于远程控制（格式：`123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`）
+- `QQ_APP_ID` - QQ 机器人 AppID，用于 QQ Bot 远程控制
+- `QQ_APP_SECRET` - QQ 机器人 AppSecret，用于 QQ Bot 远程控制
 - `TTS_API_KEY` - TTS API 密钥（用于语音合成功能）
 - `TTS_API_URL` - TTS API 地址（如：`https://api.xiaomimimo.com/v1`）
 - `TTS_API_MODEL` - 默认 TTS 模型（如：`mimo-v2.5-tts-voiceclone`）
@@ -1162,6 +1236,10 @@ OPENAI_API_KEY=sk-openai-api-key-here
 
 # Telegram Bot Token（用于远程控制）
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
+
+# QQ Bot 配置（用于 QQ 远程控制）
+QQ_APP_ID=your-qq-app-id
+QQ_APP_SECRET=your-qq-app-secret
 
 # TTS API 配置（语音合成）
 TTS_API_KEY=your-tts-api-key-here
@@ -1891,3 +1969,4 @@ echo $OPENAI_API_KEY
 - [deepseek-guides-thinking-mode-tool-calls](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8)
 - [multimodal-understanding-image-understanding](https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/multimodal-understanding/image-understanding)
 - [speech-synthesis](https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/speech-synthesis-v2.5)
+- [Codex-QQBot](https://github.com/uniqueFranky/Codex-QQBot)

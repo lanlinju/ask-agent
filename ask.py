@@ -6,7 +6,7 @@ import re
 import requests
 from requests.exceptions import RequestException
 import json
-from typing import List, Dict
+from typing import List, Dict, Any
 import argparse
 import subprocess
 import logging
@@ -69,6 +69,8 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+QQ_APP_ID = os.getenv("QQ_APP_ID")
+QQ_APP_SECRET = os.getenv("QQ_APP_SECRET")
 WORKDIR = Path.cwd()
 
 # 系统问答工具助手提示词
@@ -277,6 +279,7 @@ BG_MANAGER = BackgroundManager(RUNTIME_DIR, workdir=WORKDIR)
 
 # Global agent team manager instance (lazy init)
 TEAM_MANAGER: Optional[TeammateManager] = None
+AGENT_TEAM_ENABLED = False
 
 
 def _cleanup_team_dir():
@@ -1051,6 +1054,9 @@ title_generated = False
 _telegram_update: Optional[Update] = None
 _telegram_context: Optional[ContextTypes.DEFAULT_TYPE] = None
 _telegram_pending_tasks: List = []
+# QQ Bot 上下文
+_qq_bot: Optional[Any] = None
+_qq_current_openid: Optional[str] = None
 
 
 class TodoManager:
@@ -1569,7 +1575,6 @@ if ONLY_BASH_TOOL == "enabled":
 
 # Agent Team tools (available in AGENT mode when --agent-team is set)
 TEAM_TOOLS = TeammateManager.lead_tools()
-AGENT_TEAM_ENABLED = False
 
 
 def run_bash(command: str, timeout: Optional[int] = None) -> str:
@@ -2917,6 +2922,18 @@ def command(command: str):
         run_bot()
         return
 
+    # 启动 QQ Bot
+    if command == "/qqbot":
+        if not QQ_APP_ID or not QQ_APP_SECRET:
+            print("❌ 错误: QQ_APP_ID 或 QQ_APP_SECRET 环境变量未设置")
+            print("💡 提示: 请设置以下环境变量:")
+            print("   export QQ_APP_ID='your_app_id'")
+            print("   export QQ_APP_SECRET='your_app_secret' \n")
+            return
+        print("🤖 启动 QQ Bot...")
+        run_qq_bot()
+        return
+
     # 显示帮助
     if command == "/help":
         show_help()
@@ -3077,6 +3094,7 @@ def show_help():
     /team         - 列出所有团队成员及状态
     /inbox        - 读取并清空团队收件箱
     /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
+    /qqbot        - 启动 QQ Bot（需设置 QQ_APP_ID 和 QQ_APP_SECRET 环境变量）
     /help         - 显示此帮助信息
     /exit         - 退出程序（自动保存会话）
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
@@ -3675,6 +3693,100 @@ def run_bot():
         print(f"❌ Telegram Bot 网络错误: {e}")
     except Exception as e:
         print(f"❌ Telegram Bot 发生错误: {e}")
+
+
+async def handle_qq_message(message):
+    """处理QQ消息"""
+    global _qq_current_openid
+    
+    user_openid = message.openid
+    message_text = message.content
+    
+    # 设置当前QQ上下文
+    _qq_current_openid = user_openid
+    
+    # 打印到控制台
+    print(f"收到QQ消息 | 用户: {user_openid} | 内容: {message_text}")
+    print(f"{BLUE}QQ Bot:{RESET}")
+    
+    # 处理命令
+    if message_text.startswith("/"):
+        cmd = message_text.split()[0]
+        if cmd == "/start":
+            await _qq_bot.send_text(user_openid, "欢迎！使用/exit命令退出QQ Bot，/save命令保存聊天会话")
+            return
+        elif cmd == "/exit" or cmd == "/save":
+            save_current_session()
+            save_config(current_mode)
+            await _qq_bot.send_text(user_openid, "会话已保存")
+            if cmd == "/exit":
+                import sys
+                sys.exit(0)
+            return
+        elif cmd == "/help":
+            help_text = show_help()
+            await _qq_bot.send_markdown(user_openid, help_text)
+            return
+        elif cmd == "/new":
+            save_current_session()
+            init_system_prompt(current_mode)
+            await _qq_bot.send_text(user_openid, "✅ 已创建新会话")
+            return
+        elif cmd == "/clear":
+            clear_history()
+            await _qq_bot.send_text(user_openid, "✅ 已清除对话历史")
+            return
+    
+    # 获取回复
+    response = agent(message_text)
+    
+    # 移除 <think>...</think> 标签及其内容
+    response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
+    
+    # 发送响应
+    try:
+        await _qq_bot.send_markdown(user_openid, response)
+    except Exception as e:
+        logger.error(f"发送QQ消息失败: {e}")
+        # 回退到文本发送
+        await _qq_bot.send_text(user_openid, response)
+    
+    print()
+
+
+def run_qq_bot():
+    """运行QQ Bot"""
+    import asyncio
+    from qqbot import start_qq_bot, stop_qq_bot
+    
+    async def main():
+        global _qq_bot
+        assert QQ_APP_ID is not None
+        assert QQ_APP_SECRET is not None
+        
+        try:
+            _qq_bot = await start_qq_bot(
+                app_id=QQ_APP_ID,
+                app_secret=QQ_APP_SECRET,
+                on_message=handle_qq_message
+            )
+            print("QQ Bot已启动！按 Ctrl+C 停止")
+            
+            # 保持运行
+            while True:
+                await asyncio.sleep(1)
+                
+        except KeyboardInterrupt:
+            print("\n正在停止QQ Bot...")
+            await stop_qq_bot()
+            print("QQ Bot已停止")
+        except Exception as e:
+            print(f"❌ QQ Bot 发生错误: {e}")
+            if _qq_bot:
+                await stop_qq_bot()
+    
+    # 运行异步主函数
+    asyncio.run(main())
 
 
 def _drain_team_inbox(messages: list) -> None:
