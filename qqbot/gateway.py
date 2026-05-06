@@ -57,17 +57,20 @@ class QQGateway:
 
     async def stop(self) -> None:
         """停止Gateway"""
+        logger.info("正在停止 Gateway...")
         if self.socket:
             await self.socket.close()
         self._cleanup_heartbeat()
         if self.reconnect_timer:
             self.reconnect_timer.cancel()
             self.reconnect_timer = None
+        print("✅ QQ Gateway 已停止")
 
     async def _connect(self) -> None:
         """连接到Gateway"""
         try:
             token = await self.auth.get_access_token()
+            logger.info("正在获取 Gateway URL...")
             response = requests.get(
                 f"{self.api_base}/gateway/bot",
                 headers={"Authorization": f"QQBot {token}"},
@@ -79,8 +82,9 @@ class QQGateway:
             if not response.ok or not data.get("url"):
                 raise Exception(f"QQ gateway请求失败: {response.status_code} {data}")
 
+            logger.info(f"正在连接 Gateway...")
             self.socket = await websockets.connect(data["url"])
-            logger.info("QQ gateway已连接")
+            print("✅ QQ Gateway 已连接")
 
             asyncio.create_task(self._message_handler())
 
@@ -121,15 +125,19 @@ class QQGateway:
         if op == OP_DISPATCH:
             await self._handle_dispatch(payload)
         elif op == OP_HELLO:
+            interval = payload.get("d", {}).get("heartbeat_interval", 45000)
+            logger.info(f"收到 HELLO, 心跳间隔: {interval}ms")
             self._start_heartbeat(payload.get("d", {}))
             await self._identify_or_resume()
         elif op == OP_RECONNECT:
+            logger.warning("收到 RECONNECT 指令，正在重连...")
             await self._reconnect_now()
         elif op == OP_INVALID_SESSION:
+            logger.warning("收到 INVALID_SESSION，正在重新认证...")
             self.session_id = None
             await self._reconnect_now()
         elif op == OP_HEARTBEAT_ACK:
-            pass
+            logger.debug("心跳确认")
 
     async def _handle_dispatch(self, payload: dict) -> None:
         """处理事件分发"""
@@ -139,13 +147,20 @@ class QQGateway:
             ready = payload.get("d", {})
             if ready.get("session_id"):
                 self.session_id = ready["session_id"]
+            print("✅ QQ Bot 认证成功，已就绪")
             return
 
         if event_type != "C2C_MESSAGE_CREATE":
+            logger.debug(f"忽略事件: {event_type}")
             return
 
+        logger.debug(f"收到事件: {event_type}")
         message = self._extract_private_message(payload.get("d", {}))
         if message and self.on_message_callback:
+            # 打印消息类型
+            if message.attachments:
+                types = [a.get("content_type", "unknown") for a in message.attachments]
+                logger.info(f"消息类型: {', '.join(types)}")
             await self.on_message_callback(message)
 
     def _extract_private_message(self, data: dict) -> Optional[QQMessage]:
@@ -216,6 +231,7 @@ class QQGateway:
             return
 
         if self.session_id and isinstance(self.seq, int):
+            logger.info(f"恢复会话: session_id={self.session_id}, seq={self.seq}")
             await self.socket.send(json.dumps({
                 "op": OP_RESUME,
                 "d": {
@@ -225,6 +241,7 @@ class QQGateway:
                 }
             }))
         else:
+            logger.info("发送 IDENTIFY 认证...")
             await self.socket.send(json.dumps({
                 "op": OP_IDENTIFY,
                 "d": {
@@ -237,6 +254,7 @@ class QQGateway:
 
     async def _reconnect_now(self) -> None:
         """立即重连"""
+        logger.info("正在断开并重连...")
         if self.socket:
             await self.socket.close()
         self._cleanup_heartbeat()

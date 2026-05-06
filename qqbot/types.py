@@ -12,7 +12,7 @@ class User:
     def __init__(self, openid: str, username: str = ""):
         self.id = openid
         self.openid = openid
-        self.username = username or openid
+        self.username = username
 
     def __repr__(self) -> str:
         return f"User(openid={self.openid!r})"
@@ -41,7 +41,7 @@ class Message:
             a for a in raw.attachments if a.get("content_type", "").startswith("image/")
         ]
         self.voice: Optional[dict] = next(
-            (a for a in raw.attachments if a.get("content_type", "").startswith("audio/")),
+            (a for a in raw.attachments if a.get("content_type", "").startswith("voice")),
             None,
         )
         self.attachments: list[dict] = raw.attachments

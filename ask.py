@@ -2638,7 +2638,7 @@ def _get_streaming_response(
                     continue
                 if data["choices"][0].get("finish_reason") is not None:
                     finish_reason = data["choices"][0]["finish_reason"]
-                    logger.info("\nfinish_reason: %s", finish_reason)
+                    logger.debug("\nfinish_reason: %s", finish_reason)
                     # 打印 token 使用情况
                     stat_token(data)
                     # 在角色模式下，如果因长度限制而停止，自动压缩上下文
@@ -3770,6 +3770,10 @@ async def _qq_bot_command(update, context):
     global _qq_current_openid
     _qq_current_openid = update.effective_chat.openid
 
+    user = update.effective_user
+    print(f"收到命令 | 用户: {user.id} | 内容: {update.message.text}")
+    print(f"{BLUE}QQ Bot:{RESET}")
+
     cmd = update.message.text.split()[0]
 
     if cmd == "/start":
@@ -3805,6 +3809,11 @@ async def _qq_handle_photo(update, context):
     """QQ 图片消息处理"""
     global _qq_current_openid
     _qq_current_openid = update.effective_chat.openid
+
+    user = update.effective_user
+    caption = update.message.text or ""
+    print(f"收到图片 | 用户: {user.id} | 说明: {caption}")
+    print(f"{BLUE}QQ Bot (图片理解):{RESET}")
 
     image_attachments = update.message.photo
     if not image_attachments:
@@ -3859,10 +3868,146 @@ async def _qq_handle_photo(update, context):
     print()
 
 
+def _convert_to_wav(audio_bytes: bytes) -> bytes | None:
+    """尝试将音频转换为 WAV 格式（silk → pcm → wav）
+
+    Returns:
+        WAV 字节数据，失败返回 None（表示使用原始音频）
+    """
+    # 检测 silk 头: Tencent silk 以 \x02 开头，标准 silk 以 #!SILK 开头
+    is_silk = (
+        audio_bytes[:1] == b'\x02' and audio_bytes[1:9] == b'#!SILK_V'
+    ) or (
+        audio_bytes[:8] == b'#!SILK_V'
+    )
+    if not is_silk:
+        return None
+
+    try:
+        import pysilk
+        import io
+        import subprocess
+
+        # silk → pcm
+        silk_io = io.BytesIO(audio_bytes)
+        pcm_io = io.BytesIO()
+        pysilk.decode(silk_io, pcm_io, sample_rate=24000)
+        pcm_bytes = pcm_io.getvalue()
+
+        # pcm → wav (via ffmpeg)
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1",
+             "-i", "pipe:0", "-f", "wav", "pipe:1"],
+            input=pcm_bytes,
+            capture_output=True,
+            timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return proc.stdout
+
+        logger.warning(f"ffmpeg pcm→wav 失败: {proc.stderr.decode(errors='replace')[:200]}")
+        return pcm_bytes  # 返回 pcm 作为兜底
+
+    except ImportError:
+        logger.warning("pysilk 未安装，无法解码 silk 语音。pip install silk-python")
+        return None
+    except Exception as e:
+        logger.error(f"silk 转换失败: {e}")
+        return None
+
+
+async def _qq_handle_voice(update, context):
+    """QQ 语音消息处理"""
+    global _qq_current_openid
+    _qq_current_openid = update.effective_chat.openid
+
+    user = update.effective_user
+    print(f"收到语音 | 用户: {user.id}")
+    print(f"{BLUE}QQ Bot (语音理解):{RESET}")
+
+    voice_att = update.message.voice
+    if not voice_att:
+        return
+
+    print(f"\033[34m→ QQ 语音识别\033[0m")
+
+    # 方案1: 优先使用 QQ 服务端 ASR 结果（无需下载音频）
+    asr_text = voice_att.get("asr_refer_text")
+    if asr_text:
+        print(f"  QQ ASR 结果: {asr_text}")
+        response = agent(asr_text)
+        await _send_qq_response(context, response)
+        print()
+        return
+
+    # 方案2: 下载音频，silk 解码后用模型识别
+    if not current_model_supports_audio_input():
+        model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
+        model_name = model_info.name if model_info else DEEPSEEK_MODEL
+        await context.send_text(f"❌ 当前模型 {model_name} 不支持音频理解，请切换到支持音频输入的模型")
+        return
+
+    url = voice_att.get("voice_wav_url") or voice_att.get("url")
+    if not url:
+        await context.send_text("❌ 语音下载失败：无URL")
+        return
+
+    print(f"  下载语音: {url[:60]}...")
+
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        audio_bytes = resp.content
+    except Exception as e:
+        logger.error(f"下载QQ语音失败: {e}")
+        await context.send_text(f"❌ 语音下载失败: {e}")
+        return
+
+    # silk 格式检测和转换
+    wav_bytes = _convert_to_wav(audio_bytes)
+    if wav_bytes:
+        audio_bytes = wav_bytes
+        mime_type = "audio/wav"
+        print(f"  silk → WAV 转换成功, 大小: {len(audio_bytes)} bytes")
+    else:
+        mime_type = "audio/ogg"
+        print(f"  直接使用原始音频, 大小: {len(audio_bytes)} bytes")
+
+    audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+    temp_messages = [
+        {"role": "system", "content": "你是一个语音识别助手。请将用户发送的语音内容转换为文字，只输出识别到的文字内容，不要添加任何解释。"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_audio", "input_audio": {"data": f"data:{mime_type};base64,{audio_base64}"}},
+                {"type": "text", "text": "直接给出语音的内容"}
+            ]
+        }
+    ]
+    content, reasoning, _ = get_streaming_response(temp_messages, [], silent=True, useTools=False)
+    recognized_text = content if content else reasoning
+
+    print(f"  识别结果: {recognized_text}")
+
+    if not recognized_text:
+        await context.send_text("❌ 语音识别失败")
+        return
+
+    response = agent(recognized_text)
+
+    await _send_qq_response(context, response)
+    print()
+
+
 async def _qq_handle_text(update, context):
     """QQ 文本消息处理"""
     global _qq_current_openid
     _qq_current_openid = update.effective_chat.openid
+
+    user = update.effective_user
+    print(f"收到消息 | 用户: {user.id} | 内容: {update.message.text}")
+    print(f"{BLUE}QQ Bot:{RESET}")
 
     response = agent(update.message.text)
 
@@ -3881,6 +4026,7 @@ def run_qq_bot():
 
     app.add_handler(MessageHandler(filters.command, _qq_bot_command))
     app.add_handler(MessageHandler(filters.photo, _qq_handle_photo))
+    app.add_handler(MessageHandler(filters.voice, _qq_handle_voice))
     app.add_handler(MessageHandler(filters.text, _qq_handle_text))
 
     global _qq_bot
