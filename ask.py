@@ -3727,85 +3727,24 @@ def _is_markdown(text: str) -> bool:
     return bool(_MARKDOWN_RE.search(text))
 
 
-async def handle_qq_command(user_openid: str, message_text: str) -> bool:
-    """处理QQ命令，返回True表示已处理"""
+
+async def _send_qq_response(context, response: str):
+    """发送响应到 QQ（markdown 或文本 + 语音）"""
     global _qq_bot
 
-    cmd = message_text.split()[0]
-
-    if cmd == "/start":
-        await _qq_bot.send_text(user_openid, "欢迎！使用/exit命令退出QQ Bot，/save命令保存聊天会话")
-        return True
-
-    if cmd == "/exit" or cmd == "/save":
-        save_current_session()
-        save_config(current_mode)
-        await _qq_bot.send_text(user_openid, "会话已保存")
-        if cmd == "/exit":
-            sys.exit(0)
-        return True
-
-    if cmd == "/help":
-        await _qq_bot.send_markdown(user_openid, show_help())
-        return True
-
-    if cmd == "/new":
-        save_current_session()
-        init_system_prompt(current_mode)
-        await _qq_bot.send_text(user_openid, "✅ 已创建新会话")
-        return True
-
-    if cmd == "/clear":
-        clear_history()
-        await _qq_bot.send_text(user_openid, "✅ 已清除对话历史")
-        return True
-
-    # 其他命令交给 command() 统一处理
-    try:
-        command(message_text)
-        await _qq_bot.send_text(user_openid, f"执行命令: {message_text}")
-    except Exception as e:
-        await _qq_bot.send_text(user_openid, f"命令执行失败: {e}")
-    return True
-
-
-async def handle_qq_message(message):
-    """处理QQ消息"""
-    global _qq_current_openid
-
-    user_openid = message.openid
-    message_text = message.content
-
-    # 设置当前QQ上下文
-    _qq_current_openid = user_openid
-
-    # 打印到控制台
-    print(f"收到QQ消息 | 用户: {user_openid} | 内容: {message_text}")
-    print(f"{BLUE}QQ Bot:{RESET}")
-
-    # 处理命令
-    if message_text.startswith("/"):
-        await handle_qq_command(user_openid, message_text)
-        return
-
-    # 获取回复
-    response = agent(message_text)
-    
-    # 移除 <think>...</think> 标签及其内容
     response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
-    
-    # markdown 整体发送，纯文本按段落拆分
+
     try:
         if _is_markdown(response):
-            await _qq_bot.send_markdown(user_openid, response)
+            await context.send_markdown(response)
         else:
             for para in response.split("\n\n"):
                 para = para.strip()
                 if para:
-                    await _qq_bot.send_text(user_openid, para)
+                    await context.send_text(para)
     except Exception as e:
         logger.error(f"发送QQ消息失败: {e}")
-        await _qq_bot.send_text(user_openid, response)
+        await context.send_text(response)
 
     # 语音回复
     voice_config = get_current_voice_config()
@@ -3820,51 +3759,134 @@ async def handle_qq_message(message):
                 if tts_text:
                     audio_bytes = text_to_speech(tts_text, voice_config, api_config)
                     if audio_bytes:
-                        await _qq_bot.send_voice(user_openid, audio_bytes)
+                        await context.send_voice(audio_bytes)
                         print(f"\033[32m✓ 语音已发送\033[0m")
         except Exception as e:
             logger.error(f"QQ语音发送失败: {e}")
-    
+
+
+async def _qq_bot_command(update, context):
+    """QQ 命令分发（所有 / 开头的消息）"""
+    global _qq_current_openid
+    _qq_current_openid = update.effective_chat.openid
+
+    cmd = update.message.text.split()[0]
+
+    if cmd == "/start":
+        await context.send_text("欢迎！使用/exit命令退出QQ Bot，/save命令保存聊天会话")
+    elif cmd == "/exit":
+        save_current_session()
+        save_config(current_mode)
+        await context.send_text("会话已保存")
+        sys.exit(0)
+    elif cmd == "/save":
+        save_current_session()
+        save_config(current_mode)
+        await context.send_text("会话已保存")
+    elif cmd == "/help":
+        await context.send_markdown(show_help())
+    elif cmd == "/new":
+        save_current_session()
+        init_system_prompt(current_mode)
+        await context.send_text("✅ 已创建新会话")
+    elif cmd == "/clear":
+        clear_history()
+        await context.send_text("✅ 已清除对话历史")
+    else:
+        # 其他命令交给 command() 统一处理（/ask, /agent, /role 等）
+        try:
+            command(update.message.text)
+            await context.send_text(f"执行命令: {update.message.text}")
+        except Exception as e:
+            await context.send_text(f"命令执行失败: {e}")
+
+
+async def _qq_handle_photo(update, context):
+    """QQ 图片消息处理"""
+    global _qq_current_openid
+    _qq_current_openid = update.effective_chat.openid
+
+    image_attachments = update.message.photo
+    if not image_attachments:
+        return
+
+    if not current_model_supports_image_input():
+        model_info = PROVIDER_CONFIG.get_model_info(DEEPSEEK_MODEL)
+        model_name = model_info.name if model_info else DEEPSEEK_MODEL
+        await context.send_text(f"❌ 当前模型 {model_name} 不支持图片理解，请切换到支持图片输入的模型")
+        return
+
+    print(f"\033[34m→ QQ 图片识别 ({len(image_attachments)} 张)\033[0m")
+
+    multimodal_content = []
+    for att in image_attachments:
+        url = att.get("url")
+        if not url:
+            continue
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            b64 = base64.b64encode(resp.content).decode("utf-8")
+            ct = att.get("content_type", "image/jpeg")
+            multimodal_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{ct};base64,{b64}"}
+            })
+        except Exception as e:
+            logger.error(f"下载QQ图片失败: {e}")
+            await context.send_text(f"❌ 图片下载失败: {e}")
+            return
+
+    caption = update.message.text or "请描述这张图片的内容"
+    multimodal_content.append({"type": "text", "text": caption})
+
+    temp_messages = [
+        {"role": "system", "content": "你是一个图片识别助手。请详细描述图片的内容，然后回答用户的问题。"},
+        {"role": "user", "content": multimodal_content}
+    ]
+    content, _, _ = get_streaming_response(temp_messages, [], silent=True, useTools=False)
+
+    if not content:
+        await context.send_text("❌ 图片理解失败")
+        return
+
+    print(f"  图片描述: {content}")
+
+    messages.append({"role": "user", "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"})
+    response = agent(caption)
+
+    await _send_qq_response(context, response)
+    print()
+
+
+async def _qq_handle_text(update, context):
+    """QQ 文本消息处理"""
+    global _qq_current_openid
+    _qq_current_openid = update.effective_chat.openid
+
+    response = agent(update.message.text)
+
+    await _send_qq_response(context, response)
     print()
 
 
 def run_qq_bot():
     """运行QQ Bot"""
-    import asyncio
-    from qqbot import start_qq_bot, stop_qq_bot
-    
-    async def main():
-        global _qq_bot
-        assert QQ_APP_ID is not None
-        assert QQ_APP_SECRET is not None
-        
-        try:
-            _qq_bot = await start_qq_bot(
-                app_id=QQ_APP_ID,
-                app_secret=QQ_APP_SECRET,
-                on_message=handle_qq_message
-            )
-            print("QQ Bot已启动！按 Ctrl+C 停止")
-            
-            # 保持运行
-            while True:
-                await asyncio.sleep(1)
-                
-        except KeyboardInterrupt:
-            print("\n正在停止QQ Bot...")
-            await stop_qq_bot()
-            print("QQ Bot已停止")
-        except Exception as e:
-            print(f"❌ QQ Bot 发生错误: {e}")
-            if _qq_bot:
-                await stop_qq_bot()
-    
-    # 运行异步主函数
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass  # 已在 main() 中处理，这里仅阻止进程退出
+    from qqbot import Application, MessageHandler, filters
 
+    assert QQ_APP_ID is not None
+    assert QQ_APP_SECRET is not None
+
+    app = Application.builder().token(QQ_APP_ID, QQ_APP_SECRET).build()
+
+    app.add_handler(MessageHandler(filters.command, _qq_bot_command))
+    app.add_handler(MessageHandler(filters.photo, _qq_handle_photo))
+    app.add_handler(MessageHandler(filters.text, _qq_handle_text))
+
+    global _qq_bot
+    _qq_bot = app.bot
+
+    app.run_polling()
 
 def _drain_team_inbox(messages: list) -> None:
     """Drain the lead's team inbox and inject messages into conversation."""
