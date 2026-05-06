@@ -85,6 +85,45 @@ class QQMessages:
 
         return data["file_info"]
 
+    async def send_voice(self, openid: str, voice: bytes, msg_id: Optional[str] = None,
+                         event_id: Optional[str] = None) -> bool:
+        """发送语音消息
+
+        Args:
+            openid: 用户 openid
+            voice: 音频字节数据（支持 silk/ogg/mp3 等格式）
+        """
+        try:
+            token = await self.auth.get_access_token()
+            upload_url = f"{self.api_base}/v2/users/{openid}/files"
+
+            file_data = base64.b64encode(voice).decode("utf-8")
+
+            response = requests.post(
+                upload_url,
+                json={
+                    "file_type": 3,
+                    "srv_send_msg": False,
+                    "file_data": file_data
+                },
+                headers={
+                    "Authorization": f"QQBot {token}",
+                    "Content-Type": "application/json"
+                },
+                timeout=30
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            if not response.ok or not data.get("file_info"):
+                raise Exception(f"QQ上传语音失败: {response.status_code} {data}")
+
+            await self._send_media(openid, data["file_info"], msg_id, event_id)
+            return True
+        except Exception as e:
+            logger.error(f"发送语音失败: {e}")
+            return False
+
     async def _send_media(self, openid: str, file_info: str, msg_id: Optional[str] = None,
                          event_id: Optional[str] = None) -> None:
         """发送媒体消息"""

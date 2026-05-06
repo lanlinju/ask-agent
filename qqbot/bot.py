@@ -43,6 +43,10 @@ class QQBot:
         """发送图片消息"""
         return await self.messages.send_image(openid, file_path, msg_id)
 
+    async def send_voice(self, openid: str, voice: bytes, msg_id: Optional[str] = None) -> bool:
+        """发送语音消息"""
+        return await self.messages.send_voice(openid, voice, msg_id)
+
 
 _qq_bot_instance: Optional[QQBot] = None
 

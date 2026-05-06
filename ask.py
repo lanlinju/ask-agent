@@ -3775,6 +3775,24 @@ async def handle_qq_message(message):
     except Exception as e:
         logger.error(f"发送QQ消息失败: {e}")
         await _qq_bot.send_text(user_openid, response)
+
+    # 语音回复
+    voice_config = get_current_voice_config()
+    if voice_config:
+        try:
+            from util.tts import text_to_speech, get_tts_api_config, strip_parentheses
+            model = voice_config.get("model")
+            api_config = get_tts_api_config(PROVIDER_CONFIG, model)
+            if api_config:
+                print(f"\033[34m🎤 生成语音...\033[0m")
+                tts_text = strip_parentheses(response)
+                if tts_text:
+                    audio_bytes = text_to_speech(tts_text, voice_config, api_config)
+                    if audio_bytes:
+                        await _qq_bot.send_voice(user_openid, audio_bytes)
+                        print(f"\033[32m✓ 语音已发送\033[0m")
+        except Exception as e:
+            logger.error(f"QQ语音发送失败: {e}")
     
     print()
 
