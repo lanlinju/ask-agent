@@ -1774,7 +1774,7 @@ def run_todo(items: list) -> str:
 
 
 def run_send_image(path: str, caption: str = "") -> str:
-    """Send an image file to the user via Telegram.
+    """Send an image file to the user.
 
     Args:
         path: Path to the image file (relative or absolute)
@@ -1783,7 +1783,7 @@ def run_send_image(path: str, caption: str = "") -> str:
     Returns:
         Success or error message
     """
-    global _telegram_update, _telegram_pending_tasks
+    global _telegram_update, _telegram_pending_tasks, _qq_bot, _qq_current_openid
 
     try:
         # Resolve the path
@@ -1803,7 +1803,21 @@ def run_send_image(path: str, caption: str = "") -> str:
         if image_path.suffix.lower() not in image_extensions:
             return f"Error: File is not a supported image format: {image_path.suffix}"
 
-        # If in Telegram Bot mode, send via Telegram
+        # QQ Bot mode
+        if _qq_bot and _qq_current_openid:
+            import asyncio
+
+            async def send_qq_image():
+                await _qq_bot.send_image(_qq_current_openid, str(image_path))
+
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(send_qq_image())
+            else:
+                loop.run_until_complete(send_qq_image())
+            return f"Image sent: {path}"
+
+        # Telegram Bot mode
         if _telegram_update and _telegram_update.message:
             import asyncio
 
@@ -1814,19 +1828,17 @@ def run_send_image(path: str, caption: str = "") -> str:
                         caption=caption if caption else None
                     )
 
-            # Schedule the async task
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # If loop is already running (in bot mode), create a task
                 task = asyncio.ensure_future(send_photo())
                 _telegram_pending_tasks.append(task)
             else:
                 loop.run_until_complete(send_photo())
 
             return f"Image sent: {path}"
-        else:
-            # In CLI mode, just return the path info
-            return f"Image path: {image_path} (not in Telegram mode, cannot send)"
+
+        # CLI mode
+        return f"Image path: {image_path} (not in Bot mode, cannot send)"
 
     except Exception as e:
         return f"Error sending image: {e}"
