@@ -3771,7 +3771,9 @@ async def _qq_bot_command(update, context):
     _qq_current_openid = update.effective_chat.openid
 
     user = update.effective_user
-    print(f"收到命令 | 用户: {user.id} | 内容: {update.message.text}")
+    chat = update.effective_chat
+    prefix = f"[群:{chat.openid}] " if chat.type == "group" else ""
+    print(f"收到命令 | {prefix}用户: {user.id} | 内容: {update.message.text}")
     print(f"{BLUE}QQ Bot:{RESET}")
 
     cmd = update.message.text.split()[0]
@@ -3811,8 +3813,10 @@ async def _qq_handle_photo(update, context):
     _qq_current_openid = update.effective_chat.openid
 
     user = update.effective_user
+    chat = update.effective_chat
     caption = update.message.text or ""
-    print(f"收到图片 | 用户: {user.id} | 说明: {caption}")
+    prefix = f"[群:{chat.openid}] " if chat.type == "group" else ""
+    print(f"收到图片 | {prefix}用户: {user.id} | 说明: {caption}")
     print(f"{BLUE}QQ Bot (图片理解):{RESET}")
 
     image_attachments = update.message.photo
@@ -3922,7 +3926,9 @@ async def _qq_handle_voice(update, context):
     _qq_current_openid = update.effective_chat.openid
 
     user = update.effective_user
-    print(f"收到语音 | 用户: {user.id}")
+    chat = update.effective_chat
+    prefix = f"[群:{chat.openid}] " if chat.type == "group" else ""
+    print(f"收到语音 | {prefix}用户: {user.id}")
     print(f"{BLUE}QQ Bot (语音理解):{RESET}")
 
     voice_att = update.message.voice
@@ -4006,7 +4012,9 @@ async def _qq_handle_text(update, context):
     _qq_current_openid = update.effective_chat.openid
 
     user = update.effective_user
-    print(f"收到消息 | 用户: {user.id} | 内容: {update.message.text}")
+    chat = update.effective_chat
+    prefix = f"[群:{chat.openid}] " if chat.type == "group" else ""
+    print(f"收到消息 | {prefix}用户: {user.id} | 内容: {update.message.text}")
     print(f"{BLUE}QQ Bot:{RESET}")
 
     response = agent(update.message.text)

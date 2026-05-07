@@ -67,7 +67,10 @@ class Update:
         self.update_id: Optional[str] = raw_message.id
         self.message: Message = Message(raw_message)
         self.effective_user: User = User(raw_message.openid)
-        self.effective_chat: Chat = Chat(raw_message.openid)
+
+        # 群聊用 group_openid，私聊用 openid
+        chat_id = raw_message.group_openid or raw_message.openid
+        self.effective_chat: Chat = Chat(chat_id, raw_message.chat_type)
 
     def __repr__(self) -> str:
         return f"Update(update_id={self.update_id!r})"
@@ -83,17 +86,21 @@ class Context:
         self.chat_data: dict[str, Any] = {}
 
     async def send_text(self, text: str) -> None:
-        """发送文本消息到当前用户"""
-        await self.bot.send_text(self.update.effective_chat.openid, text)
+        """发送文本消息到当前聊天"""
+        chat = self.update.effective_chat
+        await self.bot.send_text(chat.openid, text, chat.type)
 
     async def send_markdown(self, markdown: str) -> None:
-        """发送 Markdown 消息到当前用户"""
-        await self.bot.send_markdown(self.update.effective_chat.openid, markdown)
+        """发送 Markdown 消息到当前聊天"""
+        chat = self.update.effective_chat
+        await self.bot.send_markdown(chat.openid, markdown, chat.type)
 
     async def send_image(self, file_path: str) -> None:
-        """发送图片到当前用户"""
-        await self.bot.send_image(self.update.effective_chat.openid, file_path)
+        """发送图片到当前聊天"""
+        chat = self.update.effective_chat
+        await self.bot.send_image(chat.openid, file_path, chat.type)
 
     async def send_voice(self, voice: bytes) -> None:
-        """发送语音到当前用户"""
-        await self.bot.send_voice(self.update.effective_chat.openid, voice)
+        """发送语音到当前聊天"""
+        chat = self.update.effective_chat
+        await self.bot.send_voice(chat.openid, voice, chat.type)

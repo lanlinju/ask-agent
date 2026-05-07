@@ -33,6 +33,8 @@ class QQMessage:
     id: Optional[str] = None
     event_id: Optional[str] = None
     openid: str = ""
+    group_openid: str = ""
+    chat_type: str = "private"  # "private" or "group"
     content: str = ""
     attachments: list = field(default_factory=list)
     raw: Any = None
@@ -154,14 +156,16 @@ class QQGateway:
             print("✅ QQ Bot 认证成功，已就绪")
             return
 
-        if event_type != "C2C_MESSAGE_CREATE":
+        if event_type == "C2C_MESSAGE_CREATE":
+            message = self._extract_private_message(payload.get("d", {}))
+        elif event_type == "GROUP_AT_MESSAGE_CREATE":
+            message = self._extract_group_message(payload.get("d", {}))
+        else:
             logger.debug(f"忽略事件: {event_type}")
             return
 
-        logger.debug(f"收到事件: {event_type}")
-        message = self._extract_private_message(payload.get("d", {}))
         if message and self.on_message_callback:
-            # 打印消息类型
+            logger.debug(f"收到事件: {event_type}")
             if message.attachments:
                 types = [a.get("content_type", "unknown") for a in message.attachments]
                 logger.info(f"消息类型: {', '.join(types)}")
@@ -187,6 +191,35 @@ class QQGateway:
             id=data.get("id") or data.get("msg_id"),
             event_id=data.get("event_id"),
             openid=openid,
+            chat_type="private",
+            content=content,
+            attachments=attachments,
+            raw=data
+        )
+
+    def _extract_group_message(self, data: dict) -> Optional[QQMessage]:
+        """提取群聊消息"""
+        author = data.get("author", {})
+        openid = (
+            author.get("member_openid") or
+            author.get("user_openid") or
+            author.get("openid")
+        )
+        group_openid = data.get("group_openid", "")
+
+        if not openid:
+            return None
+
+        # 去掉 @机器人 的标记
+        content = re.sub(r"<@!?\d+>", "", data.get("content", "")).strip()
+        attachments = self._extract_attachments(data)
+
+        return QQMessage(
+            id=data.get("id") or data.get("msg_id"),
+            event_id=data.get("event_id"),
+            openid=openid,
+            group_openid=group_openid,
+            chat_type="group",
             content=content,
             attachments=attachments,
             raw=data

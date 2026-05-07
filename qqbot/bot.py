@@ -31,21 +31,25 @@ class QQBot:
         if self.on_message_callback:
             await self.on_message_callback(message)
 
-    async def send_text(self, openid: str, text: str, msg_id: Optional[str] = None) -> bool:
+    async def send_text(self, openid: str, text: str, chat_type: str = "private",
+                        msg_id: Optional[str] = None) -> bool:
         """发送文本消息"""
-        return await self.messages.send_text(openid, text, msg_id)
+        return await self.messages.send_text(openid, text, chat_type, msg_id)
 
-    async def send_markdown(self, openid: str, markdown: str, msg_id: Optional[str] = None) -> bool:
+    async def send_markdown(self, openid: str, markdown: str, chat_type: str = "private",
+                           msg_id: Optional[str] = None) -> bool:
         """发送Markdown消息"""
-        return await self.messages.send_markdown(openid, markdown, msg_id)
+        return await self.messages.send_markdown(openid, markdown, chat_type, msg_id)
 
-    async def send_image(self, openid: str, file_path: str, msg_id: Optional[str] = None) -> bool:
+    async def send_image(self, openid: str, file_path: str, chat_type: str = "private",
+                        msg_id: Optional[str] = None) -> bool:
         """发送图片消息"""
-        return await self.messages.send_image(openid, file_path, msg_id)
+        return await self.messages.send_image(openid, file_path, chat_type, msg_id)
 
-    async def send_voice(self, openid: str, voice: bytes, msg_id: Optional[str] = None) -> bool:
+    async def send_voice(self, openid: str, voice: bytes, chat_type: str = "private",
+                         msg_id: Optional[str] = None) -> bool:
         """发送语音消息"""
-        return await self.messages.send_voice(openid, voice, msg_id)
+        return await self.messages.send_voice(openid, voice, chat_type, msg_id)
 
 
 _qq_bot_instance: Optional[QQBot] = None

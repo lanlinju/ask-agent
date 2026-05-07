@@ -22,35 +22,41 @@ class QQMessages:
         self.enable_markdown = enable_markdown
         self.seq = 1
 
-    async def send_text(self, openid: str, text: str, msg_id: Optional[str] = None,
-                        event_id: Optional[str] = None) -> bool:
+    def _msg_url(self, openid: str, chat_type: str = "private") -> str:
+        """根据聊天类型返回消息发送 URL"""
+        if chat_type == "group":
+            return f"{self.api_base}/v2/groups/{openid}/messages"
+        return f"{self.api_base}/v2/users/{openid}/messages"
+
+    async def send_text(self, openid: str, text: str, chat_type: str = "private",
+                        msg_id: Optional[str] = None, event_id: Optional[str] = None) -> bool:
         """发送文本消息"""
         chunks = self._split_text(text)
         for chunk in chunks:
-            await self._send_text_chunk(openid, chunk, msg_id, event_id)
+            await self._send_text_chunk(openid, chunk, chat_type, msg_id, event_id)
         return True
 
-    async def send_markdown(self, openid: str, markdown: str, msg_id: Optional[str] = None,
-                           event_id: Optional[str] = None) -> bool:
+    async def send_markdown(self, openid: str, markdown: str, chat_type: str = "private",
+                           msg_id: Optional[str] = None, event_id: Optional[str] = None) -> bool:
         """发送Markdown消息"""
         if not self.enable_markdown:
-            return await self.send_text(openid, markdown, msg_id, event_id)
+            return await self.send_text(openid, markdown, chat_type, msg_id, event_id)
 
         chunks = self._split_text(markdown)
         for chunk in chunks:
             try:
-                await self._send_markdown_chunk(openid, chunk, msg_id, event_id)
+                await self._send_markdown_chunk(openid, chunk, chat_type, msg_id, event_id)
             except Exception as e:
                 logger.warning(f"QQ markdown发送失败，回退到文本: {e}")
-                await self._send_text_chunk(openid, chunk, msg_id, event_id)
+                await self._send_text_chunk(openid, chunk, chat_type, msg_id, event_id)
         return True
 
-    async def send_image(self, openid: str, file_path: str, msg_id: Optional[str] = None,
-                        event_id: Optional[str] = None) -> bool:
+    async def send_image(self, openid: str, file_path: str, chat_type: str = "private",
+                        msg_id: Optional[str] = None, event_id: Optional[str] = None) -> bool:
         """发送图片消息"""
         try:
             file_info = await self._upload_image(openid, file_path)
-            await self._send_media(openid, file_info, msg_id, event_id)
+            await self._send_media(openid, file_info, chat_type, msg_id, event_id)
             return True
         except Exception as e:
             logger.error(f"发送图片失败: {e}")
@@ -85,13 +91,14 @@ class QQMessages:
 
         return data["file_info"]
 
-    async def send_voice(self, openid: str, voice: bytes, msg_id: Optional[str] = None,
-                         event_id: Optional[str] = None) -> bool:
+    async def send_voice(self, openid: str, voice: bytes, chat_type: str = "private",
+                         msg_id: Optional[str] = None, event_id: Optional[str] = None) -> bool:
         """发送语音消息
 
         Args:
             openid: 用户 openid
             voice: 音频字节数据（支持 silk/ogg/mp3 等格式）
+            chat_type: "private" 或 "group"
         """
         try:
             token = await self.auth.get_access_token()
@@ -118,17 +125,17 @@ class QQMessages:
             if not response.ok or not data.get("file_info"):
                 raise Exception(f"QQ上传语音失败: {response.status_code} {data}")
 
-            await self._send_media(openid, data["file_info"], msg_id, event_id)
+            await self._send_media(openid, data["file_info"], chat_type, msg_id, event_id)
             return True
         except Exception as e:
             logger.error(f"发送语音失败: {e}")
             return False
 
-    async def _send_media(self, openid: str, file_info: str, msg_id: Optional[str] = None,
-                         event_id: Optional[str] = None) -> None:
+    async def _send_media(self, openid: str, file_info: str, chat_type: str = "private",
+                         msg_id: Optional[str] = None, event_id: Optional[str] = None) -> None:
         """发送媒体消息"""
         token = await self.auth.get_access_token()
-        url = f"{self.api_base}/v2/users/{openid}/messages"
+        url = self._msg_url(openid, chat_type)
 
         body = {
             "msg_type": 7,
@@ -156,11 +163,11 @@ class QQMessages:
         if not response.ok:
             raise Exception(f"QQ发送媒体失败: {response.status_code} {response.text}")
 
-    async def _send_text_chunk(self, openid: str, content: str, msg_id: Optional[str] = None,
-                              event_id: Optional[str] = None) -> None:
+    async def _send_text_chunk(self, openid: str, content: str, chat_type: str = "private",
+                              msg_id: Optional[str] = None, event_id: Optional[str] = None) -> None:
         """发送文本消息块"""
         token = await self.auth.get_access_token()
-        url = f"{self.api_base}/v2/users/{openid}/messages"
+        url = self._msg_url(openid, chat_type)
 
         body = {
             "msg_type": 0,
@@ -188,11 +195,11 @@ class QQMessages:
         if not response.ok:
             raise Exception(f"QQ发送消息失败: {response.status_code} {response.text}")
 
-    async def _send_markdown_chunk(self, openid: str, content: str, msg_id: Optional[str] = None,
-                                  event_id: Optional[str] = None) -> None:
+    async def _send_markdown_chunk(self, openid: str, content: str, chat_type: str = "private",
+                                  msg_id: Optional[str] = None, event_id: Optional[str] = None) -> None:
         """发送Markdown消息块"""
         token = await self.auth.get_access_token()
-        url = f"{self.api_base}/v2/users/{openid}/messages"
+        url = self._msg_url(openid, chat_type)
 
         body = {
             "msg_type": 2,
