@@ -3452,11 +3452,11 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # 构建助手消息并添加到历史
     if is_group:
-        # 群组消息：添加到群组历史
+        # 群组消息：添加到群组历史（包含用户信息）
+        user_name = user.username or user.first_name or str(user_id)
         group_manager.add_message(group_id, {
             "role": "user",
-            "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>",
-            "user_id": user_id
+            "content": f"{user_name}: [图片]\n以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"
         })
 
         # 获取群组消息历史
@@ -3464,15 +3464,16 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # 初始化群组消息历史（如果为空）
         if not group_messages:
-            # 优先使用群组专属提示词，没有则使用当前模式的系统提示词
+            # 使用当前模式的系统提示词
+            role_id = get_current_role_id()
+            agent_id = get_current_agent_id()
+            builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
+            system_prompt = builder.build()
+
+            # 如果有群组专属提示词，追加到系统提示词后面
             group_prompt = group_manager.get_group_system_prompt(group_id)
             if group_prompt:
-                system_prompt = group_prompt
-            else:
-                role_id = get_current_role_id()
-                agent_id = get_current_agent_id()
-                builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
-                system_prompt = builder.build()
+                system_prompt = f"{system_prompt}\n\n{group_prompt}"
 
             group_messages.append({"role": "system", "content": system_prompt})
 
@@ -3605,23 +3606,26 @@ async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not group_manager.config.is_user_allowed(user_id, group_id):
             return
 
-        # 添加到群组历史
-        group_manager.add_message(group_id, {"role": "user", "content": recognized_text, "user_id": user_id})
+        # 添加到群组历史（包含用户信息）
+        user_name = user.username or user.first_name or str(user_id)
+        user_message = f"{user_name}: [语音]\n{recognized_text}"
+        group_manager.add_message(group_id, {"role": "user", "content": user_message})
 
         # 获取群组消息历史
         group_messages = group_manager.get_group_messages(group_id)
 
         # 初始化群组消息历史（如果为空）
         if not group_messages:
-            # 优先使用群组专属提示词，没有则使用当前模式的系统提示词
+            # 使用当前模式的系统提示词
+            role_id = get_current_role_id()
+            agent_id = get_current_agent_id()
+            builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
+            system_prompt = builder.build()
+
+            # 如果有群组专属提示词，追加到系统提示词后面
             group_prompt = group_manager.get_group_system_prompt(group_id)
             if group_prompt:
-                system_prompt = group_prompt
-            else:
-                role_id = get_current_role_id()
-                agent_id = get_current_agent_id()
-                builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
-                system_prompt = builder.build()
+                system_prompt = f"{system_prompt}\n\n{group_prompt}"
 
             group_messages.append({"role": "system", "content": system_prompt})
 
@@ -3661,6 +3665,10 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         group_manager = get_telegram_group_manager()
         group_id = str(chat.id)
         user_id = str(user.id)
+        
+         # Info 日志
+        user_display = user.username or user.first_name or str(user.id)
+        logger.info(f"[群:{group_manager.config.get_group_config(group_id).name or group_id}] {user_display}: {message_text}")
 
         # 检查是否被 @提及
         bot_info = await context.bot.get_me()
@@ -3671,7 +3679,7 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not group_manager.should_respond(user_id, group_id, mentioned, other_mentions):
             # 即使不响应，也保存消息到历史记录（用于上下文记忆）
             if group_manager.should_save_to_history(user_id, group_id):
-                group_manager.add_message(group_id, {"role": "user", "content": message_text, "user_id": user_id})
+                group_manager.add_message(group_id, {"role": "user", "content": message_text})
             return
 
         # 打印到控制台
@@ -3684,20 +3692,23 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # 初始化群组消息历史（如果为空）
         if not group_messages:
-            # 优先使用群组专属提示词，没有则使用当前模式的系统提示词
+            # 使用当前模式的系统提示词
+            role_id = get_current_role_id()
+            agent_id = get_current_agent_id()
+            builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
+            system_prompt = builder.build()
+
+            # 如果有群组专属提示词，追加到系统提示词后面
             group_prompt = group_manager.get_group_system_prompt(group_id)
             if group_prompt:
-                system_prompt = group_prompt
-            else:
-                role_id = get_current_role_id()
-                agent_id = get_current_agent_id()
-                builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
-                system_prompt = builder.build()
+                system_prompt = f"{system_prompt}\n\n{group_prompt}"
 
             group_messages.append({"role": "system", "content": system_prompt})
 
-        # 添加用户消息
-        group_manager.add_message(group_id, {"role": "user", "content": message_text, "user_id": user_id})
+        # 添加用户消息（包含用户信息，让 AI 区分谁发的消息）
+        user_name = user.username or user.first_name or str(user_id)
+        user_message = f"{user_name}: {message_text}"
+        group_manager.add_message(group_id, {"role": "user", "content": user_message})
 
         # 获取回复（使用群组消息历史）
         # 临时保存全局 messages，使用群组消息
@@ -3874,7 +3885,7 @@ async def reply_with_voice(update: Update, text: str, voice_config: dict):
 
 
 def run_bot():
-    from telegram.error import TimedOut, NetworkError
+    from telegram.error import TimedOut, NetworkError, Conflict
 
     # 初始化应用配置和群组管理器
     config = init_app_config()
@@ -3909,6 +3920,10 @@ def run_bot():
     # 运行机器人
     try:
         application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Conflict as e:
+        print("❌ Telegram Bot 冲突：已有另一个 bot 实例在运行")
+        print("   请先停止之前的 bot 实例，然后再启动")
+        logger.error(f"Telegram Bot Conflict: {e}")
     except TimedOut:
         print("❌ Telegram Bot 连接超时，请检查网络连接或代理设置")
     except NetworkError as e:
