@@ -3237,7 +3237,7 @@ async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_config(current_mode)
         await update.message.reply_text("会话已保存")
         if cmd == "/exit":
-            sys.exit(0)
+            context.application.stop_running()
     elif cmd == "/help":
         await update.message.reply_text(f"{show_help()}")
         await update.message.reply_text("注意不要执行交互式命令!")
@@ -3786,7 +3786,8 @@ async def _qq_bot_command(update, context):
         save_current_session()
         save_config(current_mode)
         await context.send_text("会话已保存")
-        sys.exit(0)
+        if context.application:
+            await context.application.stop()
     elif cmd == "/save":
         save_current_session()
         save_config(current_mode)

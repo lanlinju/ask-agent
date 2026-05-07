@@ -79,9 +79,10 @@ class Update:
 class Context:
     """上下文对象，模仿 python-telegram-bot 的 ContextTypes.DEFAULT_TYPE"""
 
-    def __init__(self, bot: QQBot, update: Update):
+    def __init__(self, bot: QQBot, update: Update, application: Any = None):
         self.bot: QQBot = bot
         self.update: Update = update
+        self.application: Any = application
         self.user_data: dict[str, Any] = {}
         self.chat_data: dict[str, Any] = {}
 

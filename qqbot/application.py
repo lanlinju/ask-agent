@@ -78,7 +78,7 @@ class Application:
     async def _dispatch(self, message: QQMessage) -> None:
         """分发消息到匹配的处理器"""
         update = Update(message)
-        context = Context(self.bot, update)
+        context = Context(self.bot, update, application=self)
 
         for handler in self.handlers:
             if handler.check_update(update):
