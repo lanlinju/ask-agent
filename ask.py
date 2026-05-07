@@ -4093,8 +4093,14 @@ async def _qq_handle_photo(update, context):
 
     print(f"  图片描述: {content}")
 
-    messages.append({"role": "user", "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"})
-    response = agent(caption)
+    if chat.type == "group":
+        # 群组消息：添加用户信息（QQ Bot 只有 openid，没有用户名）
+        user_message = f"用户{user.id}: [图片]\n以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"
+        messages.append({"role": "user", "content": user_message})
+        response = agent(caption, messages)
+    else:
+        messages.append({"role": "user", "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"})
+        response = agent(caption)
 
     await _send_qq_response(context, response)
     print()
@@ -4169,7 +4175,12 @@ async def _qq_handle_voice(update, context):
     asr_text = voice_att.get("asr_refer_text")
     if asr_text:
         print(f"  QQ ASR 结果: {asr_text}")
-        response = agent(asr_text)
+        if chat.type == "group":
+            # 群组消息：添加用户信息（QQ Bot 只有 openid，没有用户名）
+            user_message = f"用户{user.id}: [语音]\n{asr_text}"
+            response = agent(user_message)
+        else:
+            response = agent(asr_text)
         await _send_qq_response(context, response)
         print()
         return
@@ -4228,7 +4239,12 @@ async def _qq_handle_voice(update, context):
         await context.send_text("❌ 语音识别失败")
         return
 
-    response = agent(recognized_text)
+    if chat.type == "group":
+        # 群组消息：添加用户信息（QQ Bot 只有 openid，没有用户名）
+        user_message = f"用户{user.id}: [语音]\n{recognized_text}"
+        response = agent(user_message)
+    else:
+        response = agent(recognized_text)
 
     await _send_qq_response(context, response)
     print()
@@ -4241,11 +4257,17 @@ async def _qq_handle_text(update, context):
 
     user = update.effective_user
     chat = update.effective_chat
-    prefix = f"[群:{chat.openid}] " if chat.type == "group" else ""
+    is_group = chat.type == "group"
+    prefix = f"[群:{chat.openid}] " if is_group else ""
     print(f"收到消息 | {prefix}用户: {user.id} | 内容: {update.message.text}")
     print(f"{BLUE}QQ Bot:{RESET}")
 
-    response = agent(update.message.text)
+    if is_group:
+        # 群组消息：添加用户信息（QQ Bot 只有 openid，没有用户名）
+        user_message = f"用户{user.id}: {update.message.text}"
+        response = agent(user_message)
+    else:
+        response = agent(update.message.text)
 
     await _send_qq_response(context, response)
     print()
