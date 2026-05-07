@@ -34,6 +34,7 @@ from util.background import BackgroundManager, drain_background_notifications
 from util.hooks import HookManager, HookEvent, HookInput
 from util.agent_team import TeammateManager
 from telegram_group import TelegramGroupManager, is_bot_mentioned, has_other_mentions
+from telegram_message_buffer import TelegramMessageBufferManager, buffer_manager
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -3715,39 +3716,32 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 group_manager.add_message(group_id, {"role": "user", "content": message_text})
             return
 
+        # 检查是否启用消息缓冲
+        telegram_config = init_app_config().get_channel_config("telegram")
+        buffer_config = telegram_config.message_buffer
+        
+        if buffer_config.enabled and not mentioned:
+            # 启用缓冲且未被 @提及，添加到缓冲区
+            print(f"[缓冲] 消息已缓存: {user_display}: {message_text}")
+            
+            async def process_buffered_messages(user_key, messages, upd, ctx):
+                """处理缓冲的消息"""
+                combined_text = "\n".join([m["text"] for m in messages])
+                print(f"[缓冲] 处理 {len(messages)} 条消息: {combined_text}")
+                await _process_group_message(upd, ctx, group_manager, group_id, user_id, combined_text, mentioned)
+            
+            chat_buf = buffer_manager.get_or_create_buffer(str(chat.id), buffer_config.timeout)
+            chat_buf.set_callback(process_buffered_messages)
+            await chat_buf.add_message(str(chat.id), user_id, message_text, update, context)
+            return
+
         # 打印到控制台
         prefix = f"[群:{group_manager.config.get_group_config(group_id).name or group_id}] "
         print(f"收到消息 | {prefix}用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
         print(f"{BLUE}Telegram Bot:{RESET}")
 
-        # 获取群组消息历史
-        group_messages = group_manager.get_group_messages(group_id)
-
-        # 初始化群组消息历史（如果为空）
-        if not group_messages:
-            # 使用当前模式的系统提示词
-            role_id = get_current_role_id()
-            agent_id = get_current_agent_id()
-            builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
-            system_prompt = builder.build()
-
-            # 如果有群组专属提示词，追加到系统提示词后面
-            group_prompt = group_manager.get_group_system_prompt(group_id)
-            if group_prompt:
-                system_prompt = f"{system_prompt}\n\n{group_prompt}"
-
-            group_messages.append({"role": "system", "content": system_prompt})
-
-        # 添加用户消息（包含用户信息，让 AI 区分谁发的消息）
-        user_name = user.username or user.first_name or str(user_id)
-        user_message = f"{user_name}: {message_text}"
-        group_manager.add_message(group_id, {"role": "user", "content": user_message})
-
-        # 获取回复（使用群组消息历史）
-        response = agent(message_text, group_messages)
-
-        # 添加助手回复到群组历史
-        group_manager.add_message(group_id, {"role": "assistant", "content": response})
+        # 处理群组消息
+        await _process_group_message(update, context, group_manager, group_id, user_id, message_text, mentioned)
     else:
         # 私聊消息处理（原有逻辑）
         print(f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
@@ -3756,10 +3750,64 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 获取回复
         response = agent(message_text)
 
+        # 发送响应
+        await send_response(update, context, response, True)
+        print()
+
+
+async def _process_group_message(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    group_manager: TelegramGroupManager,
+    group_id: str,
+    user_id: str,
+    message_text: str,
+    mentioned: bool,
+) -> None:
+    """处理群组消息（内部函数）
+
+    Args:
+        update: Telegram Update 对象
+        context: Telegram Context 对象
+        group_manager: 群组管理器
+        group_id: 群组 ID
+        user_id: 用户 ID
+        message_text: 消息文本
+        mentioned: 是否被 @提及
+    """
+    user = update.effective_user
+
+    # 获取群组消息历史
+    group_messages = group_manager.get_group_messages(group_id)
+
+    # 初始化群组消息历史（如果为空）
+    if not group_messages:
+        # 使用当前模式的系统提示词
+        role_id = get_current_role_id()
+        agent_id = get_current_agent_id()
+        builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
+        system_prompt = builder.build()
+
+        # 如果有群组专属提示词，追加到系统提示词后面
+        group_prompt = group_manager.get_group_system_prompt(group_id)
+        if group_prompt:
+            system_prompt = f"{system_prompt}\n\n{group_prompt}"
+
+        group_messages.append({"role": "system", "content": system_prompt})
+
+    # 添加用户消息（包含用户信息，让 AI 区分谁发的消息）
+    user_name = user.username or user.first_name or str(user_id)
+    user_message = f"{user_name}: {message_text}"
+    group_manager.add_message(group_id, {"role": "user", "content": user_message})
+
+    # 获取回复（使用群组消息历史）
+    response = agent(message_text, group_messages)
+
+    # 添加助手回复到群组历史
+    group_manager.add_message(group_id, {"role": "assistant", "content": response})
+
     # 发送响应
-    # 群组中根据是否被 @提及决定发送方式
-    is_mentioned = mentioned if is_group else True
-    await send_response(update, context, response, is_mentioned)
+    await send_response(update, context, response, mentioned)
     print()
 
 

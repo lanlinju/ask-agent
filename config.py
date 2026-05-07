@@ -16,6 +16,24 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class MessageBufferConfig:
+    """消息缓冲区配置"""
+
+    enabled: bool = False  # 是否启用消息缓冲
+    timeout: float = 3.0  # 超时时间（秒）
+    group_only: bool = True  # 是否只在群组中启用
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "MessageBufferConfig":
+        """从字典创建配置"""
+        return cls(
+            enabled=data.get("enabled", False),
+            timeout=data.get("timeout", 3.0),
+            group_only=data.get("groupOnly", True),
+        )
+
+
+@dataclass
 class GroupConfig:
     """群组配置"""
 
@@ -53,6 +71,7 @@ class ChannelConfig:
     group_policy: str = "allowlist"  # allowlist | blocklist | disabled
     group_allow_from: List[str] = field(default_factory=list)  # 全局用户白名单/黑名单
     groups: Dict[str, GroupConfig] = field(default_factory=dict)  # 群组配置
+    message_buffer: MessageBufferConfig = field(default_factory=MessageBufferConfig)  # 消息缓冲配置
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ChannelConfig":
@@ -66,6 +85,7 @@ class ChannelConfig:
             group_policy=data.get("groupPolicy", "allowlist"),
             group_allow_from=data.get("groupAllowFrom", []),
             groups=groups,
+            message_buffer=MessageBufferConfig.from_dict(data.get("messageBuffer", {})),
         )
 
     def get_group_config(self, group_id: str) -> GroupConfig:

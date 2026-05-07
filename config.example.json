@@ -5,6 +5,11 @@
       "enabled": true,
       "groupPolicy": "allowlist",
       "groupAllowFrom": ["123456789"],
+      "messageBuffer": {
+        "enabled": true,
+        "timeout": 3.0,
+        "groupOnly": true
+      },
       "groups": {
         "*": {
           "requireMention": true,
