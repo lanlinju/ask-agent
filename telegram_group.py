@@ -62,7 +62,14 @@ class TelegramGroupManager:
         # 获取群组配置
         group_config = self.config.get_group_config(group_id)
 
-        # 检查是否需要 @提及
+        # 检查用户是否在白名单中（白名单用户无需 @提及）
+        is_whitelisted = self._is_user_whitelisted(user_id, group_id)
+
+        # 白名单用户无需 @提及，直接响应
+        if is_whitelisted:
+            return True
+
+        # 非白名单用户需要检查 @提及
         if group_config.require_mention and not is_mentioned:
             # 如果需要 @提及但没有提及，检查是否应该忽略
             if group_config.ignore_other_mentions and has_other_mentions:
@@ -72,6 +79,28 @@ class TelegramGroupManager:
             return False
 
         return True
+
+    def _is_user_whitelisted(self, user_id: str, group_id: str) -> bool:
+        """检查用户是否在白名单中
+
+        Args:
+            user_id: 用户 ID
+            group_id: 群组 ID
+
+        Returns:
+            是否在白名单中
+        """
+        group_config = self.config.get_group_config(group_id)
+
+        # 检查群组级别白名单
+        if group_config.allow_from and user_id in group_config.allow_from:
+            return True
+
+        # 检查全局白名单
+        if self.config.group_policy == "allowlist" and user_id in self.config.group_allow_from:
+            return True
+
+        return False
 
     def should_save_to_history(
         self,
