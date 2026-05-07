@@ -45,7 +45,9 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import InMemoryHistory
 
-load_dotenv(override=True)
+_ENV_PATH_MANAGER = ConfigPathManager(".env")
+_env_path = _ENV_PATH_MANAGER.find_config()
+load_dotenv(dotenv_path=_env_path, override=True)
 
 # 指数退避配置
 BACKOFF_BASE_DELAY = 1.0  # 基础延迟（秒）
