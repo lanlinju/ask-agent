@@ -1,5 +1,5 @@
 """
-Telegram 消息缓冲区管理
+消息缓冲区管理
 支持连续消息批量回复，让 bot 更像真人聊天
 """
 
@@ -62,8 +62,8 @@ class MessageBuffer:
             chat_id: 聊天 ID
             user_id: 用户 ID
             text: 消息文本
-            update: Telegram Update 对象
-            context: Telegram Context 对象
+            update: Update 对象
+            context: Context 对象
         """
         user_key = self._get_user_key(chat_id, user_id)
 
@@ -176,8 +176,8 @@ class MessageBuffer:
         return sum(len(msgs) for msgs in self._buffers.values())
 
 
-class TelegramMessageBufferManager:
-    """Telegram 消息缓冲区管理器"""
+class MessageBufferManager:
+    """消息缓冲区管理器"""
 
     def __init__(self):
         self._buffers: Dict[str, MessageBuffer] = {}
@@ -215,4 +215,4 @@ class TelegramMessageBufferManager:
 
 
 # 全局缓冲区管理器实例
-buffer_manager = TelegramMessageBufferManager()
+buffer_manager = MessageBufferManager()

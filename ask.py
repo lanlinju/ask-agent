@@ -34,7 +34,7 @@ from util.background import BackgroundManager, drain_background_notifications
 from util.hooks import HookManager, HookEvent, HookInput
 from util.agent_team import TeammateManager
 from telegram_group import TelegramGroupManager, is_bot_mentioned, has_other_mentions
-from telegram_message_buffer import TelegramMessageBufferManager, buffer_manager
+from util.message_buffer import MessageBufferManager, buffer_manager
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -3693,6 +3693,10 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 设置全局 Telegram 上下文
     setup_telegram_context(update, context)
 
+    # 获取缓冲配置
+    telegram_config = init_app_config().get_channel_config("telegram")
+    buffer_config = telegram_config.message_buffer
+
     # 群组消息处理
     is_group = chat.type in ["group", "supergroup"]
     if is_group:
@@ -3700,7 +3704,7 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         group_id = str(chat.id)
         user_id = str(user.id)
         
-         # Info 日志
+        # Info 日志
         user_display = user.username or user.first_name or str(user.id)
         logger.info(f"[群:{group_manager.config.get_group_config(group_id).name or group_id}] {user_display}: {message_text}")
 
@@ -3716,25 +3720,37 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 group_manager.add_message(group_id, {"role": "user", "content": message_text})
             return
 
-        # 检查是否启用消息缓冲
-        telegram_config = init_app_config().get_channel_config("telegram")
-        buffer_config = telegram_config.message_buffer
-        
-        if buffer_config.enabled and not mentioned:
-            # 启用缓冲且未被 @提及，添加到缓冲区
-            print(f"[缓冲] 消息已缓存: {user_display}: {message_text}")
-            
-            async def process_buffered_messages(user_key, messages, upd, ctx):
-                """处理缓冲的消息"""
-                combined_text = "\n".join([m["text"] for m in messages])
-                print(f"[缓冲] 处理 {len(messages)} 条消息: {combined_text}")
-                await _process_group_message(upd, ctx, group_manager, group_id, user_id, combined_text, mentioned)
-            
-            chat_buf = buffer_manager.get_or_create_buffer(str(chat.id), buffer_config.timeout)
-            chat_buf.set_callback(process_buffered_messages)
-            await chat_buf.add_message(str(chat.id), user_id, message_text, update, context)
-            return
+        # 判断是否启用缓冲（群组中未被 @提及时启用）
+        should_buffer = buffer_config.enabled and not mentioned
+    else:
+        # 私聊消息处理
+        # 判断是否启用缓冲（groupOnly=false 时私聊也启用）
+        should_buffer = buffer_config.enabled and not buffer_config.group_only
+        mentioned = True  # 私聊默认被提及
 
+    # 启用缓冲，添加到缓冲区
+    if should_buffer:
+        user_display = user.username or user.first_name or str(user.id)
+        print(f"[缓冲] 消息已缓存: {user_display}: {message_text}")
+        
+        async def process_buffered_messages(user_key, messages, upd, ctx):
+            """处理缓冲的消息"""
+            combined_text = "\n".join([m["text"] for m in messages])
+            print(f"[缓冲] 处理 {len(messages)} 条消息: {combined_text}")
+            if is_group:
+                await _process_group_message(upd, ctx, group_manager, group_id, user_id, combined_text, mentioned)
+            else:
+                response = agent(combined_text)
+                await send_response(upd, ctx, response, True)
+                print()
+        
+        chat_buf = buffer_manager.get_or_create_buffer(str(chat.id), buffer_config.timeout)
+        chat_buf.set_callback(process_buffered_messages)
+        await chat_buf.add_message(str(chat.id), str(user.id), message_text, update, context)
+        return
+
+    # 不启用缓冲，直接处理
+    if is_group:
         # 打印到控制台
         prefix = f"[群:{group_manager.config.get_group_config(group_id).name or group_id}] "
         print(f"收到消息 | {prefix}用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
@@ -3743,7 +3759,7 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 处理群组消息
         await _process_group_message(update, context, group_manager, group_id, user_id, message_text, mentioned)
     else:
-        # 私聊消息处理（原有逻辑）
+        # 私聊消息处理
         print(f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
         print(f"{BLUE}Telegram Bot:{RESET}")
 
@@ -4335,12 +4351,35 @@ async def _qq_handle_text(update, context):
     print(f"收到消息 | {prefix}用户: {user.id} | 内容: {update.message.text}")
     print(f"{BLUE}QQ Bot:{RESET}")
 
-    if is_group:
-        # 群组消息：添加用户信息（QQ Bot 只有 openid，没有用户名）
-        user_message = f"用户{user.id}: {update.message.text}"
-        response = agent(user_message)
-    else:
-        response = agent(update.message.text)
+    # 获取缓冲配置
+    qqbot_config = init_app_config().get_channel_config("qqbot")
+    buffer_config = qqbot_config.message_buffer
+
+    # 判断是否启用缓冲
+    should_buffer = buffer_config.enabled and (is_group or not buffer_config.group_only)
+
+    if should_buffer:
+        # 启用缓冲，添加到缓冲区
+        print(f"[缓冲] 消息已缓存: 用户{user.id}: {update.message.text}")
+
+        async def process_buffered_messages(user_key, messages, upd, ctx):
+            """处理缓冲的消息"""
+            combined_text = "\n".join([m["text"] for m in messages])
+            print(f"[缓冲] 处理 {len(messages)} 条消息: {combined_text}")
+            # 群组消息添加用户信息，私聊直接使用
+            user_message = f"用户{user.id}: {combined_text}" if is_group else combined_text
+            response = agent(user_message)
+            await _send_qq_response(ctx, response)
+            print()
+
+        chat_buf = buffer_manager.get_or_create_buffer(str(chat.id), buffer_config.timeout)
+        chat_buf.set_callback(process_buffered_messages)
+        await chat_buf.add_message(str(chat.id), str(user.id), update.message.text, update, context)
+        return
+
+    # 不启用缓冲，直接处理
+    user_message = f"用户{user.id}: {update.message.text}" if is_group else update.message.text
+    response = agent(user_message)
 
     await _send_qq_response(context, response)
     print()
