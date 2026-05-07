@@ -3252,18 +3252,42 @@ async def bot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_parts = command_text.split()
     cmd = command_parts[0]  # "/start"
     args = command_parts[1:]  # ["arg1", "arg2"]
+    chat = update.effective_chat
+    is_group = chat.type in ["group", "supergroup"]
 
     # 根据命令名分发处理
     if cmd == "/start":
         await update.message.reply_text(
             "欢迎！使用/exit命令退出Telegram Bot,/save命令保存聊天会话"
         )
-    if cmd == "/exit" or cmd == "/save":
+    elif cmd == "/exit" or cmd == "/save":
         save_current_session()
         save_config(current_mode)
         await update.message.reply_text("会话已保存")
         if cmd == "/exit":
             context.application.stop_running()
+    elif cmd == "/clear":
+        if is_group:
+            # 群组中清空群组消息历史
+            group_manager = get_telegram_group_manager()
+            group_id = str(chat.id)
+            group_manager.clear_group_messages(group_id)
+            await update.message.reply_text("✅ 已清除群组对话历史")
+        else:
+            # 私聊中清空全局消息历史
+            clear_history()
+            await update.message.reply_text("✅ 已清除对话历史")
+    elif cmd == "/new":
+        if is_group:
+            # 群组中清空群组消息历史（重新初始化）
+            group_manager = get_telegram_group_manager()
+            group_id = str(chat.id)
+            group_manager.clear_group_messages(group_id)
+            await update.message.reply_text("✅ 已创建新会话")
+        else:
+            save_current_session()
+            init_system_prompt(current_mode)
+            await update.message.reply_text("✅ 已创建新会话")
     elif cmd == "/help":
         await update.message.reply_text(f"{show_help()}")
         await update.message.reply_text("注意不要执行交互式命令!")
@@ -3477,18 +3501,11 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             group_messages.append({"role": "system", "content": system_prompt})
 
-        # 临时保存全局 messages，使用群组消息
-        global messages
-        original_messages = messages
-        messages = group_messages
-
-        response = agent(caption)
+        # 获取回复（使用群组消息历史）
+        response = agent(caption, group_messages)
 
         # 添加助手回复到群组历史
         group_manager.add_message(group_id, {"role": "assistant", "content": response})
-
-        # 恢复全局 messages
-        messages = original_messages
     else:
         # 私聊消息处理（原有逻辑）
         messages.append({"role": "user", "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"})
@@ -3629,18 +3646,11 @@ async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             group_messages.append({"role": "system", "content": system_prompt})
 
-        # 临时保存全局 messages，使用群组消息
-        global messages
-        original_messages = messages
-        messages = group_messages
-
-        response = agent(recognized_text)
+        # 获取回复（使用群组消息历史）
+        response = agent(recognized_text, group_messages)
 
         # 添加助手回复到群组历史
         group_manager.add_message(group_id, {"role": "assistant", "content": response})
-
-        # 恢复全局 messages
-        messages = original_messages
     else:
         # 私聊消息处理（原有逻辑）
         response = agent(recognized_text)
@@ -3711,18 +3721,10 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         group_manager.add_message(group_id, {"role": "user", "content": user_message})
 
         # 获取回复（使用群组消息历史）
-        # 临时保存全局 messages，使用群组消息
-        global messages
-        original_messages = messages
-        messages = group_messages
-
-        response = agent(message_text)
+        response = agent(message_text, group_messages)
 
         # 添加助手回复到群组历史
         group_manager.add_message(group_id, {"role": "assistant", "content": response})
-
-        # 恢复全局 messages
-        messages = original_messages
     else:
         # 私聊消息处理（原有逻辑）
         print(f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
@@ -4285,8 +4287,19 @@ def _drain_team_inbox(messages: list) -> None:
     })
 
 
-def agent(prompt: str) -> str:
-    """处理问题，添加到历史并获取回答"""
+def agent(prompt: str, agent_messages: Optional[List[Dict]] = None) -> str:
+    """处理问题，添加到历史并获取回答
+
+    Args:
+        prompt: 用户输入的问题
+        agent_messages: 消息列表，如果为 None 则使用全局 messages
+
+    Returns:
+        AI 回复内容
+    """
+    # 使用传入的 messages 或全局 messages
+    messages = agent_messages if agent_messages is not None else globals()["messages"]
+
     # 重置中断控制器
     _interrupt_ctrl.reset()
 
