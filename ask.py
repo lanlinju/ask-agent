@@ -3355,11 +3355,12 @@ async def download_telegram_photo(update: Update, context: ContextTypes.DEFAULT_
         return None
 
 
-async def send_response(update: Update, response: str):
+async def send_response(update: Update, context: ContextTypes.DEFAULT_TYPE, response: str):
     """发送响应到 Telegram（文本 + 可选语音）
 
     Args:
         update: Telegram 更新对象
+        context: Telegram 上下文
         response: 模型回复文本
     """
     global _telegram_pending_tasks
@@ -3374,11 +3375,25 @@ async def send_response(update: Update, response: str):
         # 文本 + 语音回复
         await reply_with_voice(update, response, voice_config)
     else:
-        # 仅文本回复
-        paragraphs = response.split("\n\n")
-        for para in paragraphs:
-            if para.strip():
-                await update.message.reply_text(para)
+        # 超过 1024 字符直接发送，不分段
+        if len(response) > 1024:
+            if response.strip():
+                await update.message.reply_text(response)
+        else:
+            # 按 \n\n 分割消息
+            paragraphs = [p.strip() for p in response.split("\n\n") if p.strip()]
+
+            if not paragraphs:
+                return
+
+            # 第一条消息用 reply_text（引用用户消息）
+            await update.message.reply_text(paragraphs[0])
+
+            # 剩余消息用 send_message（不引用）
+            if len(paragraphs) > 1:
+                chat_id = update.effective_chat.id
+                for para in paragraphs[1:]:
+                    await context.bot.send_message(chat_id=chat_id, text=para)
 
     # 等待所有待处理的异步任务（如图片发送）
     if _telegram_pending_tasks:
@@ -3512,8 +3527,7 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = agent(caption)
 
     # 发送响应
-    # await send_response(update, response)
-    await update.message.reply_text(response)
+    await send_response(update, context, response)
     print()
 
 
@@ -3656,7 +3670,7 @@ async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = agent(recognized_text)
 
     # 发送响应
-    await send_response(update, response)
+    await send_response(update, context, response)
     print()
 
 
@@ -3734,7 +3748,7 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = agent(message_text)
 
     # 发送响应
-    await send_response(update, response)
+    await send_response(update, context, response)
     print()
 
 
