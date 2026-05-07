@@ -1,0 +1,53 @@
+{
+  "mode": 0,
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "groupPolicy": "allowlist",
+      "groupAllowFrom": ["123456789"],
+      "groups": {
+        "*": {
+          "requireMention": true,
+          "historyLimit": 50,
+          "toolPolicy": "full"
+        },
+        "-1001234567890": {
+          "name": "技术交流群",
+          "requireMention": false,
+          "ignoreOtherMentions": true,
+          "historyLimit": 20,
+          "toolPolicy": "restricted",
+          "prompt": "在这个群里请用通俗易懂的语言回答，可以适当使用表情包。",
+          "allowFrom": ["123456789", "987654321"]
+        },
+        "-1009876543210": {
+          "name": "测试群",
+          "requireMention": true,
+          "historyLimit": 100,
+          "toolPolicy": "full",
+          "prompt": "这是一个测试群，请用技术术语回答。"
+        }
+      }
+    },
+    "qqbot": {
+      "enabled": false,
+      "groupPolicy": "allowlist",
+      "groupAllowFrom": ["member_openid_xxx", "member_openid_yyy"],
+      "groups": {
+        "*": {
+          "requireMention": true,
+          "historyLimit": 50,
+          "toolPolicy": "restricted"
+        },
+        "GROUP_OPENID_123": {
+          "name": "QQ技术群",
+          "requireMention": false,
+          "ignoreOtherMentions": true,
+          "historyLimit": 30,
+          "toolPolicy": "restricted",
+          "prompt": "在这个群里请用通俗易懂的语言回答。"
+        }
+      }
+    }
+  }
+}

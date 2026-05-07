@@ -623,6 +623,84 @@ ag --agent
 - 图片识别需要当前模型支持 `modalities.input` 包含 `"image"`
 - 语音识别需要当前模型支持 `modalities.input` 包含 `"audio"`
 
+### 群组配置
+
+Telegram Bot 支持在群组中使用，可以通过 `config.json` 配置群组消息行为。
+
+**配置文件位置：** `~/.ask-agent/config.json`
+
+**完整配置示例：**
+
+```json
+{
+  "mode": 0,
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "groupPolicy": "allowlist",
+      "groupAllowFrom": ["123456789"],
+      "groups": {
+        "*": {
+          "requireMention": true,
+          "historyLimit": 50,
+          "toolPolicy": "full"
+        },
+        "-1001234567890": {
+          "name": "技术交流群",
+          "requireMention": false,
+          "ignoreOtherMentions": true,
+          "historyLimit": 20,
+          "toolPolicy": "restricted",
+          "prompt": "在这个群里请用通俗易懂的语言回答，可以适当使用表情包。",
+          "allowFrom": ["123456789", "987654321"]
+        }
+      }
+    }
+  }
+}
+```
+
+**配置说明：**
+
+| 配置项 | 类型 | 说明 |
+|--------|------|------|
+| `enabled` | bool | 是否启用该频道 |
+| `groupPolicy` | string | 群组策略：`allowlist`(白名单) / `blocklist`(黑名单) / `disabled`(禁用) |
+| `groupAllowFrom` | array | 全局用户白名单/黑名单（用户 ID） |
+| `groups` | object | 群组配置（`*` 为默认配置） |
+
+**群组配置：**
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `name` | string | `""` | 群组友好名称（日志显示） |
+| `requireMention` | bool | `true` | 是否需要 @机器人才响应 |
+| `ignoreOtherMentions` | bool | `false` | 忽略提及他人但未提及机器人的消息 |
+| `historyLimit` | int | `50` | 保留的历史消息数量 |
+| `toolPolicy` | string | `"full"` | 工具策略：`full`(全部) / `restricted`(受限) / `none`(禁用) |
+| `prompt` | string | `""` | 群组专属提示词 |
+| `allowFrom` | array | `[]` | 群组级别用户白名单（覆盖全局配置） |
+| `blockFrom` | array | `[]` | 群组级别用户黑名单 |
+
+**群组策略说明：**
+
+| 策略 | 说明 |
+|------|------|
+| `allowlist` | 白名单模式 - 默认拒绝，只允许列表中的用户/群组 |
+| `blocklist` | 黑名单模式 - 默认允许，只拒绝列表中的用户/群组 |
+| `disabled` | 禁用群组 - 不响应任何群组消息，只处理私聊 |
+
+**获取群组 ID：**
+
+1. 将 Bot 添加到群组
+2. 向群组发送消息
+3. 查看 Bot 控制台输出的群组 ID（格式如 `-1001234567890`）
+
+**获取用户 ID：**
+
+1. 向 Bot 发送私聊消息
+2. 查看控制台输出的用户 ID
+
 ## QQ Bot 集成
 
 Ask Agent 支持通过 QQ Bot远程控制智能体。

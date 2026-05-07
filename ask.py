@@ -28,11 +28,12 @@ from agent import AgentManager
 from command import CommandManager
 from memory import MemoryManager, MEMORY_GUIDANCE
 from typing import Optional
-from config import ConfigPathManager, get_config_path
+from config import ConfigPathManager, get_config_path, load_app_config, AppConfig, ChannelConfig
 from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff, read_file, write_file
 from util.background import BackgroundManager, drain_background_notifications
 from util.hooks import HookManager, HookEvent, HookInput
 from util.agent_team import TeammateManager
+from telegram_group import TelegramGroupManager, is_bot_mentioned, has_other_mentions
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -270,6 +271,12 @@ PROVIDER_CONFIG = ProviderConfig(PROVIDERS_PATH if PROVIDERS_PATH else "provider
 _CONFIG_PATH_MANAGER = ConfigPathManager("config.json")
 CONFIG_FILE = _CONFIG_PATH_MANAGER.user_dir_path
 CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+# Global app config instance
+APP_CONFIG: Optional[AppConfig] = None
+
+# Global Telegram group manager instance (lazy init)
+_TELEGRAM_GROUP_MANAGER: Optional[TelegramGroupManager] = None
 
 # Global cache directory - always use user directory
 CACHE_DIR = Path.home() / ".ask-agent" / "cache"
@@ -681,6 +688,25 @@ def _print_newline():
         print()
     else:
         print("\n")
+
+
+def init_app_config() -> AppConfig:
+    """初始化应用配置"""
+    global APP_CONFIG
+    if APP_CONFIG is None:
+        APP_CONFIG = load_app_config()
+        logger.info(f"应用配置已加载，频道: {list(APP_CONFIG.channels.keys())}")
+    return APP_CONFIG
+
+
+def get_telegram_group_manager() -> TelegramGroupManager:
+    """获取 Telegram 群组管理器（懒加载）"""
+    global _TELEGRAM_GROUP_MANAGER
+    if _TELEGRAM_GROUP_MANAGER is None:
+        config = init_app_config()
+        telegram_config = config.get_channel_config("telegram")
+        _TELEGRAM_GROUP_MANAGER = TelegramGroupManager(telegram_config, CACHE_DIR)
+    return _TELEGRAM_GROUP_MANAGER
 
 
 def init_providers() -> bool:
@@ -3352,6 +3378,7 @@ def setup_telegram_context(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理接收到的图片消息"""
     user = update.effective_user
+    chat = update.effective_chat
 
     # 检查当前模型是否支持图片输入
     if not current_model_supports_image_input():
@@ -3366,11 +3393,26 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 设置全局 Telegram 上下文
     setup_telegram_context(update, context)
 
+    # 群组消息处理
+    is_group = chat.type in ["group", "supergroup"]
+    if is_group:
+        group_manager = get_telegram_group_manager()
+        group_id = str(chat.id)
+        user_id = str(user.id)
+
+        # 检查用户权限
+        if not group_manager.config.is_user_allowed(user_id, group_id):
+            return
+
     # 获取图片说明（如果有）
     caption = update.message.caption or "请描述这张图片的内容"
 
     # 打印到控制台
-    print(f"收到图片 | 用户: {user.username or user.first_name} (ID: {user.id}) | 说明: {caption}")
+    if is_group:
+        prefix = f"[群:{group_manager.config.get_group_config(group_id).name or group_id}] "
+    else:
+        prefix = ""
+    print(f"收到图片 | {prefix}用户: {user.username or user.first_name} (ID: {user.id}) | 说明: {caption}")
     print(f"{BLUE}Telegram Bot (图片理解):{RESET}")
 
     # 下载图片并转换为 Base64
@@ -3409,10 +3451,47 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"  图片描述: {content}")
     
     # 构建助手消息并添加到历史
-    messages.append({"role": "user", "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"})
+    if is_group:
+        # 群组消息：添加到群组历史
+        group_manager.add_message(group_id, {
+            "role": "user",
+            "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>",
+            "user_id": user_id
+        })
 
-    # 将图片描述作为用户消息发送给 agent 处理
-    response = agent(caption)
+        # 获取群组消息历史
+        group_messages = group_manager.get_group_messages(group_id)
+
+        # 初始化群组消息历史（如果为空）
+        if not group_messages:
+            # 优先使用群组专属提示词，没有则使用当前模式的系统提示词
+            group_prompt = group_manager.get_group_system_prompt(group_id)
+            if group_prompt:
+                system_prompt = group_prompt
+            else:
+                role_id = get_current_role_id()
+                agent_id = get_current_agent_id()
+                builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
+                system_prompt = builder.build()
+
+            group_messages.append({"role": "system", "content": system_prompt})
+
+        # 临时保存全局 messages，使用群组消息
+        global messages
+        original_messages = messages
+        messages = group_messages
+
+        response = agent(caption)
+
+        # 添加助手回复到群组历史
+        group_manager.add_message(group_id, {"role": "assistant", "content": response})
+
+        # 恢复全局 messages
+        messages = original_messages
+    else:
+        # 私聊消息处理（原有逻辑）
+        messages.append({"role": "user", "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"})
+        response = agent(caption)
 
     # 发送响应
     # await send_response(update, response)
@@ -3450,6 +3529,7 @@ async def download_telegram_voice(update: Update, context: ContextTypes.DEFAULT_
 async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理接收到的语音消息"""
     user = update.effective_user
+    chat = update.effective_chat
 
     # 检查当前模型是否支持音频输入
     if not current_model_supports_audio_input():
@@ -3468,7 +3548,13 @@ async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = "直接给出语音的内容" #update.message.caption or "请描述这个语音的内容"
 
     # 打印到控制台
-    print(f"收到语音 | 用户: {user.username or user.first_name} (ID: {user.id})")
+    if chat.type in ["group", "supergroup"]:
+        group_manager = get_telegram_group_manager()
+        group_id = str(chat.id)
+        prefix = f"[群:{group_manager.config.get_group_config(group_id).name or group_id}] "
+    else:
+        prefix = ""
+    print(f"收到语音 | {prefix}用户: {user.username or user.first_name} (ID: {user.id})")
     print(f"{BLUE}Telegram Bot (语音理解):{RESET}")
 
     # 下载语音并转换为 Base64
@@ -3508,8 +3594,52 @@ async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ 语音识别失败")
         return
 
-    # 将识别结果作为用户消息发送给 agent 处理
-    response = agent(recognized_text)
+    # 群组消息处理
+    is_group = chat.type in ["group", "supergroup"]
+    if is_group:
+        group_manager = get_telegram_group_manager()
+        group_id = str(chat.id)
+        user_id = str(user.id)
+
+        # 检查用户权限
+        if not group_manager.config.is_user_allowed(user_id, group_id):
+            return
+
+        # 添加到群组历史
+        group_manager.add_message(group_id, {"role": "user", "content": recognized_text, "user_id": user_id})
+
+        # 获取群组消息历史
+        group_messages = group_manager.get_group_messages(group_id)
+
+        # 初始化群组消息历史（如果为空）
+        if not group_messages:
+            # 优先使用群组专属提示词，没有则使用当前模式的系统提示词
+            group_prompt = group_manager.get_group_system_prompt(group_id)
+            if group_prompt:
+                system_prompt = group_prompt
+            else:
+                role_id = get_current_role_id()
+                agent_id = get_current_agent_id()
+                builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
+                system_prompt = builder.build()
+
+            group_messages.append({"role": "system", "content": system_prompt})
+
+        # 临时保存全局 messages，使用群组消息
+        global messages
+        original_messages = messages
+        messages = group_messages
+
+        response = agent(recognized_text)
+
+        # 添加助手回复到群组历史
+        group_manager.add_message(group_id, {"role": "assistant", "content": response})
+
+        # 恢复全局 messages
+        messages = original_messages
+    else:
+        # 私聊消息处理（原有逻辑）
+        response = agent(recognized_text)
 
     # 发送响应
     await send_response(update, response)
@@ -3519,17 +3649,76 @@ async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理接收到的文本消息"""
     user = update.effective_user
+    chat = update.effective_chat
     message_text = update.message.text
 
     # 设置全局 Telegram 上下文
     setup_telegram_context(update, context)
 
-    # 打印到控制台
-    print(f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
-    print(f"{BLUE}Telegram Bot:{RESET}")
+    # 群组消息处理
+    is_group = chat.type in ["group", "supergroup"]
+    if is_group:
+        group_manager = get_telegram_group_manager()
+        group_id = str(chat.id)
+        user_id = str(user.id)
 
-    # 获取回复
-    response = agent(message_text)
+        # 检查是否被 @提及
+        bot_info = await context.bot.get_me()
+        mentioned = is_bot_mentioned(message_text, update.message.entities, bot_info.username)
+        other_mentions = has_other_mentions(message_text, update.message.entities, bot_info.username)
+
+        # 判断是否应该响应
+        if not group_manager.should_respond(user_id, group_id, mentioned, other_mentions):
+            # 即使不响应，也保存消息到历史记录（用于上下文记忆）
+            if group_manager.should_save_to_history(user_id, group_id):
+                group_manager.add_message(group_id, {"role": "user", "content": message_text, "user_id": user_id})
+            return
+
+        # 打印到控制台
+        prefix = f"[群:{group_manager.config.get_group_config(group_id).name or group_id}] "
+        print(f"收到消息 | {prefix}用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
+        print(f"{BLUE}Telegram Bot:{RESET}")
+
+        # 获取群组消息历史
+        group_messages = group_manager.get_group_messages(group_id)
+
+        # 初始化群组消息历史（如果为空）
+        if not group_messages:
+            # 优先使用群组专属提示词，没有则使用当前模式的系统提示词
+            group_prompt = group_manager.get_group_system_prompt(group_id)
+            if group_prompt:
+                system_prompt = group_prompt
+            else:
+                role_id = get_current_role_id()
+                agent_id = get_current_agent_id()
+                builder = SystemPromptBuilder(mode=current_mode, role_id=role_id, agent_id=agent_id)
+                system_prompt = builder.build()
+
+            group_messages.append({"role": "system", "content": system_prompt})
+
+        # 添加用户消息
+        group_manager.add_message(group_id, {"role": "user", "content": message_text, "user_id": user_id})
+
+        # 获取回复（使用群组消息历史）
+        # 临时保存全局 messages，使用群组消息
+        global messages
+        original_messages = messages
+        messages = group_messages
+
+        response = agent(message_text)
+
+        # 添加助手回复到群组历史
+        group_manager.add_message(group_id, {"role": "assistant", "content": response})
+
+        # 恢复全局 messages
+        messages = original_messages
+    else:
+        # 私聊消息处理（原有逻辑）
+        print(f"收到消息 | 用户: {user.username or user.first_name} (ID: {user.id}) | 内容: {message_text}")
+        print(f"{BLUE}Telegram Bot:{RESET}")
+
+        # 获取回复
+        response = agent(message_text)
 
     # 发送响应
     await send_response(update, response)
@@ -3687,16 +3876,35 @@ async def reply_with_voice(update: Update, text: str, voice_config: dict):
 def run_bot():
     from telegram.error import TimedOut, NetworkError
 
+    # 初始化应用配置和群组管理器
+    config = init_app_config()
+    telegram_config = config.get_channel_config("telegram")
+    group_manager = get_telegram_group_manager()
+
     # 创建应用
     application = Application.builder().token(BOT_TOKEN).build()
 
+    # 定义支持的聊天类型
+    chat_types = filters.ChatType.PRIVATE
+    if telegram_config.group_policy != "disabled":
+        chat_types = chat_types | filters.ChatType.GROUPS
+
     # 添加处理器 - 捕获所有以 / 开头的命令
-    application.add_handler(MessageHandler(filters.COMMAND, bot_command))
-    application.add_handler(MessageHandler(filters.PHOTO, reply_photo))
-    application.add_handler(MessageHandler(filters.VOICE, reply_voice))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_text))
+    application.add_handler(MessageHandler(filters.COMMAND & chat_types, bot_command))
+    application.add_handler(MessageHandler(filters.PHOTO & chat_types, reply_photo))
+    application.add_handler(MessageHandler(filters.VOICE & chat_types, reply_voice))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & chat_types, reply_text))
+
+    # 注册关闭时保存群组会话的回调
+    async def on_shutdown(app):
+        group_manager.save_all_sessions()
+        logger.info("所有群组会话已保存")
+
+    application.post_shutdown = on_shutdown
 
     print("机器人已启动！按 Ctrl+C 停止")
+    if telegram_config.group_policy != "disabled":
+        print(f"群组策略: {telegram_config.group_policy}")
 
     # 运行机器人
     try:
@@ -4272,13 +4480,26 @@ def load_config() -> dict:
 def save_config(mode: int):
     """保存配置文件"""
     try:
+        # 读取现有配置以保留 channels 等其他配置
+        existing_config = {}
+        if CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    existing_config = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # 更新 mode 和 role_id
         current_role_id_val = get_current_role_id()
+        existing_config["mode"] = mode
         if mode == ROLE and current_role_id_val:
-            config = {"mode": mode, "role_id": current_role_id_val}
-        else:
-            config = {"mode": mode}
+            existing_config["role_id"] = current_role_id_val
+        elif "role_id" in existing_config:
+            # 如果不是角色模式，移除 role_id
+            del existing_config["role_id"]
+
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
+            json.dump(existing_config, f, indent=2, ensure_ascii=False)
         logger.info(f"配置已保存: mode={mode}")
     except IOError as e:
         logger.warning(f"保存配置文件失败: {e}")
@@ -4507,6 +4728,9 @@ def main():
     else:
         current_mode = saved_mode
         init_system_prompt(current_mode)
+
+    # 初始化应用配置（包含频道配置）
+    init_app_config()
 
     # 初始化 Provider 配置
     init_providers()
