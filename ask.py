@@ -3355,13 +3355,14 @@ async def download_telegram_photo(update: Update, context: ContextTypes.DEFAULT_
         return None
 
 
-async def send_response(update: Update, context: ContextTypes.DEFAULT_TYPE, response: str):
+async def send_response(update: Update, context: ContextTypes.DEFAULT_TYPE, response: str, is_mentioned: bool = True):
     """发送响应到 Telegram（文本 + 可选语音）
 
     Args:
         update: Telegram 更新对象
         context: Telegram 上下文
         response: 模型回复文本
+        is_mentioned: 是否被 @提及（默认 True）
     """
     global _telegram_pending_tasks
 
@@ -3375,10 +3376,14 @@ async def send_response(update: Update, context: ContextTypes.DEFAULT_TYPE, resp
         # 文本 + 语音回复
         await reply_with_voice(update, response, voice_config)
     else:
-        # 超过 1024 字符直接发送，不分段
+        # 超过 1024 字符直接发送
         if len(response) > 1024:
             if response.strip():
-                await update.message.reply_text(response)
+                if is_mentioned:
+                    await update.message.reply_text(response)
+                else:
+                    chat_id = update.effective_chat.id
+                    await context.bot.send_message(chat_id=chat_id, text=response)
         else:
             # 按 \n\n 分割消息
             paragraphs = [p.strip() for p in response.split("\n\n") if p.strip()]
@@ -3386,13 +3391,16 @@ async def send_response(update: Update, context: ContextTypes.DEFAULT_TYPE, resp
             if not paragraphs:
                 return
 
-            # 第一条消息用 reply_text（引用用户消息）
-            await update.message.reply_text(paragraphs[0])
+            chat_id = update.effective_chat.id
 
-            # 剩余消息用 send_message（不引用）
-            if len(paragraphs) > 1:
-                chat_id = update.effective_chat.id
+            # 被 @提及：第一条用 reply_text（引用），剩余用 send_message
+            # 未被 @提及：全部用 send_message
+            if is_mentioned:
+                await update.message.reply_text(paragraphs[0])
                 for para in paragraphs[1:]:
+                    await context.bot.send_message(chat_id=chat_id, text=para)
+            else:
+                for para in paragraphs:
                     await context.bot.send_message(chat_id=chat_id, text=para)
 
     # 等待所有待处理的异步任务（如图片发送）
@@ -3526,8 +3534,8 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         messages.append({"role": "user", "content": f"以下是识别图片的结果，直接根据以下内容回答:\n<image-description>\n{content}\n</image-description>"})
         response = agent(caption)
 
-    # 发送响应
-    await send_response(update, context, response)
+    # 发送响应（图片消息通常是被 @提及后发送的）
+    await send_response(update, context, response, True)
     print()
 
 
@@ -3628,6 +3636,7 @@ async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 群组消息处理
     is_group = chat.type in ["group", "supergroup"]
+    mentioned = True  # 语音消息通常是被 @提及后发送的
     if is_group:
         group_manager = get_telegram_group_manager()
         group_id = str(chat.id)
@@ -3670,7 +3679,7 @@ async def reply_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = agent(recognized_text)
 
     # 发送响应
-    await send_response(update, context, response)
+    await send_response(update, context, response, mentioned)
     print()
 
 
@@ -3748,7 +3757,9 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = agent(message_text)
 
     # 发送响应
-    await send_response(update, context, response)
+    # 群组中根据是否被 @提及决定发送方式
+    is_mentioned = mentioned if is_group else True
+    await send_response(update, context, response, is_mentioned)
     print()
 
 
