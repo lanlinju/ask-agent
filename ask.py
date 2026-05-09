@@ -29,6 +29,7 @@ from core.command import CommandManager
 from core.memory import MemoryManager, MEMORY_GUIDANCE
 from typing import Optional
 from core.config import ConfigPathManager, get_config_path, load_app_config, AppConfig, ChannelConfig
+from core.proactive import ProactiveScheduler
 from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff, read_file, write_file
 from util.background import BackgroundManager, drain_background_notifications
 from util.hooks import HookManager, HookEvent, HookInput
@@ -700,6 +701,28 @@ def init_app_config() -> AppConfig:
     return APP_CONFIG
 
 
+def init_proactive_scheduler() -> Optional[ProactiveScheduler]:
+    """初始化主动消息调度器"""
+    global _PROACTIVE_SCHEDULER
+    if _PROACTIVE_SCHEDULER is not None:
+        return _PROACTIVE_SCHEDULER
+
+    config = init_app_config()
+    proactive_config = config.proactive_message
+    if not proactive_config.enabled:
+        logger.info("主动消息未启用，跳过初始化")
+        return None
+
+    _PROACTIVE_SCHEDULER = ProactiveScheduler(
+        config=proactive_config,
+        llm_caller=get_streaming_response,
+        messages_getter=lambda: messages,
+    )
+
+    logger.info("主动消息调度器已初始化")
+    return _PROACTIVE_SCHEDULER
+
+
 def get_telegram_group_manager() -> TelegramGroupManager:
     """获取 Telegram 群组管理器（懒加载）"""
     global _TELEGRAM_GROUP_MANAGER
@@ -1086,6 +1109,8 @@ _telegram_pending_tasks: List = []
 # QQ Bot 上下文
 _qq_bot: Optional[Any] = None
 _qq_current_openid: Optional[str] = None
+# 主动消息调度器
+_PROACTIVE_SCHEDULER: Optional[ProactiveScheduler] = None
 
 
 class TodoManager:
@@ -3728,6 +3753,10 @@ async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         should_buffer = buffer_config.enabled and not buffer_config.group_only
         mentioned = True  # 私聊默认被提及
 
+        # 注册私聊用户到主动消息调度器
+        if _PROACTIVE_SCHEDULER:
+            _PROACTIVE_SCHEDULER.register_user("telegram", str(user.id), str(chat.id))
+
     # 启用缓冲，添加到缓冲区
     if should_buffer:
         user_display = user.username or user.first_name or str(user.id)
@@ -4003,6 +4032,28 @@ def run_bot():
         logger.info("所有群组会话已保存")
 
     application.post_shutdown = on_shutdown
+
+    # 初始化主动消息调度器
+    scheduler = init_proactive_scheduler()
+    if scheduler:
+        async def _telegram_send_callback(chat_id: str, message: str, chat_type: str = "private"):
+            if _telegram_update and _telegram_context:
+                await send_response(_telegram_update, _telegram_context, message, True)
+
+        scheduler.register_send_callback("telegram", _telegram_send_callback)
+
+        async def _on_bot_ready(app):
+            """Bot 就绪后启动主动消息调度器"""
+            await scheduler.start()
+
+        async def _on_bot_shutdown_with_scheduler(app):
+            """Bot 关闭时停止主动消息调度器"""
+            await scheduler.stop()
+            group_manager.save_all_sessions()
+            logger.info("所有群组会话已保存")
+
+        application.post_init = _on_bot_ready
+        application.post_shutdown = _on_bot_shutdown_with_scheduler
 
     print("机器人已启动！按 Ctrl+C 停止")
     if telegram_config.group_policy != "disabled":
@@ -4351,6 +4402,10 @@ async def _qq_handle_text(update, context):
     print(f"收到消息 | {prefix}用户: {user.id} | 内容: {update.message.text}")
     print(f"{BLUE}QQ Bot:{RESET}")
 
+    # 注册私聊用户到主动消息调度器
+    if not is_group and _PROACTIVE_SCHEDULER:
+        _PROACTIVE_SCHEDULER.register_user("qqbot", chat.openid, chat.openid)
+
     # 获取缓冲配置
     qqbot_config = init_app_config().get_channel_config("qqbot")
     buffer_config = qqbot_config.message_buffer
@@ -4402,7 +4457,21 @@ def run_qq_bot():
     global _qq_bot
     _qq_bot = app.bot
 
-    app.run_polling()
+    # 初始化主动消息调度器
+    scheduler = init_proactive_scheduler()
+
+    if scheduler:
+        # 注册 QQ 发送回调（复用 _send_qq_response）
+        async def _qq_send_callback(openid: str, message: str, chat_type: str = "private"):
+            if not _qq_bot:
+                return
+            from qqbot.types import SendProxy
+            proxy = SendProxy(_qq_bot, openid, chat_type)
+            await _send_qq_response(proxy, message)
+
+        scheduler.register_send_callback("qqbot", _qq_send_callback)
+
+    app.run_polling(scheduler=scheduler)
 
 def _drain_team_inbox(messages: list) -> None:
     """Drain the lead's team inbox and inject messages into conversation."""

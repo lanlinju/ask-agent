@@ -135,11 +135,40 @@ class ChannelConfig:
 
 
 @dataclass
+class ProactiveMessageConfig:
+    """主动消息配置"""
+
+    enabled: bool = False  # 是否启用主动消息
+    min_interval_hours: float = 1.0  # 最小不活跃间隔（小时）
+    max_interval_hours: float = 3.0  # 最大不活跃间隔（小时）
+    check_interval_seconds: int = 60  # 调度器轮询间隔（秒）
+    send_probability: float = 0.3  # 发送概率 (0.0-1.0)
+    active_start: int = 8  # 活跃开始时间（小时）
+    active_end: int = 23  # 活跃结束时间（小时）
+    prompt: str = "给用户发一条友好的问候消息，内容自然、简短、有变化，像朋友聊天一样。不要提到你是AI。"  # 主动消息提示词
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ProactiveMessageConfig":
+        """从字典创建配置"""
+        return cls(
+            enabled=data.get("enabled", False),
+            min_interval_hours=data.get("minIntervalHours", 1.0),
+            max_interval_hours=data.get("maxIntervalHours", 3.0),
+            check_interval_seconds=data.get("checkIntervalSeconds", 60),
+            send_probability=data.get("sendProbability", 0.3),
+            active_start=data.get("activeStart", 8),
+            active_end=data.get("activeEnd", 23),
+            prompt=data.get("prompt", "给用户发一条友好的问候消息，内容自然、简短、有变化，像朋友聊天一样。不要提到你是AI。"),
+        )
+
+
+@dataclass
 class AppConfig:
     """应用配置"""
 
     mode: int = 0  # 当前模式
     channels: Dict[str, ChannelConfig] = field(default_factory=dict)  # 频道配置
+    proactive_message: ProactiveMessageConfig = field(default_factory=ProactiveMessageConfig)  # 主动消息配置
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AppConfig":
@@ -151,6 +180,7 @@ class AppConfig:
         return cls(
             mode=data.get("mode", 0),
             channels=channels,
+            proactive_message=ProactiveMessageConfig.from_dict(data.get("proactiveMessage", {})),
         )
 
     def get_channel_config(self, channel_id: str) -> ChannelConfig:

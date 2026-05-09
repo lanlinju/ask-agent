@@ -105,3 +105,21 @@ class Context:
         """发送语音到当前聊天"""
         chat = self.update.effective_chat
         await self.bot.send_voice(chat.openid, voice, chat.type)
+
+
+class SendProxy:
+    """轻量级发送代理，接口与 Context 一致，用于主动消息等无 update 场景"""
+
+    def __init__(self, bot: QQBot, openid: str, chat_type: str = "private"):
+        self.bot: QQBot = bot
+        self.openid = openid
+        self.chat_type = chat_type
+
+    async def send_text(self, text: str) -> None:
+        await self.bot.send_text(self.openid, text, self.chat_type)
+
+    async def send_markdown(self, markdown: str) -> None:
+        await self.bot.send_markdown(self.openid, markdown, self.chat_type)
+
+    async def send_voice(self, voice: bytes) -> None:
+        await self.bot.send_voice(self.openid, voice, self.chat_type)

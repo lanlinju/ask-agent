@@ -102,15 +102,25 @@ class Application:
         if self._stop_event:
             self._stop_event.set()
 
-    def run_polling(self) -> None:
-        """阻塞式运行，Ctrl+C 停止"""
+    def run_polling(self, scheduler=None) -> None:
+        """阻塞式运行，Ctrl+C 停止
+
+        Args:
+            scheduler: 可选的 ProactiveScheduler，将与 Bot 一起启动
+        """
         stop_event = asyncio.Event()
         self._stop_event = stop_event
 
         async def _run():
             await self.start()
+            if scheduler:
+                await scheduler.start()
             print("QQ Bot已启动！按 Ctrl+C 停止")
-            await stop_event.wait()
+            try:
+                await stop_event.wait()
+            finally:
+                if scheduler:
+                    await scheduler.stop()
 
         try:
             asyncio.run(_run())

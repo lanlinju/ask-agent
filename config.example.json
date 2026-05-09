@@ -1,5 +1,15 @@
 {
   "mode": 0,
+  "proactiveMessage": {
+    "enabled": false,
+    "minIntervalHours": 1,
+    "maxIntervalHours": 3,
+    "checkIntervalSeconds": 60,
+    "sendProbability": 0.3,
+    "activeStart": 8,
+    "activeEnd": 23,
+    "prompt": "给用户发一条友好的问候消息，内容自然、简短、有变化，像朋友聊天一样。不要提到你是AI。"
+  },
   "channels": {
     "telegram": {
       "enabled": true,
