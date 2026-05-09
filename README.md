@@ -25,6 +25,7 @@
 - 🖼️ **图片理解** - 支持图片识别和分析，通过 URL 或本地文件发送图片给模型
 - 🎤 **语音合成** - 角色扮演模式支持语音回复，可使用预置音色或克隆音色
 - 🎙️ **语音识别** - Telegram Bot 支持语音消息识别，自动转文字并处理
+- 💤 **主动消息** - 用户长时间未聊天时自动发送问候消息（QQ/Telegram）
 
 ## 使用示例截图
 
@@ -2078,6 +2079,82 @@ Team: default
 ```
 
 > **注意：** `.team` 目录在程序退出时自动清理。
+
+## 主动消息
+
+Ask Agent 支持主动消息功能：当用户长时间未与 Bot 聊天时，Bot 会自动发送一条主动问候消息。支持 QQ Bot 和 Telegram Bot。
+
+### 工作原理
+
+```
+用户发消息 → 记录 last_active 时间，生成随机间隔
+         ↓
+调度器每 N 秒轮询: 用户空闲时间 >= 间隔?
+         ↓
+用户中途发消息 → 重置 last_active，重新生成间隔
+         ↓
+间隔到期 → 概率命中 → AI 生成消息 → 发送给用户
+```
+
+### 配置
+
+在 `~/.ask-agent/config.json` 中添加 `proactiveMessage` 字段：
+
+```json
+{
+  "proactiveMessage": {
+    "enabled": true,
+    "minIntervalHours": 1,
+    "maxIntervalHours": 3,
+    "checkIntervalSeconds": 60,
+    "sendProbability": 0.3,
+    "activeStart": 8,
+    "activeEnd": 23,
+    "prompt": "给用户发一条友好的问候消息，内容自然、简短、有变化，像朋友聊天一样。不要提到你是AI。"
+  }
+}
+```
+
+**配置说明：**
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `enabled` | bool | `false` | 是否启用主动消息 |
+| `minIntervalHours` | float | `1.0` | 最小不活跃间隔（小时） |
+| `maxIntervalHours` | float | `3.0` | 最大不活跃间隔（小时） |
+| `checkIntervalSeconds` | int | `60` | 调度器轮询间隔（秒） |
+| `sendProbability` | float | `0.3` | 发送概率（0.0-1.0） |
+| `activeStart` | int | `8` | 活跃时间开始（小时，24h） |
+| `activeEnd` | int | `23` | 活跃时间结束（小时，24h） |
+| `prompt` | string | `...` | 生成主动消息的提示词 |
+
+### 测试配置
+
+快速测试时可使用较小的间隔：
+
+```json
+{
+  "proactiveMessage": {
+    "enabled": true,
+    "minIntervalHours": 0.05,
+    "maxIntervalHours": 0.1,
+    "checkIntervalSeconds": 10,
+    "sendProbability": 1.0,
+    "activeStart": 0,
+    "activeEnd": 23,
+    "prompt": "给用户发一条友好的问候消息"
+  }
+}
+```
+
+这样 3-6 分钟不聊天就会触发主动消息。
+
+### 注意事项
+
+- 仅支持**私聊**，群聊不触发
+- 用户重新发消息会重置计时器
+- 主动消息复用正常的发送逻辑（分段发送 + 语音回复）
+- 共享上下文：AI 能看到之前的对话历史，消息更连贯
 
 ## 故障排查
 
