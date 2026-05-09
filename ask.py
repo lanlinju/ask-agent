@@ -4286,7 +4286,7 @@ async def _qq_handle_voice(update, context):
         await context.send_text("❌ 语音下载失败：无URL")
         return
 
-    print(f"  下载语音: {url[:60]}...")
+    logger.info(f"  下载语音: {url[:60]}...")
 
     try:
         resp = requests.get(url, timeout=15)
@@ -4302,10 +4302,10 @@ async def _qq_handle_voice(update, context):
     if wav_bytes:
         audio_bytes = wav_bytes
         mime_type = "audio/wav"
-        print(f"  silk → WAV 转换成功, 大小: {len(audio_bytes)} bytes")
+        logger.info(f"  silk → WAV 转换成功, 大小: {len(audio_bytes)} bytes")
     else:
         mime_type = "audio/ogg"
-        print(f"  直接使用原始音频, 大小: {len(audio_bytes)} bytes")
+        logger.info(f"  直接使用原始音频, 大小: {len(audio_bytes)} bytes")
 
     audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
 
