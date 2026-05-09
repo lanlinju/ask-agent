@@ -937,6 +937,10 @@ Ask Agent 支持 Model Context Protocol (MCP)，可以连接外部工具服务�
 
  在 `~/.ask-agent/` 或项目根目录创建 `mcp.json` 配置文件（示例）：
 
+
+> [!NOTE]
+> 注意MCP的服务名称不能包含下划线
+
 ```json
 {
   "servers": {
@@ -947,14 +951,14 @@ Ask Agent 支持 Model Context Protocol (MCP)，可以连接外部工具服务�
       "description": "文件系统访问服务器",
       "enabled": true
     },
-    "http_server": {
+    "httpserver": {
       "type": "http",
       "url": "http://localhost:8000/mcp",
       "description": "HTTP 服务器",
       "timeout": 30,
       "enabled": true
     },
-    "stdio_server": {
+    "stdioserver": {
       "type": "stdio",
       "command": "python",
       "args": ["./server/stdio_server.py"],

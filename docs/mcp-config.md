@@ -31,7 +31,7 @@ ask-agent/
       "description": "文件系统访问服务器",
       "enabled": true
     },
-    "local_server": {
+    "localserver": {
       "type": "stdio",
       "command": "python",
       "args": ["./server/server.py"],
@@ -59,7 +59,7 @@ ask-agent/
 ```json
 {
   "servers": {
-    "http_server": {
+    "httpserver": {
       "type": "http",
       "url": "http://localhost:8000/mcp",
       "headers": {
@@ -70,7 +70,7 @@ ask-agent/
       "description": "远程 HTTP 服务器",
       "enabled": true
     },
-    "cloud_mcp": {
+    "cloudmcp": {
       "type": "http",
       "url": "https://api.example.com/mcp",
       "timeout": 60,
