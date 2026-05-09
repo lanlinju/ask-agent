@@ -51,6 +51,11 @@ class QQBot:
         """发送语音消息"""
         return await self.messages.send_voice(openid, voice, chat_type, msg_id)
 
+    async def send_file(self, openid: str, file_path: str, chat_type: str = "private",
+                        msg_id: Optional[str] = None) -> bool:
+        """发送文件消息"""
+        return await self.messages.send_file(openid, file_path, chat_type, msg_id)
+
 
 _qq_bot_instance: Optional[QQBot] = None
 

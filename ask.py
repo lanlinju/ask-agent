@@ -1601,6 +1601,27 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "send_file",
+            "description": "Send a file to the user via Telegram or QQ. Supports any file type (PDF, ZIP, documents, etc.). Max 50MB.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file (relative or absolute)",
+                    },
+                    "caption": {
+                        "type": "string",
+                        "description": "Optional caption for the file",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "recognize_image",
             "description": "Recognize and analyze image content. Use this when user asks to describe, analyze, or understand one or multiple images. Supports network URLs and local file paths.",
             "parameters": {
@@ -1995,6 +2016,78 @@ def run_send_voice(text: str, voice: str = "") -> str:
 
     except Exception as e:
         return f"Error sending voice: {e}"
+
+
+def run_send_file(path: str, caption: str = "") -> str:
+    """Send a file to the user.
+
+    Args:
+        path: Path to the file (relative or absolute)
+        caption: Optional caption for the file
+
+    Returns:
+        Success or error message
+    """
+    global _telegram_update, _telegram_pending_tasks, _qq_bot, _qq_current_openid
+
+    try:
+        # Resolve the path
+        file_path = safe_path(path)
+        print(f"\033[34m→ Send File {path}\033[0m")
+
+        # Check if file exists
+        if not file_path.exists():
+            return f"Error: File not found: {path}"
+
+        # Check if it's a file
+        if not file_path.is_file():
+            return f"Error: Path is not a file: {path}"
+
+        # Check file size (50MB limit)
+        file_size = file_path.stat().st_size
+        if file_size > 50 * 1024 * 1024:
+            return f"Error: File too large ({file_size / 1024 / 1024:.1f}MB). Max 50MB."
+
+        # QQ Bot mode
+        if _qq_bot and _qq_current_openid:
+            import asyncio
+
+            async def send_qq_file():
+                await _qq_bot.send_file(_qq_current_openid, str(file_path))
+
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(send_qq_file())
+            else:
+                loop.run_until_complete(send_qq_file())
+            return f"File sent: {path}"
+
+        # Telegram Bot mode
+        if _telegram_update and _telegram_update.message:
+            import asyncio
+
+            async def send_document():
+                with open(file_path, 'rb') as doc:
+                    await _telegram_update.message.reply_document(
+                        document=doc,
+                        caption=caption if caption else None,
+                        filename=file_path.name
+                    )
+
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                task = asyncio.ensure_future(send_document())
+                _telegram_pending_tasks.append(task)
+            else:
+                loop.run_until_complete(send_document())
+
+            return f"File sent: {path}"
+
+        # CLI mode
+        return f"File path: {file_path} (not in Bot mode, cannot send)"
+
+    except Exception as e:
+        return f"Error sending file: {e}"
 
 
 def run_recognize_image(image_urls: List[str], prompt: str = "Describe this image in detail") -> str:
@@ -2447,6 +2540,8 @@ def execute_tool(name: str, args: dict) -> str:
         return run_send_image(args["path"], caption=args.get("caption", ""))
     if name == "send_voice":
         return run_send_voice(args["text"], voice=args.get("voice", ""))
+    if name == "send_file":
+        return run_send_file(args["path"], caption=args.get("caption", ""))
     if name == "recognize_image":
         return run_recognize_image(
             args["image_urls"],

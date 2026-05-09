@@ -131,6 +131,47 @@ class QQMessages:
             logger.error(f"发送语音失败: {e}")
             return False
 
+    async def send_file(self, openid: str, file_path: str, chat_type: str = "private",
+                       msg_id: Optional[str] = None, event_id: Optional[str] = None) -> bool:
+        """发送文件消息
+
+        Args:
+            openid: 用户 openid
+            file_path: 文件路径
+            chat_type: "private" 或 "group"
+        """
+        try:
+            token = await self.auth.get_access_token()
+            upload_url = f"{self.api_base}/v2/users/{openid}/files"
+
+            with open(file_path, "rb") as f:
+                file_data = base64.b64encode(f.read()).decode("utf-8")
+
+            response = requests.post(
+                upload_url,
+                json={
+                    "file_type": 4,
+                    "srv_send_msg": False,
+                    "file_data": file_data
+                },
+                headers={
+                    "Authorization": f"QQBot {token}",
+                    "Content-Type": "application/json"
+                },
+                timeout=60
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            if not response.ok or not data.get("file_info"):
+                raise Exception(f"QQ上传文件失败: {response.status_code} {data}")
+
+            await self._send_media(openid, data["file_info"], chat_type, msg_id, event_id)
+            return True
+        except Exception as e:
+            logger.error(f"发送文件失败: {e}")
+            return False
+
     async def _send_media(self, openid: str, file_info: str, chat_type: str = "private",
                          msg_id: Optional[str] = None, event_id: Optional[str] = None) -> None:
         """发送媒体消息"""

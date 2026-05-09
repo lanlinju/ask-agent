@@ -55,6 +55,9 @@ class Message:
     async def reply_voice(self, voice: bytes) -> None:
         raise NotImplementedError("Use Context.bot.send_voice instead")
 
+    async def reply_document(self, document: Any = None, caption: str = "", filename: str = "") -> None:
+        raise NotImplementedError("Use Context.bot.send_file instead")
+
     async def reply_markdown(self, markdown: str) -> None:
         raise NotImplementedError("Use Context.bot.send_markdown instead")
 
@@ -106,6 +109,11 @@ class Context:
         chat = self.update.effective_chat
         await self.bot.send_voice(chat.openid, voice, chat.type)
 
+    async def send_file(self, file_path: str) -> None:
+        """发送文件到当前聊天"""
+        chat = self.update.effective_chat
+        await self.bot.send_file(chat.openid, file_path, chat.type)
+
 
 class SendProxy:
     """轻量级发送代理，接口与 Context 一致，用于主动消息等无 update 场景"""
@@ -123,3 +131,6 @@ class SendProxy:
 
     async def send_voice(self, voice: bytes) -> None:
         await self.bot.send_voice(self.openid, voice, self.chat_type)
+
+    async def send_file(self, file_path: str) -> None:
+        await self.bot.send_file(self.openid, file_path, self.chat_type)
