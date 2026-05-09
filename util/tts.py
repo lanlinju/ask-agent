@@ -488,7 +488,7 @@ def _play_audio_linux(file_path: str) -> bool:
                     stderr=subprocess.DEVNULL,
                 )
             else:
-                subprocess.run([player, file_path], check=True)
+                subprocess.run([player, file_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return True
         except FileNotFoundError:
             continue
