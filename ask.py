@@ -1559,69 +1559,6 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "send_image",
-            "description": "Send an image file to the user via Telegram. Supports JPG, PNG, GIF, BMP, WebP formats.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the image file (relative or absolute)",
-                    },
-                    "caption": {
-                        "type": "string",
-                        "description": "Optional caption for the image",
-                    },
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "send_voice",
-            "description": "Send a voice message to the user via Telegram using TTS (text-to-speech). Converts text to speech audio and sends it as a voice message.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "Text to convert to speech and send as voice message",
-                    },
-                    "voice": {
-                        "type": "string",
-                        "description": "Voice ID for TTS. Optional, uses default if not specified.",
-                    },
-                },
-                "required": ["text"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "send_file",
-            "description": "Send a file to the user via Telegram or QQ. Supports any file type (PDF, ZIP, documents, etc.). Max 50MB.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the file (relative or absolute)",
-                    },
-                    "caption": {
-                        "type": "string",
-                        "description": "Optional caption for the file",
-                    },
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "recognize_image",
             "description": "Recognize and analyze image content. Use this when user asks to describe, analyze, or understand one or multiple images. Supports network URLs and local file paths.",
             "parameters": {
@@ -1660,6 +1597,73 @@ TOOLS = [
                     },
                 },
                 "required": ["audio_urls"],
+            },
+        },
+    },
+]
+
+# Bot mode tools (ROLE mode only - send media to user)
+BOT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "send_image",
+            "description": "Send an image file to the user. Supports JPG, PNG, GIF, BMP, WebP formats.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the image file (relative or absolute)",
+                    },
+                    "caption": {
+                        "type": "string",
+                        "description": "Optional caption for the image",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_voice",
+            "description": "Send a voice message to the user using TTS (text-to-speech). Converts text to speech audio and sends it as a voice message.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Text to convert to speech and send as voice message",
+                    },
+                    "voice": {
+                        "type": "string",
+                        "description": "Voice ID for TTS. Optional, uses default if not specified.",
+                    },
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_file",
+            "description": "Send a file to the user. Supports any file type (PDF, ZIP, documents, etc.). Max 50MB.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file (relative or absolute)",
+                    },
+                    "caption": {
+                        "type": "string",
+                        "description": "Optional caption for the file",
+                    },
+                },
+                "required": ["path"],
             },
         },
     },
@@ -4726,10 +4730,16 @@ def agent(prompt: str, agent_messages: Optional[List[Dict]] = None) -> str:
         # 将用户新消息添加到消息列表
         messages.append({"role": "user", "content": prompt})
 
-        # In AGENT mode, merge team tools into the tools list
+        # Build active tools list
         active_tools = TOOLS[:]
+        
+        # ROLE mode: add media sending tools (send_image, send_voice, send_file)
+        if current_mode == ROLE:
+            active_tools = active_tools + BOT_TOOLS
+        
+        # AGENT mode with team: add team tools
         if current_mode == AGENT and AGENT_TEAM_ENABLED:
-            active_tools = TOOLS + TEAM_TOOLS
+            active_tools = active_tools + TEAM_TOOLS
 
         while True:
             # 检查是否被中断
