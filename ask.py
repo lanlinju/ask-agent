@@ -1580,6 +1580,27 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "send_voice",
+            "description": "Send a voice message to the user via Telegram using TTS (text-to-speech). Converts text to speech audio and sends it as a voice message.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Text to convert to speech and send as voice message",
+                    },
+                    "voice": {
+                        "type": "string",
+                        "description": "Voice ID for TTS. Optional, uses default if not specified.",
+                    },
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "recognize_image",
             "description": "Recognize and analyze image content. Use this when user asks to describe, analyze, or understand one or multiple images. Supports network URLs and local file paths.",
             "parameters": {
@@ -1896,6 +1917,84 @@ def run_send_image(path: str, caption: str = "") -> str:
 
     except Exception as e:
         return f"Error sending image: {e}"
+
+
+def run_send_voice(text: str, voice: str = "") -> str:
+    """Send a voice message to the user via TTS.
+
+    Args:
+        text: Text to convert to speech
+        voice: Voice ID for TTS (optional)
+
+    Returns:
+        Success or error message
+    """
+    global _telegram_update, _telegram_pending_tasks, _qq_bot, _qq_current_openid
+
+    try:
+        from util.tts import text_to_speech, get_tts_api_config, convert_audio_format, strip_parentheses
+
+        print(f"\033[34m→ Send Voice\033[0m")
+
+        # Strip parentheses content
+        tts_text = strip_parentheses(text)
+        if not tts_text:
+            return "Error: Text is empty after removing parentheses content"
+
+        # Get TTS config - try current role config first (ignore enabled flag), then env vars
+        voice_config = get_current_voice_config_raw()
+        if not voice_config:
+            voice_config = {"model": os.getenv("TTS_API_MODEL", "")}
+        if voice:
+            voice_config["voice_id"] = voice
+
+        api_config = get_tts_api_config(PROVIDER_CONFIG, voice_config.get("model"))
+        if not api_config:
+            return "Error: TTS API not configured. Set TTS_API_KEY and TTS_API_URL in .env, or configure voice in your role settings."
+
+        # Generate speech
+        audio_bytes = text_to_speech(tts_text, voice_config, api_config)
+        if not audio_bytes:
+            return "Error: Failed to generate speech"
+
+        # QQ Bot mode
+        if _qq_bot and _qq_current_openid:
+            import asyncio
+
+            async def send_qq_voice():
+                await _qq_bot.send_voice(_qq_current_openid, audio_bytes)
+
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(send_qq_voice())
+            else:
+                loop.run_until_complete(send_qq_voice())
+            return "Voice sent"
+
+        # Telegram Bot mode
+        if _telegram_update and _telegram_update.message:
+            import asyncio
+
+            # Telegram requires ogg/opus for voice messages
+            ogg_bytes = convert_audio_format(audio_bytes, "mp3", "ogg")
+
+            async def send_voice_msg():
+                await _telegram_update.message.reply_voice(ogg_bytes or audio_bytes)
+
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                task = asyncio.ensure_future(send_voice_msg())
+                _telegram_pending_tasks.append(task)
+            else:
+                loop.run_until_complete(send_voice_msg())
+
+            return "Voice sent"
+
+        # CLI mode
+        return "Voice generated (not in Bot mode, cannot send)"
+
+    except Exception as e:
+        return f"Error sending voice: {e}"
 
 
 def run_recognize_image(image_urls: List[str], prompt: str = "Describe this image in detail") -> str:
@@ -2346,6 +2445,8 @@ def execute_tool(name: str, args: dict) -> str:
         return BG_MANAGER.check(args.get("task_id"))
     if name == "send_image":
         return run_send_image(args["path"], caption=args.get("caption", ""))
+    if name == "send_voice":
+        return run_send_voice(args["text"], voice=args.get("voice", ""))
     if name == "recognize_image":
         return run_recognize_image(
             args["image_urls"],
@@ -3862,6 +3963,14 @@ def get_current_voice_config() -> Optional[dict]:
     if not ROLE_MANAGER or not ROLE_MANAGER.current_role:
         return None
     return ROLE_MANAGER.current_role.get_voice_config()
+
+
+def get_current_voice_config_raw() -> Optional[dict]:
+    """获取当前角色的语音配置（忽略 enabled 状态，用于 send_voice 工具）"""
+    global ROLE_MANAGER
+    if not ROLE_MANAGER or not ROLE_MANAGER.current_role:
+        return None
+    return ROLE_MANAGER.current_role.get_voice_config_raw()
 
 
 def toggle_voice(enabled: bool):

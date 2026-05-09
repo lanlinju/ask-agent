@@ -58,11 +58,15 @@ class RoleConfig:
         return data
 
     def get_voice_config(self) -> Optional[Dict[str, Any]]:
-        """获取语音配置"""
+        """获取语音配置（仅在启用时返回）"""
         if not self.voice:
             return None
         if not self.voice.get("enabled", False):
             return None
+        return self.voice
+
+    def get_voice_config_raw(self) -> Optional[Dict[str, Any]]:
+        """获取语音配置（忽略 enabled 状态，用于 send_voice 工具）"""
         return self.voice
 
 
