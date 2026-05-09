@@ -3000,7 +3000,7 @@ def command(command: str):
         return
 
     # 列出所有可用的 MCP 服务器
-    if command == "/mcp":
+    if command.startswith("/mcp"):
         handle_mcp_command(command)
         return
 
