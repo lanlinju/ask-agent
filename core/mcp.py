@@ -6,8 +6,8 @@ from urllib.parse import urljoin
 import uuid
 import subprocess
 from pathlib import Path
-from MCPConfig import MCPConfig, ServerConfig
-from config import ConfigPathManager
+from core.MCPConfig import MCPConfig, ServerConfig
+from core.config import ConfigPathManager
 
 logger = logging.getLogger(__name__)
 

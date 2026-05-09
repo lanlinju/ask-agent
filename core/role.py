@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
-from config import ConfigPathManager
+from core.config import ConfigPathManager
 
 logger = logging.getLogger(__name__)
 

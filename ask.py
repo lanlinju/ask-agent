@@ -20,20 +20,20 @@ from dotenv import load_dotenv
 from pathlib import Path
 import platform
 import threading
-from mcp import MCPManager
-from provider import ProviderConfig
-from session import SessionManager
-from role import RoleManager
-from agent import AgentManager
-from command import CommandManager
-from memory import MemoryManager, MEMORY_GUIDANCE
+from core.mcp import MCPManager
+from core.provider import ProviderConfig
+from core.session import SessionManager
+from core.role import RoleManager
+from core.agent import AgentManager
+from core.command import CommandManager
+from core.memory import MemoryManager, MEMORY_GUIDANCE
 from typing import Optional
-from config import ConfigPathManager, get_config_path, load_app_config, AppConfig, ChannelConfig
+from core.config import ConfigPathManager, get_config_path, load_app_config, AppConfig, ChannelConfig
 from util import YELLOW, GREEN, RESET, BLUE, format_range_info, format_diff, read_file, write_file
 from util.background import BackgroundManager, drain_background_notifications
 from util.hooks import HookManager, HookEvent, HookInput
 from util.agent_team import TeammateManager
-from telegram_group import TelegramGroupManager, is_bot_mentioned, has_other_mentions
+from core.telegram_group import TelegramGroupManager, is_bot_mentioned, has_other_mentions
 from util.message_buffer import MessageBufferManager, buffer_manager
 from telegram import Update
 from telegram.ext import (
@@ -4826,7 +4826,7 @@ def main():
     # ACP mode: run as agent over stdio, skip normal initialization
     if args.acp:
         import asyncio
-        from acp_agent import run_acp_agent
+        from core.acp_agent import run_acp_agent
 
         asyncio.run(run_acp_agent(args.log_level))
         return

@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-from config import ChannelConfig, GroupConfig
+from core.config import ChannelConfig, GroupConfig
 
 logger = logging.getLogger(__name__)
 

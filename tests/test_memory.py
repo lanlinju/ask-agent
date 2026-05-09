@@ -5,7 +5,7 @@
 import tempfile
 from pathlib import Path
 
-from memory import MemoryManager, MemoryEntry, MEMORY_TYPES, DreamConsolidator
+from core.memory import MemoryManager, MemoryEntry, MEMORY_TYPES, DreamConsolidator
 
 
 class TestMemoryEntry:
