@@ -219,8 +219,9 @@ class ProactiveScheduler:
             return ""
 
         # 注入主动消息提示
-        proactive_prompt = f"[系统提示 - 主动消息] {self.config.prompt}"
-        injected_user_msg = {"role": "user", "content": proactive_prompt}
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+        proactive_prompt = f"[系统提示 - 主动消息] 当前时间: {current_date}\n{self.config.prompt}"
+        injected_user_msg = {"role": "system", "content": proactive_prompt}
         messages.append(injected_user_msg)
 
         try:
@@ -239,11 +240,11 @@ class ProactiveScheduler:
             return ""
 
         finally:
-            # 剔除注入的提示词和 AI 回复
+            # 剔除注入的提示词
             try:
                 if injected_user_msg in messages:
                     messages.remove(injected_user_msg)
-                if messages and messages[-1].get("role") == "assistant":
-                    messages.pop()
+                # if messages and messages[-1].get("role") == "system":
+                #     messages.pop()
             except Exception as e:
                 logger.warning(f"主动消息: 清理消息失败: {e}")
