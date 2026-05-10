@@ -305,7 +305,4 @@ app.run_polling()
 
 ## 参考
 
-- [weixin-bot SDK](https://github.com/epiral/weixin-bot)
-- [weixin-ClawBot-API](https://github.com/codeenxi/weixin-ClawBot-API)
-- [OpenClaw文档](https://docs.openclaw.ai)
-- [微信ClawBot功能使用条款](https://docs.openclaw.ai/terms)
+- [openclaw-weixin](https://github.com/Tencent/openclaw-weixin)

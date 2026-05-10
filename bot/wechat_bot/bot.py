@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Optional, Callable, Awaitable, Any
 
+import aiohttp
+
 from .auth import WeChatAuth, Credentials, ILINK_API_BASE
 from .gateway import WeChatGateway
 from .messages import WeChatMessages
@@ -16,8 +18,10 @@ class WeChatBot:
 
     def __init__(self, base_url: str = ILINK_API_BASE):
         self.auth = WeChatAuth(base_url)
-        self.messages = WeChatMessages(self.auth, base_url)
-        self.gateway = WeChatGateway(self.auth, base_url)
+        self._session: Optional[aiohttp.ClientSession] = None
+        self.messages: Optional[WeChatMessages] = None
+        self.gateway: Optional[WeChatGateway] = None
+        self._base_url = base_url
         self.on_message_callback: Optional[Callable[[WeChatMessage], Awaitable[None]]] = None
 
     async def login(self, force: bool = False) -> Credentials:
@@ -38,13 +42,21 @@ class WeChatBot:
             on_message: 消息处理回调函数
         """
         self.on_message_callback = on_message
+        self._session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False))
+        self.messages = WeChatMessages(self.auth, self._session, self._base_url)
+        self.gateway = WeChatGateway(self.auth, self._session, self._base_url)
         logger.info("启动微信Bot...")
-        await self.gateway.start(self._handle_message)
+        try:
+            await self.gateway.start(self._handle_message)
+        finally:
+            if self._session and not self._session.closed:
+                await self._session.close()
 
     async def stop(self) -> None:
         """停止Bot"""
         logger.info("停止微信Bot...")
-        await self.gateway.stop()
+        if self.gateway:
+            await self.gateway.stop()
 
     async def _handle_message(self, message: WeChatMessage) -> None:
         """处理消息"""
@@ -62,6 +74,8 @@ class WeChatBot:
         Returns:
             是否发送成功
         """
+        if not self.messages:
+            return False
         return await self.messages.send_text(user_id, text, context_token)
 
     async def send_typing(self, user_id: str, context_token: str, status: int = 1) -> bool:
@@ -75,6 +89,8 @@ class WeChatBot:
         Returns:
             是否发送成功
         """
+        if not self.messages:
+            return False
         return await self.messages.send_typing(user_id, context_token, status)
 
     async def reply(self, message: WeChatMessage, text: str) -> bool:

@@ -14,6 +14,7 @@
 - 🔌 **MCP 支持** - 集成 Model Context Protocol，支持外部工具
 - 📱 **Telegram Bot 集成** - 支持通过 Telegram Bot 远程控制智能体
 - 🐧 **QQ Bot 集成** - 支持通过 QQ Bot 远程控制智能体
+- 💬 **微信 Bot 集成** - 支持通过微信 Bot 远程控制智能体 (仅支持文本消息)
 - 🎭 **角色扮演模式** - 支持角色扮演对话，每个角色独立对话历史
 - 🎯 **多 Provider 支持** - 支持多个 AI Provider（OpenAI、DeepSeek 等）
 - 🔄 **模型切换** - 交互式选择和切换不同的 AI 模型
@@ -25,7 +26,7 @@
 - 🖼️ **图片理解** - 支持图片识别和分析，通过 URL 或本地文件发送图片给模型
 - 🎤 **语音合成** - 角色扮演模式支持语音回复，可使用预置音色或克隆音色
 - 🎙️ **语音识别** - Telegram Bot 支持语音消息识别，自动转文字并处理
-- 💤 **主动消息** - 用户长时间未聊天时自动发送问候消息（QQ/Telegram）
+- 💤 **主动消息** - 用户长时间未聊天时自动发送问候消息（QQ/Telegram/WeChat）
 
 ## 使用示例截图
 
@@ -61,7 +62,7 @@ cd ask-agent
 pip install -r requirements.txt
 
 # 方式二：单独安装依赖
-pip install python-dotenv requests python-telegram-bot prompt-toolkit websockets silk-python
+pip install python-dotenv requests python-telegram-bot prompt-toolkit websockets silk-python qrcode
 ```
 
 3. 启动程序
@@ -319,6 +320,7 @@ python ag
 | `/mcp -l` | 列出所有可用的 MCP 服务器 |
 | `/bot` | 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN） |
 | `/qqbot` | 启动 QQ Bot（需设置 QQ_APP_ID 和 QQ_APP_SECRET） |
+| `/webot` | 启动微信 Bot（通过 QR 码扫码登录） |
 | `/team` | 列出所有团队成员及状态（需 `--agent-team`） |
 | `/inbox` | 读取并清空团队收件箱（需 `--agent-team`） |
 | `/help` | 显示帮助信息 |
@@ -856,6 +858,34 @@ QQ Bot 同样支持消息缓冲功能，配置方式与 Telegram 相同。
 | `enabled` | bool | `false` | 是否启用消息缓冲 |
 | `timeout` | float | `3.0` | 超时时间（秒） |
 | `groupOnly` | bool | `true` | 是否只在群组中启用 |
+
+## 微信 Bot 集成
+
+Ask Agent 支持通过微信 Bot 远程控制智能体。
+
+### 设置步骤
+
+**1. 获取微信 Bot 凭证**
+
+微信 Bot 使用 iLink 协议，通过 QR 码扫码登录。
+
+**2. 启动 Bot**
+
+```bash
+# 方式一：在交互模式中启动
+ag
+/webot
+```
+
+启动后会显示 QR 码，使用微信扫码登录。
+
+启动成功后会显示：`微信Bot已启动！按 Ctrl+C 停止`
+
+
+**注意事项：**
+- Bot 运行期间会持续监听消息，按 `Ctrl+C` 可停止
+- 建议使用智能体模式（`/agent`）以获得完整功能
+- 登录凭证会自动保存，下次启动无需重新扫码
 
 ## ACP (Agent Client Protocol) 集成
 
@@ -2082,7 +2112,7 @@ Team: default
 
 ## 主动消息
 
-Ask Agent 支持主动消息功能：当用户长时间未与 Bot 聊天时，Bot 会自动发送一条主动问候消息。支持 QQ Bot 和 Telegram Bot。
+Ask Agent 支持主动消息功能：当用户长时间未与 Bot 聊天时，Bot 会自动发送一条主动问候消息。支持 QQ Bot、Telegram Bot 和微信 Bot。
 
 ### 工作原理
 

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-import requests
+import aiohttp
 import qrcode
 
 logger = logging.getLogger(__name__)
@@ -231,19 +231,20 @@ class WeChatAuth:
 
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, timeout=30)
-                response.raise_for_status()
-                data = response.json()
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json(content_type=None)
 
                 if "qrcode" not in data:
                     raise Exception(f"获取QR码失败: {data}")
 
                 return data
-            except requests.Timeout:
+            except aiohttp.ServerTimeoutError:
                 logger.warning(f"获取QR码超时 (尝试 {attempt + 1}/{max_retries})")
                 if attempt == max_retries - 1:
                     raise Exception("获取QR码超时，请检查网络连接或是否需要代理")
-            except requests.ConnectionError:
+            except aiohttp.ClientConnectionError:
                 logger.warning(f"连接失败 (尝试 {attempt + 1}/{max_retries})")
                 if attempt == max_retries - 1:
                     raise Exception("无法连接到iLink服务器，请检查网络连接或是否需要代理")
@@ -267,14 +268,15 @@ class WeChatAuth:
 
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, headers=headers, timeout=30)
-                response.raise_for_status()
-                return response.json()
-            except requests.Timeout:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                        resp.raise_for_status()
+                        return await resp.json(content_type=None)
+            except aiohttp.ServerTimeoutError:
                 logger.warning(f"轮询QR状态超时 (尝试 {attempt + 1}/{max_retries})")
                 if attempt == max_retries - 1:
                     raise Exception("轮询QR状态超时，请检查网络连接")
-            except requests.ConnectionError:
+            except aiohttp.ClientConnectionError:
                 logger.warning(f"连接失败 (尝试 {attempt + 1}/{max_retries})")
                 if attempt == max_retries - 1:
                     raise Exception("无法连接到iLink服务器")

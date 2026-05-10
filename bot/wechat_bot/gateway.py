@@ -7,7 +7,7 @@ import logging
 import os
 from typing import Any, Callable, Awaitable, Optional
 
-import requests
+import aiohttp
 
 from .auth import WeChatAuth, ILINK_API_BASE
 from .types import (
@@ -21,19 +21,19 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
-CHANNEL_VERSION = "1.0.0"
+_CHANNEL_VERSION = "1.0.0"
 
 
 class WeChatGateway:
     """微信长轮询Gateway"""
 
-    def __init__(self, auth: WeChatAuth, base_url: str = ILINK_API_BASE):
+    def __init__(self, auth: WeChatAuth, session: aiohttp.ClientSession, base_url: str = ILINK_API_BASE):
         self.auth = auth
+        self.session = session
         self.base_url = base_url
         self.cursor: str = ""
         self.on_message_callback: Optional[Callable[[WeChatMessage], Awaitable[None]]] = None
         self._stopped = False
-        self._current_poll_task: Optional[asyncio.Task] = None
 
     def _build_headers(self, token: str) -> dict[str, str]:
         """构建请求头"""
@@ -47,7 +47,7 @@ class WeChatGateway:
 
     def _build_base_info(self) -> dict[str, str]:
         """构建base_info"""
-        return {"channel_version": CHANNEL_VERSION}
+        return {"channel_version": _CHANNEL_VERSION}
 
     async def start(self, on_message: Callable[[WeChatMessage], Awaitable[None]]) -> None:
         """启动Gateway"""
@@ -60,55 +60,56 @@ class WeChatGateway:
         """停止Gateway"""
         logger.info("正在停止微信Gateway...")
         self._stopped = True
-        if self._current_poll_task and not self._current_poll_task.done():
-            self._current_poll_task.cancel()
         logger.info("微信Gateway已停止")
 
     async def _run_loop(self) -> None:
         """主轮询循环"""
         retry_delay_seconds = 1.0
+        logger.info("轮询循环已启动")
 
-        while not self._stopped:
-            try:
-                token = await self.auth.get_token()
-                self._current_poll_task = asyncio.create_task(
-                    self._get_updates(token)
-                )
-                updates = await self._current_poll_task
-                self._current_poll_task = None
-                self.cursor = updates.get("get_updates_buf") or self.cursor
-                retry_delay_seconds = 1.0
+        try:
+            while not self._stopped:
+                try:
+                    token = await self.auth.get_token()
+                    logger.debug("正在轮询消息...")
+                    updates = await self._get_updates(token)
+                    self.cursor = updates.get("get_updates_buf") or self.cursor
+                    retry_delay_seconds = 1.0
 
-                for raw in updates.get("msgs", []):
-                    message = self._to_wechat_message(raw)
-                    if message and self.on_message_callback:
-                        logger.debug(f"收到消息: {message.text[:50]}")
-                        await self.on_message_callback(message)
+                    for raw in updates.get("msgs", []):
+                        message = self._to_wechat_message(raw)
+                        if message and self.on_message_callback:
+                            logger.debug(f"收到消息: {message.text[:50]}")
+                            await self.on_message_callback(message)
 
-            except asyncio.CancelledError:
-                self._current_poll_task = None
-                if self._stopped:
-                    break
-                raise
-            except Exception as e:
-                self._current_poll_task = None
-                if self._stopped:
-                    break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    if self._stopped:
+                        break
 
-                if self._is_session_expired(e):
-                    logger.warning("会话已过期，需要重新登录")
-                    self.auth.credentials = None
-                    self.cursor = ""
-                    try:
-                        await self.auth.login(force=True)
-                        retry_delay_seconds = 1.0
-                        continue
-                    except Exception as login_error:
-                        logger.error(f"重新登录失败: {login_error}")
+                    if self._is_session_expired(e):
+                        logger.warning("会话已过期，需要重新登录")
+                        self.auth.credentials = None
+                        self.cursor = ""
+                        try:
+                            await self.auth.login(force=True)
+                            retry_delay_seconds = 1.0
+                            continue
+                        except Exception as login_error:
+                            logger.error(f"重新登录失败: {login_error}")
 
-                logger.error(f"轮询错误: {e}")
-                await asyncio.sleep(retry_delay_seconds)
-                retry_delay_seconds = min(retry_delay_seconds * 2, 10.0)
+                    logger.error(f"轮询错误: {e}", exc_info=True)
+                    await asyncio.sleep(retry_delay_seconds)
+                    retry_delay_seconds = min(retry_delay_seconds * 2, 10.0)
+        except asyncio.CancelledError:
+            logger.info("轮询循环被取消")
+            raise
+        except Exception as e:
+            logger.error(f"轮询循环异常退出: {e}", exc_info=True)
+            raise
+        finally:
+            logger.info("轮询循环已退出")
 
     async def _get_updates(self, token: str) -> GetUpdatesResponse:
         """获取更新"""
@@ -119,9 +120,9 @@ class WeChatGateway:
         }
         headers = self._build_headers(token)
 
-        response = requests.post(url, json=body, headers=headers, timeout=40)
-        response.raise_for_status()
-        data = response.json()
+        async with self.session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=40)) as resp:
+            resp.raise_for_status()
+            data = await resp.json(content_type=None)
 
         if data.get("ret", 0) != 0:
             errcode = data.get("errcode")

@@ -4696,28 +4696,89 @@ _wechat_current_context_token: Optional[str] = None
 
 
 async def _wechat_handle_message(message):
-    """微信消息处理"""
+    """微信消息分发"""
     global _wechat_current_user_id, _wechat_current_context_token
     _wechat_current_user_id = message.user_id
     _wechat_current_context_token = message.context_token
 
-    print(f"收到微信消息 | 用户: {message.user_id} | 内容: {message.text}")
+    if message.type == "text":
+        await _wechat_handle_text(message)
+    else:
+        print(f"忽略微信消息类型: {message.type}")
+
+
+async def _send_wechat_response(bot, message, response: str):
+    """发送响应到微信（分段发送，支持换行）"""
+    response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
+
+    for para in response.split("\n\n"):
+        para = para.strip()
+        if para:
+            await bot.reply(message, para)
+
+
+async def _wechat_handle_text(message):
+    """微信文本消息处理"""
+    user_id = message.user_id
+    text = message.text.strip()
+
+    print(f"收到微信消息 | 用户: {user_id} | 内容: {text}")
     print(f"{BLUE}微信 Bot:{RESET}")
+
+    # 注册用户到主动消息调度器
+    if _PROACTIVE_SCHEDULER:
+        _PROACTIVE_SCHEDULER.register_user("wechat", user_id, user_id)
+
+    # 命令处理
+    if text.startswith("/"):
+        await _wechat_handle_command(message)
+        return
 
     # 发送typing状态
     if _wechat_bot:
-        await _wechat_bot.send_typing(message.user_id, message.context_token, 1)
+        await _wechat_bot.send_typing(user_id, message.context_token, 1)
 
-    # 处理消息
-    response = agent(message.text)
+    response = agent(text)
 
-    # 发送回复
     if _wechat_bot:
-        await _wechat_bot.reply(message, response)
-        # 取消typing状态
-        await _wechat_bot.send_typing(message.user_id, message.context_token, 2)
+        await _send_wechat_response(_wechat_bot, message, response)
+        await _wechat_bot.send_typing(user_id, message.context_token, 2)
 
     print()
+
+
+async def _wechat_handle_command(message):
+    """微信命令处理"""
+    text = message.text.strip()
+    cmd = text.split()[0]
+
+    if cmd == "/start":
+        await _wechat_bot.reply(message, "欢迎！使用/exit命令退出微信 Bot，/save命令保存聊天会话")
+    elif cmd == "/exit":
+        save_current_session()
+        save_config(current_mode)
+        await _wechat_bot.reply(message, "会话已保存")
+        if _wechat_bot:
+            await _wechat_bot.stop()
+    elif cmd == "/save":
+        save_current_session()
+        save_config(current_mode)
+        await _wechat_bot.reply(message, "会话已保存")
+    elif cmd == "/help":
+        await _wechat_bot.reply(message, show_help())
+    elif cmd == "/new":
+        save_current_session()
+        init_system_prompt(current_mode)
+        await _wechat_bot.reply(message, "已创建新会话")
+    elif cmd == "/clear":
+        clear_history()
+        await _wechat_bot.reply(message, "已清除对话历史")
+    else:
+        try:
+            command(text)
+            await _wechat_bot.reply(message, f"执行命令: {text}")
+        except Exception as e:
+            await _wechat_bot.reply(message, f"命令执行失败: {e}")
 
 
 def run_wechat_bot():
@@ -4736,9 +4797,30 @@ def run_wechat_bot():
         credentials = await bot.login()
         print(f"✅ 登录成功: {credentials.user_id}")
 
+        # 初始化主动消息调度器
+        scheduler = init_proactive_scheduler()
+
+        if scheduler:
+            async def _wechat_send_callback(user_id: str, message: str, chat_type: str = "private"):
+                if not _wechat_bot:
+                    return
+                await _wechat_bot.send_text(user_id, message, "")
+
+            scheduler.register_send_callback("wechat", _wechat_send_callback)
+
         # 启动消息处理
         print("微信Bot已启动！按 Ctrl+C 停止")
-        await bot.start(_wechat_handle_message)
+        stop_event = asyncio.Event()
+
+        try:
+            await bot.start(_wechat_handle_message)
+            if scheduler:
+                await scheduler.start()
+            await stop_event.wait()
+        finally:
+            if scheduler:
+                await scheduler.stop()
+            await bot.stop()
 
     try:
         asyncio.run(_run())

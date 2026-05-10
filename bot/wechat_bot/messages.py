@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import base64
 import logging
 import os
+import base64
 from typing import Any, Optional
 from uuid import uuid4
 
-import requests
+import aiohttp
 
 from .auth import WeChatAuth, ILINK_API_BASE
 from .types import (
@@ -19,14 +19,15 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
-CHANNEL_VERSION = "1.0.0"
+_CHANNEL_VERSION = "1.0.0"
 
 
 class WeChatMessages:
     """微信消息发送管理"""
 
-    def __init__(self, auth: WeChatAuth, base_url: str = ILINK_API_BASE):
+    def __init__(self, auth: WeChatAuth, session: aiohttp.ClientSession, base_url: str = ILINK_API_BASE):
         self.auth = auth
+        self.session = session
         self.base_url = base_url
 
     def _build_headers(self, token: str) -> dict[str, str]:
@@ -41,7 +42,7 @@ class WeChatMessages:
 
     def _build_base_info(self) -> BaseInfo:
         """构建base_info"""
-        return {"channel_version": CHANNEL_VERSION}
+        return {"channel_version": _CHANNEL_VERSION}
 
     def _build_text_message(self, user_id: str, context_token: str, text: str) -> SendMessageMessage:
         """构建文本消息"""
@@ -118,9 +119,9 @@ class WeChatMessages:
             }
             headers = self._build_headers(token)
 
-            response = requests.post(url, json=body, headers=headers, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            async with self.session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                resp.raise_for_status()
+                data = await resp.json(content_type=None)
 
             if data.get("ret", 0) != 0:
                 logger.warning(f"发送typing状态失败: {data}")
@@ -141,9 +142,9 @@ class WeChatMessages:
         }
         headers = self._build_headers(token)
 
-        response = requests.post(url, json=body, headers=headers, timeout=15)
-        response.raise_for_status()
-        return response.json()
+        async with self.session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            resp.raise_for_status()
+            return await resp.json(content_type=None)
 
     async def _send_message(self, token: str, msg: SendMessageMessage) -> dict:
         """发送消息"""
@@ -154,9 +155,9 @@ class WeChatMessages:
         }
         headers = self._build_headers(token)
 
-        response = requests.post(url, json=body, headers=headers, timeout=15)
-        response.raise_for_status()
-        data = response.json()
+        async with self.session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            resp.raise_for_status()
+            data = await resp.json(content_type=None)
 
         if data.get("ret", 0) != 0:
             raise Exception(f"发送消息失败: {data}")
