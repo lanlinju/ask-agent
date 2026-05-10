@@ -3200,6 +3200,12 @@ def command(command: str):
         run_qq_bot()
         return
 
+    # 启动微信 Bot
+    if command == "/webot":
+        print("🤖 启动微信 Bot...")
+        run_wechat_bot()
+        return
+
     # 显示帮助
     if command == "/help":
         show_help()
@@ -3361,6 +3367,7 @@ def show_help():
     /inbox        - 读取并清空团队收件箱
     /bot          - 启动 Telegram Bot（需设置 TELEGRAM_BOT_TOKEN 环境变量）
     /qqbot        - 启动 QQ Bot（需设置 QQ_APP_ID 和 QQ_APP_SECRET 环境变量）
+    /webot        - 启动微信 Bot（扫码登录）
     /help         - 显示此帮助信息
     /exit         - 退出程序（自动保存会话）
     !command      - 执行shell命令（如 !ls, !pwd, !cat file.txt）
@@ -4680,6 +4687,66 @@ def run_qq_bot():
         scheduler.register_send_callback("qqbot", _qq_send_callback)
 
     app.run_polling(scheduler=scheduler)
+
+
+# 微信 Bot 相关全局变量
+_wechat_bot: Optional[Any] = None
+_wechat_current_user_id: Optional[str] = None
+_wechat_current_context_token: Optional[str] = None
+
+
+async def _wechat_handle_message(message):
+    """微信消息处理"""
+    global _wechat_current_user_id, _wechat_current_context_token
+    _wechat_current_user_id = message.user_id
+    _wechat_current_context_token = message.context_token
+
+    print(f"收到微信消息 | 用户: {message.user_id} | 内容: {message.text}")
+    print(f"{BLUE}微信 Bot:{RESET}")
+
+    # 发送typing状态
+    if _wechat_bot:
+        await _wechat_bot.send_typing(message.user_id, message.context_token, 1)
+
+    # 处理消息
+    response = agent(message.text)
+
+    # 发送回复
+    if _wechat_bot:
+        await _wechat_bot.reply(message, response)
+        # 取消typing状态
+        await _wechat_bot.send_typing(message.user_id, message.context_token, 2)
+
+    print()
+
+
+def run_wechat_bot():
+    """运行微信Bot"""
+    from bot.wechat_bot import WeChatBot
+    import asyncio
+
+    async def _run():
+        global _wechat_bot
+
+        bot = WeChatBot()
+        _wechat_bot = bot
+
+        # 登录
+        print("正在登录微信Bot...")
+        credentials = await bot.login()
+        print(f"✅ 登录成功: {credentials.user_id}")
+
+        # 启动消息处理
+        print("微信Bot已启动！按 Ctrl+C 停止")
+        await bot.start(_wechat_handle_message)
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        print("\n微信Bot已停止")
+    except Exception as e:
+        print(f"❌ 微信Bot发生错误: {e}")
+
 
 def _drain_team_inbox(messages: list) -> None:
     """Drain the lead's team inbox and inject messages into conversation."""

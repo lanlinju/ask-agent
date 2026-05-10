@@ -218,25 +218,70 @@ class WeChatAuth:
             logger.info(f"二维码已保存到 {filename}")
             print(f"\n请扫描二维码登录: {filename}\n")
 
-    async def _fetch_qr_code(self) -> dict[str, str]:
-        """获取登录QR码"""
+    async def _fetch_qr_code(self, max_retries: int = 3) -> dict[str, str]:
+        """获取登录QR码
+
+        Args:
+            max_retries: 最大重试次数
+
+        Returns:
+            QR码数据
+        """
         url = f"{self.base_url}/ilink/bot/get_bot_qrcode?bot_type=3"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
 
-        if "qrcode" not in data:
-            raise Exception(f"获取QR码失败: {data}")
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, timeout=30)
+                response.raise_for_status()
+                data = response.json()
 
-        return data
+                if "qrcode" not in data:
+                    raise Exception(f"获取QR码失败: {data}")
 
-    async def _poll_qr_status(self, qrcode: str) -> dict[str, Any]:
-        """轮询QR码状态"""
+                return data
+            except requests.Timeout:
+                logger.warning(f"获取QR码超时 (尝试 {attempt + 1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    raise Exception("获取QR码超时，请检查网络连接或是否需要代理")
+            except requests.ConnectionError:
+                logger.warning(f"连接失败 (尝试 {attempt + 1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    raise Exception("无法连接到iLink服务器，请检查网络连接或是否需要代理")
+            except Exception as e:
+                raise
+
+        raise Exception("获取QR码失败")
+
+    async def _poll_qr_status(self, qrcode: str, max_retries: int = 3) -> dict[str, Any]:
+        """轮询QR码状态
+
+        Args:
+            qrcode: QR码token
+            max_retries: 最大重试次数
+
+        Returns:
+            QR码状态
+        """
         url = f"{self.base_url}/ilink/bot/get_qrcode_status?qrcode={qrcode}"
         headers = {"iLink-App-ClientVersion": "1"}
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        return response.json()
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=headers, timeout=30)
+                response.raise_for_status()
+                return response.json()
+            except requests.Timeout:
+                logger.warning(f"轮询QR状态超时 (尝试 {attempt + 1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    raise Exception("轮询QR状态超时，请检查网络连接")
+            except requests.ConnectionError:
+                logger.warning(f"连接失败 (尝试 {attempt + 1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    raise Exception("无法连接到iLink服务器")
+            except Exception as e:
+                raise
+
+        raise Exception("轮询QR状态失败")
 
 
 # 全局实例
