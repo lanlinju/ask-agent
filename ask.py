@@ -1885,6 +1885,9 @@ def run_send_image(path: str, caption: str = "") -> str:
     """
     global _telegram_update, _telegram_pending_tasks, _qq_bot, _qq_current_openid
 
+    if _wechat_bot:
+        return "❌ 微信 Bot 暂不支持发送图片"
+
     try:
         # Resolve the path
         image_path = safe_path(path)
@@ -1955,6 +1958,9 @@ def run_send_voice(text: str, voice: str = "") -> str:
         Success or error message
     """
     global _telegram_update, _telegram_pending_tasks, _qq_bot, _qq_current_openid
+
+    if _wechat_bot:
+        return "❌ 微信 Bot 暂不支持发送语音"
 
     try:
         from util.tts import text_to_speech, get_tts_api_config, convert_audio_format, strip_parentheses
@@ -2033,6 +2039,9 @@ def run_send_file(path: str, caption: str = "") -> str:
         Success or error message
     """
     global _telegram_update, _telegram_pending_tasks, _qq_bot, _qq_current_openid
+
+    if _wechat_bot:
+        return "❌ 微信 Bot 暂不支持发送文件"
 
     try:
         # Resolve the path
@@ -4703,6 +4712,15 @@ async def _wechat_handle_message(message):
 
     if message.type == "text":
         await _wechat_handle_text(message)
+    elif message.type == "image":
+        if _wechat_bot:
+            await _wechat_bot.reply(message, "❌ 暂不支持图片消息")
+    elif message.type == "voice":
+        if _wechat_bot:
+            await _wechat_bot.reply(message, "❌ 暂不支持语音消息")
+    elif message.type in ("file", "video"):
+        if _wechat_bot:
+            await _wechat_bot.reply(message, "❌ 暂不支持文件/视频消息")
     else:
         print(f"忽略微信消息类型: {message.type}")
 

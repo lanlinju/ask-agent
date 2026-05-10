@@ -71,7 +71,7 @@ class WeChatGateway:
             while not self._stopped:
                 try:
                     token = await self.auth.get_token()
-                    logger.debug("正在轮询消息...")
+                    # logger.debug("正在轮询消息...")
                     updates = await self._get_updates(token)
                     self.cursor = updates.get("get_updates_buf") or self.cursor
                     retry_delay_seconds = 1.0
