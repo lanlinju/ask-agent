@@ -4666,7 +4666,7 @@ async def _qq_handle_text(update, context):
 
 def run_qq_bot():
     """运行QQ Bot"""
-    from qqbot import Application, MessageHandler, filters
+    from core.bot.qqbot import Application, MessageHandler, filters
 
     assert QQ_APP_ID is not None
     assert QQ_APP_SECRET is not None
@@ -4689,7 +4689,7 @@ def run_qq_bot():
         async def _qq_send_callback(openid: str, message: str, chat_type: str = "private"):
             if not _qq_bot:
                 return
-            from qqbot.types import SendProxy
+            from core.bot.qqbot.types import SendProxy
             proxy = SendProxy(_qq_bot, openid, chat_type)
             await _send_qq_response(proxy, message)
 
@@ -4801,7 +4801,7 @@ async def _wechat_handle_command(message):
 
 def run_wechat_bot():
     """运行微信Bot"""
-    from bot.wechat_bot import WeChatBot
+    from core.bot.wechat_bot import WeChatBot
     import asyncio
 
     async def _run():

@@ -829,7 +829,7 @@ ag --agent
 **注意事项：**
 - Bot 运行期间会持续监听消息，按 `Ctrl+C` 可停止
 - 建议使用智能体模式（`/agent`）以获得完整功能
-- 模块详细文档见 [qqbot/README.md](qqbot/README.md)
+- 模块详细文档见 [core/bot/qqbot/README.md](core/bot/qqbot/README.md)
 
 ### QQ Bot 消息缓冲配置
 
