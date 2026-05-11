@@ -1,5 +1,110 @@
 {
   "mode": 0,
+  "provider": {
+    "model": "deepseek/deepseek-v4-flash",
+    "thinking": "enabled",
+    "reasoning_effort": "high",
+    "providers": {
+      "deepseek": {
+        "name": "DeepSeek",
+        "enabled": true,
+        "options": {
+          "baseURL": "https://api.deepseek.com/v1",
+          "apiKey": "env:DEEPSEEK_API_KEY",
+          "thinking": "enabled",
+          "timeout": null,
+          "maxRetries": null
+        },
+        "models": {
+          "deepseek-v4-flash": { "name": "DeepSeek V4 Flash" },
+          "deepseek-v4-pro": { "name": "DeepSeek V4 Pro" }
+        }
+      },
+      "mimo": {
+        "name": "MiMo",
+        "enabled": true,
+        "options": {
+          "baseURL": "https://api.xiaomimimo.com/v1",
+          "apiKey": "env:MIMO_API_KEY",
+          "thinking": "disabled",
+          "timeout": null,
+          "maxRetries": null
+        },
+        "models": {
+          "mimo-v2.5-pro": { "name": "Mimo V2.5 Pro" },
+          "mimo-v2.5": {
+            "name": "Mimo V2.5",
+            "modalities": {
+              "input": ["text", "image", "audio"],
+              "output": ["text"]
+            }
+          },
+          "mimo-v2.5-tts": { "name": "Mimo V2.5 TTS" },
+          "mimo-v2.5-tts-voiceclone": { "name": "Mimo V2.5 TTS VoiceClone" }
+        }
+      }
+    }
+  },
+  "mcp": {
+    "servers": {
+      "filesystem": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+        "description": "文件系统访问服务器",
+        "enabled": true
+      },
+      "weather": {
+        "type": "http",
+        "url": "http://localhost:8000/mcp",
+        "description": "天气信息服务器",
+        "timeout": 30,
+        "enabled": true
+      }
+    }
+  },
+  "role": {
+    "default_role": "frieren",
+    "roles": {
+      "frieren": {
+        "name": "frieren",
+        "description": "",
+        "prompt_file": "frieren.md",
+        "voice": {
+          "enabled": false,
+          "model": "mimo-v2.5-tts-voiceclone",
+          "type": "clone",
+          "sample": "~/.ask-agent/voices/frieren.mp3"
+        }
+      },
+      "纳西妲": {
+        "name": "纳西妲",
+        "description": "",
+        "prompt_file": "纳西妲.md",
+        "voice": {
+          "enabled": true,
+          "model": "mimo-v2.5-tts-voiceclone",
+          "type": "clone",
+          "sample": "~/.ask-agent/voices/nahida.mp3"
+        }
+      }
+    }
+  },
+  "agent": {
+    "default_agent": "coding-agent-prodigy",
+    "agents": {
+      "coding-agent-prodigy": {
+        "name": "coding-agent-prodigy",
+        "description": "",
+        "prompt_file": "coding-agent-prodigy.md"
+      },
+      "command-line-agent": {
+        "name": "command-line-agent",
+        "description": "",
+        "prompt_file": "command-line-agent.md"
+      }
+    }
+  },
   "proactiveMessage": {
     "enabled": false,
     "minIntervalHours": 1,

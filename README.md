@@ -65,7 +65,34 @@ pip install -r requirements.txt
 pip install python-dotenv requests python-telegram-bot prompt-toolkit websockets silk-python qrcode
 ```
 
-3. 启动程序
+3. 初始化配置目录
+
+将项目自带的角色、智能体、语音样本及示例配置文件复制到全局配置目录：
+
+```bash
+# 创建全局配置目录
+mkdir -p ~/.ask-agent
+
+# 复制角色、智能体、技能、命令、语音样本
+cp -r roles ~/.ask-agent/roles
+cp -r agents ~/.ask-agent/agents
+cp -r skills ~/.ask-agent/skills
+cp -r command ~/.ask-agent/command
+cp -r voices ~/.ask-agent/voices
+
+# 复制示例配置并重命名为 config.json
+cp config.example.json ~/.ask-agent/config.json
+```
+
+然后编辑 `~/.ask-agent/config.json`，根据你的需求修改配置：
+
+- **Provider** — 在 `provider.providers` 中设置你的 API Key（推荐使用 `env:xxx` 环境变量引用）
+- **MCP 服务器** — 在 `mcp.servers` 中配置或移除不需要的服务器
+- **角色/智能体** — `role` 和 `agent` 部分可按需增删，提示词文件在 `roles/` 和 `agents/` 目录中
+
+> **提示：** 你也可以只保留 `config.json` 中需要的部分，删除不用的 namespace。程序会自动回退到对应的旧文件（`providers.json`、`mcp.json` 等）。
+
+4. 启动程序
 ```bash
 # 方式一：使用启动脚本（Linux/Mac）
 ./ag
@@ -77,7 +104,7 @@ python ag
 ./ag.bat
 ```
 
-4. 创建软链接（可选，简化使用）
+6. 创建软链接（可选，简化使用）
 ```bash
 # 创建 ~/.local/bin 目录（如果不存在）
 mkdir -p ~/.local/bin
@@ -91,7 +118,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 之后就可以直接使用 `ag` 命令了！
 
-5. 配置 AI Providers
+7. 配置 AI Providers
 
  ag 支持多个 AI Provider，通过 `providers.json` 配置文件管理。
 

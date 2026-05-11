@@ -25,6 +25,8 @@ cp-config:
 	cp -R ./roles ~/.ask-agent/roles
 	cp -R ./skills ~/.ask-agent/skills
 	cp -R ./command ~/.ask-agent/command
+	cp -R ./voices ~/.ask-agent/voices
+	cp config.example.json ~/.ask-agent/config.json
 
 log:
 	tail -f ~/.ask-agent/log-acp.txt		
