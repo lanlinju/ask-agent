@@ -173,14 +173,16 @@ class Provider:
 class ProviderConfig:
     """Provider 配置管理器"""
 
-    def __init__(self, config_path: Union[str, Path] = "providers.json"):
+    def __init__(self, config_path: Union[str, Path] = "providers.json", data: Optional[Dict[str, Any]] = None):
         """
         初始化配置管理器
 
         Args:
-            config_path: 配置文件路径
+            config_path: 配置文件路径（data 为 None 时使用）
+            data: 直接从字典加载配置，跳过文件读取
         """
         self.config_path = Path(config_path)
+        self._data = data
         self.providers: Dict[str, Provider] = {}
         self.default_model: Optional[str] = None
         self.thinking: str = "enabled"  # 全局 thinking 默认值: "enabled" or "disabled"
@@ -195,6 +197,10 @@ class ProviderConfig:
         Returns:
             加载是否成功
         """
+        # 优先从字典加载
+        if self._data is not None:
+            return self._parse_dict(self._data)
+
         try:
             # 检查文件是否存在
             if not self.config_path.exists():
@@ -205,22 +211,47 @@ class ProviderConfig:
             with open(self.config_path, "r", encoding="utf-8") as f:
                 self.raw_config = json.load(f)
 
+            return self._parse_dict(self.raw_config)
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON 解析失败: {e}")
+            return False
+        except ProviderConfigError as e:
+            logger.error(f"配置错误: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"加载配置失败: {e}")
+            return False
+
+    def _parse_dict(self, data: Dict[str, Any]) -> bool:
+        """
+        从字典解析配置
+
+        Args:
+            data: 配置字典（provider namespace，含 model/providers 等字段）
+
+        Returns:
+            解析是否成功
+        """
+        try:
+            self.raw_config = data
+
             # 验证配置结构
-            if not isinstance(self.raw_config, dict):
+            if not isinstance(data, dict):
                 raise ProviderConfigError("配置文件必须是 JSON 对象")
 
             # 解析默认模型（可选字段）
-            self.default_model = self.raw_config.get("model")
+            self.default_model = data.get("model")
 
             # 解析全局 thinking 配置（可选字段，默认 enabled）
-            self.thinking = self.raw_config.get("thinking", "enabled")
+            self.thinking = data.get("thinking", "enabled")
 
             # 解析全局 reasoning_effort 配置（可选字段，默认 high）
             # 有效值: "high", "max"
-            self.reasoning_effort = self.raw_config.get("reasoning_effort", "high")
+            self.reasoning_effort = data.get("reasoning_effort", "high")
 
             # 解析 providers
-            providers_config = self.raw_config.get("providers", {})
+            providers_config = data.get("providers", {})
             if not isinstance(providers_config, dict):
                 raise ProviderConfigError("'providers' 字段必须是对象")
 
@@ -253,9 +284,6 @@ class ProviderConfig:
 
             return True
 
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON 解析失败: {e}")
-            return False
         except ProviderConfigError as e:
             logger.error(f"配置错误: {e}")
             return False

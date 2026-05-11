@@ -254,20 +254,36 @@ def list_skills():
     print()
 
 
+# Global config data (from config.json, centralized)
+_CONFIG_DATA: Optional[Dict[str, Any]] = None
+_CONFIG_PATH = ConfigPathManager("config.json").find_config()
+if _CONFIG_PATH:
+    try:
+        with open(_CONFIG_PATH, encoding="utf-8") as f:
+            _CONFIG_DATA = json.load(f)
+    except Exception:
+        pass
+
 # Global MCP manager instance
-MCP_MANAGER = MCPManager()
+if _CONFIG_DATA and "mcp" in _CONFIG_DATA:
+    MCP_MANAGER = MCPManager(data=_CONFIG_DATA["mcp"].get("servers"))
+else:
+    MCP_MANAGER = MCPManager()
 MEMORY_MANAGER = MemoryManager()
 
 # Global hook manager instance
 HOOK_MANAGER = HookManager(workdir=WORKDIR)
 
 # Config path managers
-_PROVIDERS_PATH_MANAGER = ConfigPathManager("providers.json")
 _COMMAND_PATH_MANAGER = ConfigPathManager("command.json")
 
 # Global provider config instance
-PROVIDERS_PATH = _PROVIDERS_PATH_MANAGER.find_config()
-PROVIDER_CONFIG = ProviderConfig(PROVIDERS_PATH if PROVIDERS_PATH else "providers.json")
+if _CONFIG_DATA and "provider" in _CONFIG_DATA:
+    PROVIDER_CONFIG = ProviderConfig(data=_CONFIG_DATA["provider"])
+else:
+    _PROVIDERS_PATH_MANAGER = ConfigPathManager("providers.json")
+    PROVIDERS_PATH = _PROVIDERS_PATH_MANAGER.find_config()
+    PROVIDER_CONFIG = ProviderConfig(PROVIDERS_PATH if PROVIDERS_PATH else "providers.json")
 
 # Global config file path - always use user directory
 _CONFIG_PATH_MANAGER = ConfigPathManager("config.json")
@@ -326,7 +342,8 @@ def init_role_manager() -> RoleManager:
     """初始化角色管理器"""
     global ROLE_MANAGER
     if not ROLE_MANAGER:
-        ROLE_MANAGER = RoleManager(cache_dir=CACHE_DIR)
+        config_data = _CONFIG_DATA.get("role") if _CONFIG_DATA and "role" in _CONFIG_DATA else None
+        ROLE_MANAGER = RoleManager(cache_dir=CACHE_DIR, config_data=config_data)
     return ROLE_MANAGER
 
 
@@ -334,7 +351,8 @@ def init_agent_manager() -> AgentManager:
     """初始化智能体管理器"""
     global AGENT_MANAGER
     if not AGENT_MANAGER:
-        AGENT_MANAGER = AgentManager()
+        config_data = _CONFIG_DATA.get("agent") if _CONFIG_DATA and "agent" in _CONFIG_DATA else None
+        AGENT_MANAGER = AgentManager(config_data=config_data)
     return AGENT_MANAGER
 
 

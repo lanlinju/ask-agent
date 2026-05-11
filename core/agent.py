@@ -49,6 +49,7 @@ class AgentManager:
         self,
         agents_dir: Optional[Path] = None,
         config_file: Optional[Path] = None,
+        config_data: Optional[Dict[str, Any]] = None,
     ):
         """
         初始化智能体管理器
@@ -56,10 +57,12 @@ class AgentManager:
         Args:
             agents_dir: 智能体目录，默认为 ./agents 或 ~/.ask-agent/agents
             config_file: 配置文件路径，默认为 ~/.ask-agent/agents.json
+            config_data: 直接从字典加载智能体配置（含 default_agent/agents），跳过文件读取
         """
         base_dir = Path.cwd()
+        self._config_data = config_data
 
-        # 使用 ConfigPathManager 查找配置文件 - 优先使用当前目录，否则使用用户目录
+        # config_data 模式下仍需 config_file 用于 save_config
         if config_file is None:
             config_manager = ConfigPathManager("agents.json")
             found_config = config_manager.find_config()
@@ -98,6 +101,15 @@ class AgentManager:
 
     def load_config(self) -> bool:
         """加载智能体配置文件"""
+        # 优先从字典加载
+        if self._config_data is not None:
+            data = self._config_data
+            self.default_agent = data.get("default_agent")
+            for agent_id, agent_data in data.get("agents", {}).items():
+                self.agents[agent_id] = AgentConfig.from_dict(agent_id, agent_data)
+            logger.info(f"成功从 config.json 加载 {len(self.agents)} 个智能体配置")
+            return True
+
         config_exists = self.config_file.exists()
         if not config_exists:
             logger.info(f"智能体配置文件不存在: {self.config_file}")

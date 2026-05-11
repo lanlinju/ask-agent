@@ -78,6 +78,7 @@ class RoleManager:
         roles_dir: Optional[Path] = None,
         cache_dir: Optional[Path] = None,
         config_file: Optional[Path] = None,
+        config_data: Optional[Dict[str, Any]] = None,
     ):
         """
         初始化角色管理器
@@ -86,20 +87,22 @@ class RoleManager:
             roles_dir: 角色目录，默认为 ./roles 或 ~/.ask-agent/roles
             cache_dir: 缓存目录，默认为 ~/.ask-agent/cache
             config_file: 配置文件路径，默认查找 ./roles.json 或 ~/.ask-agent/roles.json
+            config_data: 直接从字典加载角色配置（含 default_role/roles），跳过文件读取
         """
         base_dir = Path.cwd()
         self.cache_dir = cache_dir or (base_dir / "cache")
         self.role_cache_dir = self.cache_dir / "role"
         self.role_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # 使用 ConfigPathManager 查找配置文件 - 优先项目目录，备选用户目录
+        self._config_data = config_data
+
+        # config_data 模式下仍需 config_file 用于 save_config
         if config_file is None:
             config_manager = ConfigPathManager("roles.json")
             found = config_manager.find_config()
             if found:
                 self.config_file = found
             else:
-                # 如果都不存在，检查项目目录是否有 roles 目录，有则保存到项目目录
                 if (base_dir / "roles").exists():
                     self.config_file = base_dir / "roles.json"
                 else:
@@ -170,6 +173,15 @@ class RoleManager:
 
     def load_config(self) -> bool:
         """加载角色配置文件"""
+        # 优先从字典加载
+        if self._config_data is not None:
+            data = self._config_data
+            self.default_role = data.get("default_role")
+            for role_id, role_data in data.get("roles", {}).items():
+                self.roles[role_id] = RoleConfig.from_dict(role_id, role_data)
+            logger.info(f"成功从 config.json 加载 {len(self.roles)} 个角色配置")
+            return True
+
         config_exists = self.config_file.exists()
         if not config_exists:
             logger.info(f"角色配置文件不存在: {self.config_file}")

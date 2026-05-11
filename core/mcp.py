@@ -474,11 +474,14 @@ class StreambleHttpClient:
 class MCPManager:
     """MCP 服务器管理器"""
 
-    def __init__(self):
-        # 使用 ConfigPathManager 搜索 mcp.json: 当前目录 -> 用户目录
-        self._config_path_manager = ConfigPathManager("mcp.json")
-        config_path = self._config_path_manager.find_config()
-        self.config = MCPConfig(config_path if config_path else Path.cwd() / "mcp.json")
+    def __init__(self, data: Optional[Dict[str, Any]] = None):
+        # 优先从字典加载（来自 config.json），否则搜索 mcp.json
+        if data is not None:
+            self.config = MCPConfig(data=data)
+        else:
+            self._config_path_manager = ConfigPathManager("mcp.json")
+            config_path = self._config_path_manager.find_config()
+            self.config = MCPConfig(config_path if config_path else Path.cwd() / "mcp.json")
         # name -> (client, tools)
         self.active_clients: Dict[str, Tuple[Any, List[Dict]]] = {}
         self.loaded = False

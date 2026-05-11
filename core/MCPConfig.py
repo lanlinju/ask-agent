@@ -167,14 +167,16 @@ class ServerConfig:
 class MCPConfig:
     """MCP 配置文件解析器"""
 
-    def __init__(self, path: Union[str, Path] = "mcp.json"):
+    def __init__(self, path: Union[str, Path] = "mcp.json", data: Optional[Dict[str, Any]] = None):
         """
         初始化配置解析器
 
         Args:
-            path: 配置文件路径
+            path: 配置文件路径（data 为 None 时使用）
+            data: 直接从字典加载配置（servers 字典，无外层 servers 包裹）
         """
         self.path = Path(path)
+        self._data = data
         self.servers: Dict[str, ServerConfig] = {}
         self.raw_config: Dict[str, Any] = {}
         self._loaded = False
@@ -186,6 +188,10 @@ class MCPConfig:
         Returns:
             加载是否成功
         """
+        # 优先从字典加载
+        if self._data is not None:
+            return self._parse_servers_dict(self._data)
+
         try:
             # 检查文件是否存在
             if not self.path.exists():
@@ -208,11 +214,39 @@ class MCPConfig:
             if not isinstance(self.raw_config["servers"], dict):
                 raise ConfigValidationError("'servers' 字段必须是对象")
 
+            return self._parse_servers_dict(self.raw_config["servers"])
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON 解析失败: {e}")
+            return False
+        except ConfigError as e:
+            logger.error(f"配置错误: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"加载配置文件时发生未知错误: {e}")
+            return False
+
+    def _parse_servers_dict(self, data: Dict[str, Any]) -> bool:
+        """
+        从字典解析服务器配置
+
+        Args:
+            data: 服务器配置字典，格式如 {"stdioserver": {...}}
+
+        Returns:
+            解析是否成功
+        """
+        try:
+            if not isinstance(data, dict):
+                raise ConfigValidationError("服务器配置必须是对象")
+
+            self.raw_config = data
+
             # 解析每个服务器配置
             self.servers.clear()
             errors = []
 
-            for name, config in self.raw_config["servers"].items():
+            for name, config in data.items():
                 try:
                     server = ServerConfig.from_dict(name, config)
                     self.servers[name] = server
@@ -230,14 +264,11 @@ class MCPConfig:
             logger.info(f"成功加载 {len(self.servers)} 个服务器配置")
             return True
 
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON 解析失败: {e}")
-            return False
         except ConfigError as e:
             logger.error(f"配置错误: {e}")
             return False
         except Exception as e:
-            logger.error(f"加载配置文件时发生未知错误: {e}")
+            logger.error(f"加载配置时发生未知错误: {e}")
             return False
 
     def reload(self) -> bool:
