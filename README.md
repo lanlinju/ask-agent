@@ -2272,3 +2272,5 @@ echo $OPENAI_API_KEY
 - [speech-synthesis](https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/speech-synthesis-v2.5)
 - [Codex-QQBot](https://github.com/uniqueFranky/Codex-QQBot)
 - [QQ OpenAPI](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/error-trace/openapi.html)
+- [openclaw-weixin](https://github.com/Tencent/openclaw-weixin)
+- [openclaw-qqbot](https://github.com/tencent-connect/openclaw-qqbot)
