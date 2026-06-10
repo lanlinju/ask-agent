@@ -159,6 +159,10 @@ class AgentManager:
 
     def save_config(self) -> bool:
         """保存配置文件"""
+        # 配置来自 config.json 时跳过文件写入，由 _save_section_to_config 统一处理
+        if self._config_data is not None:
+            return True
+
         try:
             data: Dict[str, Any] = {
                 "default_agent": self.default_agent,
