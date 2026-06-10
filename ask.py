@@ -459,6 +459,7 @@ def _select_role_interactive(roles: List[Dict], save_session: bool = True) -> bo
             current_mode = ROLE
             ROLE_MANAGER.set_default_role(role_id)
             init_system_prompt(current_mode, role_id)
+            _save_section_to_config()
             print(f"✅ 已切换到角色: {get_role_name(role_id)}\n")
             return True
         else:
@@ -478,6 +479,33 @@ def _apply_role(role_id: str):
     print(f"✅ 已进入角色扮演模式: {get_role_name(role_id)}\n")
 
 
+def _save_section_to_config():
+    """将 ROLE_MANAGER/AGENT_MANAGER 状态同步回 _CONFIG_DATA 并保存 config.json
+    （仅当配置来源是 config.json 时有效）
+    """
+    global _CONFIG_DATA, _CONFIG_PATH, ROLE_MANAGER, AGENT_MANAGER
+    if not _CONFIG_DATA or not _CONFIG_PATH:
+        return
+
+    if "role" in _CONFIG_DATA and ROLE_MANAGER:
+        _CONFIG_DATA["role"]["default_role"] = ROLE_MANAGER.default_role
+        _CONFIG_DATA["role"]["roles"] = {
+            rid: role.to_dict() for rid, role in ROLE_MANAGER.roles.items()
+        }
+
+    if "agent" in _CONFIG_DATA and AGENT_MANAGER:
+        _CONFIG_DATA["agent"]["default_agent"] = AGENT_MANAGER.default_agent
+
+    if "provider" in _CONFIG_DATA:
+        _CONFIG_DATA["provider"]["model"] = PROVIDER_CONFIG.default_model
+
+    try:
+        with open(_CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(_CONFIG_DATA, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"保存 config.json 失败: {e}")
+
+
 def switch_role(role_id: str, save_session: bool = True) -> bool:
     """切换到指定角色"""
     init_role_manager()
@@ -491,6 +519,7 @@ def switch_role(role_id: str, save_session: bool = True) -> bool:
         return False
 
     _apply_role(role_id)
+    _save_section_to_config()
     return True
 
 
@@ -623,6 +652,7 @@ def _select_agent_interactive(agents: List[Dict], save_session: bool = True) -> 
                 AGENT_MANAGER.set_default_agent(agent_id)
                 init_system_prompt(AGENT, agent_id)
                 print(f"✅ 已切换到智能体: {get_agent_name(agent_id)}\n")
+            _save_section_to_config()
             return True
         else:
             print("❌ 无效的编号\n")
@@ -658,6 +688,7 @@ def switch_agent(agent_id: str, save_session: bool = True) -> bool:
         return False
 
     _apply_agent(agent_id)
+    _save_section_to_config()
     return True
 
 
@@ -845,7 +876,13 @@ def switch_model(model_id: str):
     print(f"✅ 已切换到模型: {model_info.name} ({model_info.provider_id})\n")
 
     PROVIDER_CONFIG.default_model = model_id
-    PROVIDER_CONFIG.save()
+
+    # 保存到独立的 providers.json（仅当来源不是 config.json 时）
+    if not (_CONFIG_DATA and "provider" in _CONFIG_DATA):
+        PROVIDER_CONFIG.save()
+
+    # 同步回 config.json（如果来源是 config.json）
+    _save_section_to_config()
 
     update_model_prompt()
 
@@ -4123,6 +4160,7 @@ def toggle_voice(enabled: bool):
         return
 
     result = ROLE_MANAGER.toggle_voice(enabled)
+    _save_section_to_config()
     print(f"{result}\n")
 
 
