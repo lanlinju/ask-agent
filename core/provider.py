@@ -477,6 +477,10 @@ class ProviderConfig:
         Returns:
             保存是否成功
         """
+        # 配置来自 config.json 时跳过文件写入，由 _save_section_to_config 统一处理
+        if self._data is not None:
+            return True
+
         save_path = Path(path) if path else self.config_path
 
         try:
